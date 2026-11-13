@@ -1,0 +1,19 @@
+schema: inari.hiroba.app.v1
+app: workflows-scaffold
+trustTier: reviewed
+components:
+  extension: {path: extension, version: 0.1.0}
+  ui: {path: ui, version: 0.1.0}
+  chartsRoot: charts
+  packagesRoot: packages
+  templatesRoot: templates
+observability:
+  path: observability
+  chart: charts/workflows-scaffold
+  package: packages/observability-pack
+  alloyConfig: observability/tests/alloy/config.river
+smoke:
+  path: tests/smoke
+  targetComponent: charts/workflows-scaffold
+compatibility:
+  matrix: ci/compatibility-matrix.json

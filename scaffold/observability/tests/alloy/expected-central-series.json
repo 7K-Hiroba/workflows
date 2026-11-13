@@ -1,0 +1,10 @@
+{
+  "metric": "workflows_scaffold_up",
+  "labels": {
+    "cluster": "kind-ci",
+    "instance": "ci",
+    "job": "workflows-scaffold",
+    "org": "ci"
+  },
+  "value": 1
+}

@@ -1,0 +1,12 @@
+name: extension CI
+on: {pull_request: {branches: [main]}}
+permissions: {contents: read}
+jobs:
+  go:
+    uses: 7K-Hiroba/workflows/.github/workflows/ci-go-extension.yml@__WORKFLOWS_V1_SHA__ # v1.0.0
+    with: {root: .}
+    cache-mode: read
+  ui:
+    uses: 7K-Hiroba/workflows/.github/workflows/ci-ui-extension.yml@__WORKFLOWS_V1_SHA__ # v1.0.0
+    with: {root: .}
+    cache-mode: read

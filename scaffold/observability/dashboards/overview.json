@@ -1,0 +1,32 @@
+{
+  "title": "Workflows scaffold overview",
+  "uid": "workflows-scaffold-overview",
+  "schemaVersion": 40,
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "textbox",
+        "value": "default"
+      },
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"text": "Prometheus", "value": "prometheus"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Synthetic availability",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {"refId": "A", "expr": "workflows_scaffold_up"}
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    }
+  ]
+}

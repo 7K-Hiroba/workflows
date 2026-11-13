@@ -1,0 +1,11 @@
+{
+  "schema": "inari.compat.v1",
+  "entries": [
+    {
+      "server": "0.7.0-f0bdbad",
+      "ui": "0.1.7",
+      "pluginContracts": ["inari.plugin.v1"],
+      "uiHostApis": ["inari.ui.v1"]
+    }
+  ]
+}

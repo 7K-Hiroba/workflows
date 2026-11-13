@@ -1,0 +1,26 @@
+evaluation_interval: 1m
+rule_files:
+  - ../../rules/app.yaml
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'workflows_scaffold_up{job="workflows-scaffold"}'
+        values: '1 1 1 1 0 0 0 0 0 0 0'
+    promql_expr_test:
+      - expr: workflows_scaffold:up:sum
+        eval_time: 0m
+        expected_samples:
+          - labels: 'workflows_scaffold:up:sum'
+            value: 1
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: WorkflowsScaffoldDown
+        expected_alerts:
+          - labels:
+              alertname: WorkflowsScaffoldDown
+              alertstate: firing
+              app: workflows-scaffold
+              job: workflows-scaffold
+              severity: critical
+            annotations:
+              summary: Synthetic workflows-scaffold target is down

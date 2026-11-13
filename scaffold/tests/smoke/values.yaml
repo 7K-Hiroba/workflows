@@ -1,0 +1,8 @@
+image:
+  repository: workflows-scaffold
+  tag: ci
+  pullPolicy: Never
+observability:
+  enabled: false
+  rules:
+    enabled: false

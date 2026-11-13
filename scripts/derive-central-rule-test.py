@@ -38,6 +38,9 @@ def main() -> int:
             merged.update(labels)
             label_text = ",".join(f'{key}={json.dumps(str(value))}' for key, value in sorted(merged.items()))
             series["series"] = f"{match.group(1)}{{{label_text}}}"
+        for alert_test in test.get("alert_rule_test", []):
+            for alert in alert_test.get("exp_alerts", []):
+                alert.setdefault("exp_labels", {}).update(labels)
     base["rule_files"] = [str(args.rules.resolve())]
     args.output.write_text(yaml.safe_dump(base, sort_keys=False), encoding="utf-8")
     print(f"derived central rule fixture: {args.output}")

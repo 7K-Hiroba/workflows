@@ -22,6 +22,8 @@
       "id": 1,
       "type": "timeseries",
       "title": "Synthetic availability",
+      "description": "Current value of the synthetic workflows-scaffold availability gauge.",
+      "fieldConfig": {"defaults": {"unit": "short"}},
       "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "targets": [
         {"refId": "A", "expr": "workflows_scaffold_up"}

@@ -49,19 +49,21 @@ spec:
       data:
         workflows-scaffold-overview.json: "{\n  \"panels\": [\n    {\n      \"datasource\"\
           : {\n        \"type\": \"prometheus\",\n        \"uid\": \"${DS_PROMETHEUS}\"\
-          \n      },\n      \"gridPos\": {\n        \"h\": 8,\n        \"w\": 12,\n\
-          \        \"x\": 0,\n        \"y\": 0\n      },\n      \"id\": 1,\n     \
-          \ \"targets\": [\n        {\n          \"expr\": \"workflows_scaffold_up\"\
-          ,\n          \"refId\": \"A\"\n        }\n      ],\n      \"title\": \"\
-          Synthetic availability\",\n      \"type\": \"timeseries\"\n    }\n  ],\n\
-          \  \"schemaVersion\": 40,\n  \"templating\": {\n    \"list\": [\n      {\n\
-          \        \"name\": \"namespace\",\n        \"type\": \"textbox\",\n    \
-          \    \"value\": \"default\"\n      },\n      {\n        \"current\": {\n\
-          \          \"text\": \"Prometheus\",\n          \"value\": \"prometheus\"\
-          \n        },\n        \"name\": \"DS_PROMETHEUS\",\n        \"query\": \"\
-          prometheus\",\n        \"type\": \"datasource\"\n      }\n    ]\n  },\n\
-          \  \"title\": \"Workflows scaffold overview\",\n  \"uid\": \"workflows-scaffold-overview\"\
-          \n}\n"
+          \n      },\n      \"description\": \"Current value of the synthetic workflows-scaffold\
+          \ availability gauge.\",\n      \"fieldConfig\": {\n        \"defaults\"\
+          : {\n          \"unit\": \"short\"\n        }\n      },\n      \"gridPos\"\
+          : {\n        \"h\": 8,\n        \"w\": 12,\n        \"x\": 0,\n        \"\
+          y\": 0\n      },\n      \"id\": 1,\n      \"targets\": [\n        {\n  \
+          \        \"expr\": \"workflows_scaffold_up\",\n          \"refId\": \"A\"\
+          \n        }\n      ],\n      \"title\": \"Synthetic availability\",\n  \
+          \    \"type\": \"timeseries\"\n    }\n  ],\n  \"schemaVersion\": 40,\n \
+          \ \"templating\": {\n    \"list\": [\n      {\n        \"name\": \"namespace\"\
+          ,\n        \"type\": \"textbox\",\n        \"value\": \"default\"\n    \
+          \  },\n      {\n        \"current\": {\n          \"text\": \"Prometheus\"\
+          ,\n          \"value\": \"prometheus\"\n        },\n        \"name\": \"\
+          DS_PROMETHEUS\",\n        \"query\": \"prometheus\",\n        \"type\":\
+          \ \"datasource\"\n      }\n    ]\n  },\n  \"title\": \"Workflows scaffold\
+          \ overview\",\n  \"uid\": \"workflows-scaffold-overview\"\n}\n"
     includeWhen:
     - ${schema.spec.render == "all" || schema.spec.render == "dashboards"}
   - id: rules-central

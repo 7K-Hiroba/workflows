@@ -4,7 +4,7 @@ permissions: {contents: read}
 jobs:
   validate:
     uses: $/.github/workflows/validate-packages.yml
-    with: {root: scaffold, registry: tests/fixtures/app-registry.yaml}
+    with: {root: scaffold, registry: consumer/tests/fixtures/app-registry.yaml}
   packages:
     uses: $/.github/workflows/test-packages.yml
     with: {root: scaffold, all: true}

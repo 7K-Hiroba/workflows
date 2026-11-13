@@ -4,4 +4,6 @@ Canonical assets live in `observability/`. Dashboard UIDs are `<app>-<slug>` and
 
 `render-observability.py` generates chart ConfigMaps/PrometheusRules, chart capability metadata, and the KRO observability-pack. PR validation uses `--check` and fails without writing on drift. Release rebuilds and verifies packaged output.
 
-CI also runs representative metrics through real Alloy configuration, checks the post-Alloy label contract, derives central promtool fixtures from the observed series, and provisions ephemeral Grafana with a Prometheus datasource. Dashboard readiness requires folder/UID, datasource resolution, and successful panel queries. These are isolated containers, not central/tenant Grafana writes.
+Offline CI uses checksum-pinned `gcx dev lint run`, Alloy `fmt --test`, and Alloy `validate` with the same generally-available/community-component flags intended at runtime. It validates reviewed, versioned post-Alloy fixtures and derives central promtool inputs from those fixtures. `gcx resources validate` is forbidden offline because it requires a Grafana server.
+
+Accepted limitation: offline CI does not prove live provisioning, plugin/datasource resolution, or post-pipeline series semantics. Deployment-time target-side readiness must prove those separately after the renderer gate. No Grafana/Alloy container, daemon, Compose stack, or live telemetry pipeline is run in CI.

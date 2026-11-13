@@ -50,7 +50,7 @@ jobs:
       - name: Install chart test CRD dependencies
         run: kubectl apply -f "consumer/${{ inputs.root }}/packages/observability-pack/tests/deps/prometheusrule-crd.yaml"
       - name: Chart-testing lint
-        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
+        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
       - name: Chart-testing kind install
         run: |
           ct install --config "consumer/${{ inputs.root }}/ci/ct.yaml" \

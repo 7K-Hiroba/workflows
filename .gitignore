@@ -9,6 +9,8 @@ dist/
 build/
 .tmp/
 *.log
-diagnostics/
-evidence/
+/diagnostics/
+/evidence/
+scaffold/**/diagnostics/
+scaffold/**/evidence/
 .DS_Store

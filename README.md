@@ -20,7 +20,7 @@ The CLI scaffold renderer resolves the approved tagged commit; users never selec
 - Typed package validation and kind/kro, CEL admission, and platform-app tests.
 - Public-SDK Go and UI extension CI; UI remotes are complete OCI directory artifacts, never GitHub Release assets.
 - Independent chart-testing lint/kind install and OCI Helm publication with an admin-gated repair path.
-- Canonical observability generation, fail-on-diff, promtool, real Alloy-derived central fixtures, and ephemeral Grafana panel/query checks.
+- Canonical observability generation, fail-on-diff, gcx dashboard lint, Alloy fmt/validate, and reviewed fixture-derived promtool tests.
 - Stable/previous backend compat and real stable-host browser slot tests; nightly immutable-resolved edge runs.
 - One signed target-scoped Argo suite for ephemeral CI and later policy-gated environment verification. Only kind-based `ci` executes here.
 - Digest-based cosign signatures, registry SLSA v1 provenance, release-linked signed test evidence, signed indexes, and protected finalization.

@@ -33,6 +33,25 @@ for tool in "$@"; do
       tar -xzf "$archive" -C "$INSTALL_DIR" prometheus-3.5.0.linux-amd64/promtool --strip-components=1
       chmod +x "$INSTALL_DIR/promtool"
       ;;
+    gcx)
+      url='https://github.com/grafana/gcx/releases/download/v1.7.1/gcx_1.7.1_linux_amd64.tar.gz'
+      expected='5f1601feac13d850017064a9b556f11983de6def2986ba0bee402a947659c3e9'
+      archive="$INSTALL_DIR/gcx.tar.gz"
+      curl -fsSL "$url" -o "$archive"
+      echo "$expected  $archive" | sha256sum -c -
+      tar -xzf "$archive" -C "$INSTALL_DIR" gcx
+      chmod +x "$INSTALL_DIR/gcx"
+      ;;
+    alloy)
+      url='https://github.com/grafana/alloy/releases/download/v1.13.0/alloy-linux-amd64.zip'
+      expected='1e4e809917e2a0395b7027012379103fc9112731832508b03ff8aeffa041c977'
+      archive="$INSTALL_DIR/alloy.zip"
+      curl -fsSL "$url" -o "$archive"
+      echo "$expected  $archive" | sha256sum -c -
+      python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$archive" "$INSTALL_DIR"
+      mv -f "$INSTALL_DIR/alloy-linux-amd64" "$INSTALL_DIR/alloy"
+      chmod +x "$INSTALL_DIR/alloy"
+      ;;
     shellcheck)
       url='https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz'
       expected='8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198'

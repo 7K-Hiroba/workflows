@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -d "$ROOT" && -n "$TYPE" && "$PACKAGE" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "invalid package test arguments" >&2; exit 2; }
 PACKAGE_DIR="$ROOT/packages/$PACKAGE"
-[[ -x "$PACKAGE_DIR/tests/run.sh" ]] || { echo "missing executable tests/run.sh for $PACKAGE" >&2; exit 2; }
+[[ -f "$PACKAGE_DIR/tests/run.sh" ]] || { echo "missing tests/run.sh for $PACKAGE" >&2; exit 2; }
 mkdir -p "$ROOT/evidence" "$ROOT/diagnostics"
 finish() {
   rc=$?
@@ -39,4 +39,4 @@ elif [[ "$TYPE" != policy-pack && "$TYPE" != platform-app ]]; then
   echo "unsupported package type: $TYPE" >&2
   exit 2
 fi
-"$PACKAGE_DIR/tests/run.sh"
+bash "$PACKAGE_DIR/tests/run.sh"

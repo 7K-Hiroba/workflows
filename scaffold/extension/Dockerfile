@@ -9,5 +9,5 @@ FROM gcr.io/distroless/static-debian13:nonroot@sha256:816dc4d589459a7fe33b8a2e69
 COPY --from=build /out/workflows-scaffold /usr/local/bin/workflows-scaffold
 ENV SCAFFOLD_HTTP=true
 EXPOSE 8080
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/workflows-scaffold"]

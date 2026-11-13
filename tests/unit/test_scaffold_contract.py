@@ -39,6 +39,11 @@ class ScaffoldContractTests(unittest.TestCase):
         rendered = self.run_script("check-workflow-pins.py", "--require-rendered")
         self.assertNotEqual(rendered.returncode, 0)
 
+    def test_image_uses_numeric_nonroot_user(self) -> None:
+        dockerfile = (SCAFFOLD / "extension/Dockerfile").read_text()
+        self.assertIn("USER 65532:65532", dockerfile)
+        self.assertNotIn("USER nonroot:nonroot", dockerfile)
+
     def test_ui_uses_only_public_sdk_and_canonical_build(self) -> None:
         package = json.loads((SCAFFOLD / "ui/package.json").read_text())
         self.assertEqual(package["dependencies"]["@7k-inari/ui-plugin-sdk"], "0.1.7")

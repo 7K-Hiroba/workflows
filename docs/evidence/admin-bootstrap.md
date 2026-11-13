@@ -21,7 +21,7 @@
 
 - ID 27229314, `Protect main trunk`: active branch ruleset on default branch; deletion and non-fast-forward rules; squash-only PR with one approval, CODEOWNERS, stale-review dismissal, last-push approval, resolved threads; no bypass actors.
 - ID 27229315, `Protect version tags`: active `refs/tags/v*`; restricted creation/update/deletion/non-fast-forward; OrganizationAdmin bypass only pending the separately approved release App actor.
-- Required status checks are intentionally not guessed. They must be added after real CI check names are observed. Current ruleset contains no required checks yet.
+- Required status checks are active with strict up-to-date enforcement for `library-ci-result` and `scaffold-ci-result`. The library name was verified on green run 43521941195; the scaffold name is defined in the current PR and must be observed green before completion.
 
 ## Actions
 
@@ -44,4 +44,4 @@ Verified effective repository settings:
 
 - Release GitHub App registration requires interactive manifest flow. No new App or private key was created; the parent question is pending. Existing broad/unrelated Apps are not used.
 - No GHCR package, registry rehearsal, git tag, GitHub Release, Pages, stage/prod, or external merge was performed.
-- Required check names and release App bypass actor must be verified/recorded before release readiness.
+- The release App bypass actor must be verified/recorded before release readiness. Required check names are now configured as listed above.

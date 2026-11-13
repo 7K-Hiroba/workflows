@@ -21,6 +21,8 @@ class OfflineObservabilityTests(unittest.TestCase):
         self.assertNotIn("docker ", text)
         self.assertIn("files_scanned", text)
         self.assertIn("dashboard.grafana.app/v1beta1", text)
+        self.assertIn("No violations found", text)
+        self.assertIn("file linted", text)
         self.assertNotIn("docker\n", text)
 
     def test_requires_reviewed_versioned_post_alloy_fixture(self) -> None:

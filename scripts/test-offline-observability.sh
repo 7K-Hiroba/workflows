@@ -44,7 +44,8 @@ PY
 gcx dev lint run "$WORK/gcx" > "$WORK/gcx-output.jsonl"
 cat "$WORK/gcx-output.jsonl"
 "$PYTHON" - "$WORK/gcx-output.jsonl" <<'PY'
-import json, sys
+import json, re, sys
+text = open(sys.argv[1]).read()
 summaries = []
 for line in open(sys.argv[1]):
     try:
@@ -53,7 +54,12 @@ for line in open(sys.argv[1]):
         continue
     if isinstance(item.get("summary"), dict):
         summaries.append(item["summary"])
-if not summaries or not any(item.get("files_scanned", 0) > 0 for item in summaries):
+if not summaries:
+    # Hosted gcx may emit: 1 file linted. No violations found.
+    match = re.search(r"(\d+) files? linted", text)
+    if not match or int(match.group(1)) < 1 or "No violations found" not in text:
+        raise SystemExit("gcx scanned zero dashboard resources or returned violations")
+elif not any(item.get("files_scanned", 0) > 0 for item in summaries):
     raise SystemExit("gcx scanned zero dashboard resources")
 for summary in summaries:
     if summary.get("files_failed", 0) != 0 or summary.get("num_violations", 0) != 0:

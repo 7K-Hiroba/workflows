@@ -58,7 +58,7 @@ jobs:
       - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
-      - run: .hiroba/workflows/scripts/test-packages.sh --root consumer --type kro-rgd --package "${{ matrix.package.name }}"
+      - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type kro-rgd --package "${{ matrix.package.name }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with: {name: "kro-diagnostics-${{ matrix.package.name }}", path: consumer/diagnostics, if-no-files-found: ignore}
@@ -75,7 +75,7 @@ jobs:
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
       - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
-      - run: .hiroba/workflows/scripts/test-packages.sh --root consumer --type policy-pack --package "${{ matrix.package.name }}"
+      - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type policy-pack --package "${{ matrix.package.name }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with: {name: "policy-diagnostics-${{ matrix.package.name }}", path: consumer/diagnostics, if-no-files-found: ignore}
@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
-      - run: .hiroba/workflows/scripts/test-packages.sh --root consumer --type platform-app --package "${{ matrix.package.name }}"
+      - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type platform-app --package "${{ matrix.package.name }}"
   result:
     if: always()
     needs: [plan, kro, policy, app]

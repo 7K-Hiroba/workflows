@@ -16,4 +16,9 @@ cosign verify-attestation "$ARTIFACT_REF" --type https://inari.dev/attestations/
 python3 "$LIBRARY/scripts/verify-test-evidence.py" \
   --predicate "$WORK/test-evidence.json" --source-sha "$SOURCE_SHA" --workflow-path "$WORKFLOW_PATH" \
   --artifact-digest "$ARTIFACT_DIGEST" --release-tag "$RELEASE_TAG"
+if [[ -n "${VERIFICATION_RECEIPT:-}" ]]; then
+  jq -n --arg ref "$ARTIFACT_REF" --arg digest "$ARTIFACT_DIGEST" --arg sourceSha "$SOURCE_SHA" \
+    --arg workflowPath "$WORKFLOW_PATH" --arg releaseTag "$RELEASE_TAG" \
+    '{status:"verified",artifactRef:$ref,digest:$digest,sourceSha:$sourceSha,workflowPath:$workflowPath,releaseTag:$releaseTag}' > "$VERIFICATION_RECEIPT"
+fi
 echo "verified signature, SLSA provenance, and release-linked test evidence for $ARTIFACT_REF"

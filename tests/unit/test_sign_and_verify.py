@@ -55,6 +55,7 @@ class SignAndVerifyTests(unittest.TestCase):
             "EVIDENCE_DIR": str(self.evidence),
             "REQUIRED_LANES": "validate",
             "PREDICATE_OUT": str(self.root / "built.json"),
+            "VERIFICATION_RECEIPT": str(self.root / "receipt.json"),
         }
 
     def tearDown(self) -> None:
@@ -84,6 +85,23 @@ class SignAndVerifyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.predicate_doc.write_text(json.dumps({"schema": "inari.test-evidence.v1", "sourceSha": "d" * 40, "producer": {"workflowPath": ".github/workflows/release-oci.yml"}, "artifact": {"digest": DIGEST}, "releaseTag": "app-v0.1.0", "lanes": [{"lane": "validate", "status": "passed"}]}))
         result = subprocess.run(["bash", str(ROOT / "scripts/verify-release.sh")], env=verify_env, text=True, capture_output=True, check=False)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_mark_verified_requires_matching_receipt(self) -> None:
+        self.assertEqual(subprocess.run(["bash", str(ROOT / "scripts/sign-and-attest.sh")], env=self.env, text=True, capture_output=True, check=False).returncode, 0)
+        self.predicate_doc.write_text((self.root / "built.json").read_text())
+        verify_env = {**self.env, "EXPECTED_PUBLISHER": "https://github.com/7K-Hiroba/workflows/.github/workflows/release-oci.yml@"}
+        self.assertEqual(subprocess.run(["bash", str(ROOT / "scripts/verify-release.sh")], env=verify_env, text=True, capture_output=True, check=False).returncode, 0)
+        artifact = self.root / "artifact.json"
+        artifact.write_text(json.dumps({"repository": REPO, "digest": DIGEST, "sourceSha": SOURCE, "signature": {"verified": False}, "provenance": {"verified": False}, "testEvidence": {"status": "pending"}}))
+        result = subprocess.run(["python3", str(ROOT / "scripts/mark-artifact-verified.py"), "--artifact", str(artifact), "--receipt", str(self.root / "receipt.json"), "--predicate", str(self.root / "built.json")], text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        marked = json.loads(artifact.read_text())
+        self.assertTrue(marked["signature"]["verified"])
+        self.assertTrue(marked["provenance"]["verified"])
+        self.assertEqual(marked["testEvidence"]["status"], "passed")
+        artifact.write_text(json.dumps({"repository": REPO, "digest": DIGEST, "sourceSha": "d" * 40, "signature": {"verified": False}, "provenance": {"verified": False}, "testEvidence": {"status": "pending"}}))
+        result = subprocess.run(["python3", str(ROOT / "scripts/mark-artifact-verified.py"), "--artifact", str(artifact), "--receipt", str(self.root / "receipt.json"), "--predicate", str(self.root / "built.json")], text=True, capture_output=True, check=False)
         self.assertNotEqual(result.returncode, 0)
 
 

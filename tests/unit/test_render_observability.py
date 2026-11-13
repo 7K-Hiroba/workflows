@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import tempfile
@@ -49,6 +50,12 @@ class RenderObservabilityTests(unittest.TestCase):
         self.assertEqual(resource_kinds, {"ConfigMap", "PrometheusRule"})
         for resource in pack["spec"]["resources"]:
             self.assertRegex(resource["id"], re.compile(r"^[a-z][a-zA-Z0-9]*$"))
+        dashboard = next(resource for resource in pack["spec"]["resources"] if resource["id"] == "dashboardWorkflowsScaffoldOverview")
+        payload = dashboard["template"]["data"]["workflows-scaffold-overview.json"]
+        self.assertIn('${"${DS_PROMETHEUS}"}', payload)
+        canonical = json.loads((self.root / "observability/dashboards/overview.json").read_text())
+        restored = payload.replace('${"${DS_PROMETHEUS}"}', "${DS_PROMETHEUS}")
+        self.assertEqual(restored, json.dumps(canonical, indent=2, sort_keys=True) + "\n")
         metadata = yaml.safe_load(metadata_output.read_text())
         self.assertEqual(metadata["app"], "workflows-scaffold")
 

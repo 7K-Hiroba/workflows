@@ -48,8 +48,8 @@ spec:
           grafana_dashboard: '1'
       data:
         workflows-scaffold-overview.json: "{\n  \"panels\": [\n    {\n      \"datasource\"\
-          : {\n        \"type\": \"prometheus\",\n        \"uid\": \"${DS_PROMETHEUS}\"\
-          \n      },\n      \"description\": \"Current value of the synthetic workflows-scaffold\
+          : {\n        \"type\": \"prometheus\",\n        \"uid\": \"${\"${DS_PROMETHEUS}\"\
+          }\"\n      },\n      \"description\": \"Current value of the synthetic workflows-scaffold\
           \ availability gauge.\",\n      \"fieldConfig\": {\n        \"defaults\"\
           : {\n          \"unit\": \"short\"\n        }\n      },\n      \"gridPos\"\
           : {\n        \"h\": 8,\n        \"w\": 12,\n        \"x\": 0,\n        \"\

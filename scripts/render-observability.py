@@ -64,6 +64,12 @@ def kro_resource_id(prefix: str, value: str) -> str:
     return prefix + "".join(word[0].upper() + word[1:] for word in words)
 
 
+def kro_json(value: dict[str, Any]) -> str:
+    """Preserve Grafana interpolation markers as CEL string literals in a pack."""
+    raw = json.dumps(value, indent=2, sort_keys=True) + "\n"
+    return re.sub(r"\$\{[^{}]+\}", lambda match: "${" + json.dumps(match.group(0)) + "}", raw)
+
+
 def pack_resource(resource_id: str, template: dict[str, Any], include: str | None = None) -> dict[str, Any]:
     resource: dict[str, Any] = {"id": resource_id, "template": template}
     if include:
@@ -104,7 +110,7 @@ def render_pack(app: str, manifest: dict[str, Any], dashboards: list[tuple[dict[
             "apiVersion": "v1",
             "kind": "ConfigMap",
             "metadata": {"name": uid, "namespace": "${schema.spec.namespace}", "labels": {"grafana_dashboard": "1"}},
-            "data": {f"{uid}.json": json.dumps(content, indent=2, sort_keys=True) + "\n"},
+            "data": {f"{uid}.json": kro_json(content)},
         }
         resources.append(pack_resource(kro_resource_id("dashboard", uid), template, '${schema.spec.render == "all" || schema.spec.render == "dashboards"}'))
     for entry, content in rules:

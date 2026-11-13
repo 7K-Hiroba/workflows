@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/app-config-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "app", "trustTier", "components"],
+  "properties": {
+    "schema": {"const": "inari.hiroba.app.v1"},
+    "app": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "trustTier": {"enum": ["official", "reviewed", "experimental"]},
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chartsRoot", "packagesRoot", "templatesRoot"],
+      "properties": {
+        "extension": {"$ref": "#/$defs/component"},
+        "ui": {"$ref": "#/$defs/component"},
+        "chartsRoot": {"type": "string", "pattern": "^[a-zA-Z0-9._/-]+$"},
+        "packagesRoot": {"type": "string", "pattern": "^[a-zA-Z0-9._/-]+$"},
+        "templatesRoot": {"type": "string", "pattern": "^[a-zA-Z0-9._/-]+$"}
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "chart", "package", "alloyConfig"],
+      "properties": {
+        "path": {"type": "string"},
+        "chart": {"type": "string"},
+        "package": {"type": "string"},
+        "alloyConfig": {"type": "string"}
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "targetComponent"],
+      "properties": {"path": {"type": "string"}, "targetComponent": {"type": "string"}}
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matrix"],
+      "properties": {"matrix": {"type": "string"}}
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "version"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^[a-zA-Z0-9._/-]+$"},
+        "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"}
+      }
+    }
+  }
+}

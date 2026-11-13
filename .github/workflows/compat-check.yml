@@ -45,26 +45,9 @@ jobs:
             consumer/${{ inputs.root }}/diagnostics
           if-no-files-found: ignore
           retention-days: 30
-  notify:
-    if: inputs.mode == 'nightly' && needs.test.result == 'failure'
-    needs: [test]
-    runs-on: ubuntu-latest
-    permissions: {contents: read, issues: write}
-    steps:
-      - name: Open or update one early-warning issue
-        env:
-          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-          RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        run: |
-          number=$(gh issue list --state open --json number,title --jq '.[] | select(.title == "[compat] edge incompatibility") | .number' | head -n 1)
-          if [[ -n "$number" ]]; then
-            gh issue comment "$number" --body "Edge compatibility failed again. Evidence: $RUN_URL"
-          else
-            gh issue create --title '[compat] edge incompatibility' --body "Backend or browser edge compatibility failed. Evidence: $RUN_URL"
-          fi
   result:
     if: always()
-    needs: [test, notify]
+    needs: [test]
     runs-on: ubuntu-latest
     outputs: {status: "${{ steps.result.outputs.status }}"}
     steps:

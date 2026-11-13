@@ -23,7 +23,7 @@ mkdir -p "$OUT"
 tar -C "$SOURCE" \
   --exclude='.git' --exclude='.venv' --exclude='node_modules' --exclude='dist' \
   --exclude='*.log' --exclude='*.pyc' --exclude='__pycache__' -cf - . | tar -C "$OUT" -xf -
-find "$OUT" -type f -name '*.template' -print0 | xargs -0 -r sed -i "s/__WORKFLOWS_V1_SHA__/$SHA/g"
+grep -RIlZ '__WORKFLOWS_V1_SHA__' "$OUT" | xargs -0 -r sed -i "s/__WORKFLOWS_V1_SHA__/$SHA/g"
 if grep -R -l '__WORKFLOWS_V1_SHA__' "$OUT" >/dev/null 2>&1; then
   echo "unresolved workflow SHA placeholder remains" >&2
   exit 1

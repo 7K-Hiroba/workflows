@@ -17,6 +17,7 @@ class RenderScaffoldTests(unittest.TestCase):
             workflow = source / ".github/workflows/ci.yml.template"
             workflow.parent.mkdir(parents=True)
             workflow.write_text("uses: 7K-Hiroba/workflows/.github/workflows/ci.yml@__WORKFLOWS_V1_SHA__ # v1.0.0\n")
+            (source / "README.md").write_text("Pin __WORKFLOWS_V1_SHA__ in callers.\n")
             output = Path(tmp) / "out"
             result = subprocess.run(["bash", str(SCRIPT), "--source", str(source), "--out", str(output), "--sha", SHA], text=True, capture_output=True, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

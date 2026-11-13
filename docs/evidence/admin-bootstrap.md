@@ -42,6 +42,7 @@ Verified effective repository settings:
 
 ## Pending gates
 
-- Release GitHub App registration requires interactive manifest flow. No new App or private key was created; the parent question is pending. Existing broad/unrelated Apps are not used.
+- Release GitHub App registration is explicitly deferred to the parent/user interactive handoff. The exact no-event manifest, least-privilege permissions (`contents: write` and `pull-requests: write` only), single-repository installation, credential handoff, and verification steps are specified in `docs/admin-setup.md`. No new App, credential, or private key was created. Existing broad/unrelated Apps are not used.
+- `library release PR` and every App-dependent release/finalization workflow remain blocked until registration, installation, bypass-actor evidence, and separate execution approval are complete.
 - No GHCR package, registry rehearsal, git tag, GitHub Release, Pages, stage/prod, or external merge was performed.
 - The release App bypass actor must be verified/recorded before release readiness. Required check names are now configured as listed above.

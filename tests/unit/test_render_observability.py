@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 import unittest
@@ -46,6 +47,8 @@ class RenderObservabilityTests(unittest.TestCase):
         self.assertIn("render", pack["spec"]["schema"]["spec"])
         resource_kinds = {resource["template"]["kind"] for resource in pack["spec"]["resources"]}
         self.assertEqual(resource_kinds, {"ConfigMap", "PrometheusRule"})
+        for resource in pack["spec"]["resources"]:
+            self.assertRegex(resource["id"], re.compile(r"^[a-z][a-zA-Z0-9]*$"))
         metadata = yaml.safe_load(metadata_output.read_text())
         self.assertEqual(metadata["app"], "workflows-scaffold")
 

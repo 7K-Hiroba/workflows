@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,12 @@ def chart_rules(app: str, rules: dict[str, Any]) -> str:
     return HEADER + "{{- if and .Values.observability.enabled .Values.observability.rules.enabled }}\n" + dump_document(resource) + "{{- end }}\n"
 
 
+def kro_resource_id(prefix: str, value: str) -> str:
+    """Return a lower-camel-case identifier accepted by KRO's CEL parser."""
+    words = [word for word in re.split(r"[^a-zA-Z0-9]+", value) if word]
+    return prefix + "".join(word[0].upper() + word[1:] for word in words)
+
+
 def pack_resource(resource_id: str, template: dict[str, Any], include: str | None = None) -> dict[str, Any]:
     resource: dict[str, Any] = {"id": resource_id, "template": template}
     if include:
@@ -99,7 +106,7 @@ def render_pack(app: str, manifest: dict[str, Any], dashboards: list[tuple[dict[
             "metadata": {"name": uid, "namespace": "${schema.spec.namespace}", "labels": {"grafana_dashboard": "1"}},
             "data": {f"{uid}.json": json.dumps(content, indent=2, sort_keys=True) + "\n"},
         }
-        resources.append(pack_resource("dashboard-" + uid, template, '${schema.spec.render == "all" || schema.spec.render == "dashboards"}'))
+        resources.append(pack_resource(kro_resource_id("dashboard", uid), template, '${schema.spec.render == "all" || schema.spec.render == "dashboards"}'))
     for entry, content in rules:
         evaluation = entry["evaluation"]
         template = {
@@ -109,7 +116,7 @@ def render_pack(app: str, manifest: dict[str, Any], dashboards: list[tuple[dict[
             "spec": {"groups": content.get("groups", [])},
         }
         include = f'${{schema.spec.render == "all" || schema.spec.render == "rules-{evaluation}"}}'
-        resources.append(pack_resource("rules-" + evaluation, template, include))
+        resources.append(pack_resource(kro_resource_id("rules", evaluation), template, include))
     rgd = {
         "apiVersion": "kro.run/v1alpha1",
         "kind": "ResourceGraphDefinition",

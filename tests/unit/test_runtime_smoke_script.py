@@ -45,6 +45,12 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertIn('"op":"remove"', text)
         self.assertIn("rollout restart deployment/workflow-controller --namespace argo", text)
 
+    def test_default_executor_uses_canonical_task_result_rbac(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn("manifests/quick-start/base/executor/emissary/executor-role.yaml", text)
+        self.assertIn("manifests/quick-start/base/executor-default-rolebinding.yaml", text)
+        self.assertEqual(text.count("kubectl create --namespace default -f"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

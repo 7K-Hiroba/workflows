@@ -93,6 +93,9 @@ fi
 kubectl wait --for=condition=Available deployment -l "app.kubernetes.io/name=$APP" --namespace default --timeout 120s
 kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
 kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start-minimal.yaml"
+# The workflow's default service account needs the canonical executor role in its own namespace.
+kubectl create --namespace default -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start/base/executor/emissary/executor-role.yaml"
+kubectl create --namespace default -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start/base/executor-default-rolebinding.yaml"
 # The pinned quick-start names a controller-test artifact plugin. This suite is artifactless.
 kubectl patch configmap workflow-controller-configmap --namespace argo --type=json \
   --patch='[{"op":"remove","path":"/data/artifactRepository"}]'

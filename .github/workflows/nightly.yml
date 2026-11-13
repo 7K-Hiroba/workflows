@@ -1,0 +1,31 @@
+name: nightly scaffold and edge compatibility
+on:
+  schedule: [{cron: "23 4 * * *"}]
+  workflow_dispatch: {}
+permissions: {contents: read}
+jobs:
+  compat:
+    uses: $/.github/workflows/compat-check.yml
+    with: {root: scaffold, mode: nightly}
+    permissions: {contents: read, actions: read, issues: write}
+  packages:
+    uses: $/.github/workflows/test-packages.yml
+    with: {root: scaffold, all: true}
+  observability:
+    uses: $/.github/workflows/test-observability.yml
+    with: {root: scaffold}
+  runtime:
+    uses: $/.github/workflows/test-runtime-smoke.yml
+    with: {root: scaffold, mode: local, profile: ci}
+  result:
+    if: always()
+    needs: [compat, packages, observability, runtime]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          COMPAT: "${{ needs.compat.outputs.status }}"
+          PACKAGES: "${{ needs.packages.outputs.status }}"
+          OBSERVABILITY: "${{ needs.observability.outputs.status }}"
+          RUNTIME: "${{ needs.runtime.outputs.status }}"
+        run: |
+          [[ "$COMPAT" == success && "$PACKAGES" == success && "$OBSERVABILITY" == success && "$RUNTIME" == success ]] || exit 1

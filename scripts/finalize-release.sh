@@ -24,7 +24,7 @@ source = os.environ["SOURCE_SHA"].lower()
 for component in plan["components"]:
     kind, name = component["kind"], component["name"]
     prefix = {"package": "catalog", "template": "template", "chart": "chart"}.get(kind)
-    filename = f"artifact-{prefix}-{name}.json" if prefix else f"artifact-{kind}.json"
+    filename = f"artifact-{prefix}-{name}.json" if prefix else (f"artifact-smoke-{name}.json" if kind == "smoke" else ("artifact-extension-ui.json" if kind == "ui" else f"artifact-{kind}.json"))
     path = evidence / filename
     if not path.is_file():
         raise SystemExit(f"missing verified artifact evidence for {kind}/{name}: {filename}")
@@ -41,7 +41,7 @@ git -C "$ROOT" config gpg.x509.program gitsign
 git -C "$ROOT" config gitsign.tokenProvider github-actions
 TAGS=()
 for row in "${COMPONENTS[@]}"; do
-  IFS=$'\t' read -r KIND NAME COMPONENT_PATH VERSION <<< "$row"
+  IFS=$'\t' read -r KIND NAME _ VERSION <<< "$row"
   case "$KIND" in
     extension) TAG="extension-v$VERSION" ;;
     ui) TAG="ui-v$VERSION" ;;

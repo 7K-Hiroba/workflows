@@ -39,9 +39,11 @@ jobs:
           jq -c '[.components[] | select(.kind == "package" and .packageType == "kro-rgd") | {name,path}]' plan.json > kro.json
           jq -c '[.components[] | select(.kind == "package" and .packageType == "policy-pack") | {name,path}]' plan.json > policy.json
           jq -c '[.components[] | select(.kind == "package" and .packageType == "platform-app") | {name,path}]' plan.json > app.json
-          echo "kro=$(cat kro.json)" >> "$GITHUB_OUTPUT"
-          echo "policy=$(cat policy.json)" >> "$GITHUB_OUTPUT"
-          echo "app=$(cat app.json)" >> "$GITHUB_OUTPUT"
+          {
+            echo "kro=$(cat kro.json)"
+            echo "policy=$(cat policy.json)"
+            echo "app=$(cat app.json)"
+          } >> "$GITHUB_OUTPUT"
   kro:
     if: needs.plan.outputs.kro != '[]'
     needs: [plan]

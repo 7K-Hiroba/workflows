@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/lane-result-v1.json",
+  "type": "object",
+  "required": ["schema", "lane", "status"],
+  "properties": {
+    "schema": {"const": "inari.lane-result.v1"},
+    "lane": {"type": "string", "minLength": 1},
+    "status": {"enum": ["passed", "failed", "skipped"]}
+  }
+}

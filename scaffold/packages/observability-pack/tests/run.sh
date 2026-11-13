@@ -5,7 +5,7 @@ kubectl apply -f "$PACKAGE_DIR/tests/deps/prometheusrule-crd.yaml"
 kubectl apply -f "$PACKAGE_DIR/rgd.yaml"
 kubectl wait --for=condition=Ready rgd/workflows-scaffold-observability --timeout=120s
 kubectl apply -f "$PACKAGE_DIR/tests/fixture.yaml"
-for attempt in $(seq 1 60); do
+for _ in $(seq 1 60); do
   if kubectl get configmap workflows-scaffold-overview -n default >/dev/null 2>&1; then
     break
   fi

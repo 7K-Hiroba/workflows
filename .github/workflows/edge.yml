@@ -1,0 +1,25 @@
+name: Hiroba signed edge artifacts
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      registry-prefix: {type: string, default: ghcr.io/7k-hiroba}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  release:
+    uses: $/.github/workflows/release.yml
+    with: {root: "${{ inputs.root }}", edge: true, registry-prefix: "${{ inputs.registry-prefix }}", environment: ""}
+    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
+  result:
+    if: always()
+    needs: [release]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {RESULT: "${{ needs.release.outputs.status }}"}
+        run: |
+          echo "status=$RESULT" >> "$GITHUB_OUTPUT"
+          [[ "$RESULT" == success ]] || exit 1

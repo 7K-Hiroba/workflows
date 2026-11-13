@@ -33,6 +33,15 @@ for tool in "$@"; do
       tar -xzf "$archive" -C "$INSTALL_DIR" prometheus-3.5.0.linux-amd64/promtool --strip-components=1
       chmod +x "$INSTALL_DIR/promtool"
       ;;
+    shellcheck)
+      url='https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz'
+      expected='8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198'
+      archive="$INSTALL_DIR/shellcheck.tar.xz"
+      curl -fsSL "$url" -o "$archive"
+      echo "$expected  $archive" | sha256sum -c -
+      tar -xJf "$archive" -C "$INSTALL_DIR" shellcheck-v0.11.0/shellcheck --strip-components=1
+      chmod +x "$INSTALL_DIR/shellcheck"
+      ;;
     ct)
       GOBIN="$INSTALL_DIR" go install github.com/helm/chart-testing/v3/ct@v3.14.0
       ;;

@@ -96,7 +96,7 @@ def discover(root: Path) -> dict[str, Any]:
         })
 
     components.sort(key=lambda item: (item["name"], item["kind"], item["path"]))
-    return {"schema": "inari.release-plan.v1", "app": app, "components": components}
+    return {"schema": "inari.release-plan.v1", "app": app, "trustTier": config.get("trustTier", "experimental"), "components": components}
 
 
 def filter_changed(plan: dict[str, Any], changed_files: list[str]) -> dict[str, Any]:

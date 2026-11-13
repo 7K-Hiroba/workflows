@@ -1,0 +1,339 @@
+name: Hiroba coordinated trusted release
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      repair_tag: {type: string, default: ""}
+      app-id: {type: string, default: ""}
+      edge: {type: boolean, default: false}
+      rehearsal: {type: boolean, default: false}
+      registry-prefix: {type: string, default: ghcr.io/7k-hiroba}
+      environment: {type: string, default: release}
+    secrets:
+      release-private-key: {required: false}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      components: "${{ steps.plan.outputs.components }}"
+      publish-components: "${{ steps.plan.outputs.publish-components }}"
+      package-components: "${{ steps.plan.outputs.package-components }}"
+      template-components: "${{ steps.plan.outputs.template-components }}"
+      chart-components: "${{ steps.plan.outputs.chart-components }}"
+      count: "${{ steps.plan.outputs.count }}"
+      should-publish: "${{ steps.plan.outputs.should-publish }}"
+      has-extension: "${{ steps.plan.outputs.has-extension }}"
+      has-ui: "${{ steps.plan.outputs.has-ui }}"
+      has-chart: "${{ steps.plan.outputs.has-chart }}"
+      has-packages: "${{ steps.plan.outputs.has-packages }}"
+      has-templates: "${{ steps.plan.outputs.has-templates }}"
+      has-smoke: "${{ steps.plan.outputs.has-smoke }}"
+      has-observability: "${{ steps.plan.outputs.has-observability }}"
+      required-lanes: "${{ steps.plan.outputs.required-lanes }}"
+      source-sha: "${{ steps.plan.outputs.source-sha }}"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: plan
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}", REPAIR_TAG: "${{ inputs.repair_tag }}"}
+        run: |
+          set -euo pipefail
+          source_sha="${GITHUB_SHA}"
+          if [[ -n "$REPAIR_TAG" ]]; then
+            source_sha=$(git -C consumer rev-parse "refs/tags/$REPAIR_TAG^{commit}")
+          fi
+          git -C consumer fetch --tags origin
+          args=(--root "consumer/${{ inputs.root }}" --source-sha "$source_sha")
+          if [[ "${{ inputs.edge }}" == true ]]; then args+=(--edge); fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then args+=(--rehearsal); fi
+          if [[ -n "$REPAIR_TAG" ]]; then args+=(--repair-tag "$REPAIR_TAG"); else
+            git -C consumer diff --name-only HEAD^ HEAD > changed.txt 2>/dev/null || true
+            args+=(--changed-files changed.txt)
+          fi
+          python3 .hiroba/workflows/scripts/prepare-release-plan.py "${args[@]}" > plan.json
+          if [[ "${{ inputs.edge }}" == true ]]; then
+            cp plan.json edge-plan.json
+            while read -r path; do
+              [[ -n "$path" ]] || continue
+              kind=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .kind' edge-plan.json)
+              [[ "$kind" == smoke ]] && continue
+              version=$(cd "consumer/${{ inputs.root }}" && "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/resolve-edge-version.sh" "$path")
+              jq --arg path "$path" --arg version "$version" '.components |= map(if .path == $path then .version = $version else . end) | .publishComponents |= map(if .path == $path then .version = $version else . end)' edge-plan.json > edge-plan.tmp
+              mv edge-plan.tmp edge-plan.json
+            done < <(jq -r '.publishComponents[].path' plan.json)
+            mv edge-plan.json plan.json
+          fi
+          jq -e '.publishComponents | length > 0 or (.shouldPublish | not)' plan.json >/dev/null
+          {
+            echo "components=$(jq -c .components plan.json)"
+            echo "publish-components=$(jq -c .publishComponents plan.json)"
+            echo "package-components=$(jq -c '[.publishComponents[] | select(.kind == "package")]' plan.json)"
+            echo "template-components=$(jq -c '[.publishComponents[] | select(.kind == "template")]' plan.json)"
+            echo "chart-components=$(jq -c '[.publishComponents[] | select(.kind == "chart")]' plan.json)"
+            echo "count=$(jq -r .count plan.json)"
+            echo "should-publish=$(jq -r .shouldPublish plan.json)"
+            echo "has-extension=$(jq -r .hasExtension plan.json)"
+            echo "has-ui=$(jq -r .hasUI plan.json)"
+            echo "has-chart=$(jq -r .hasChart plan.json)"
+            echo "has-packages=$(jq -r .hasPackages plan.json)"
+            echo "has-templates=$(jq -r .hasTemplates plan.json)"
+            echo "has-smoke=$(jq -r .hasSmoke plan.json)"
+            echo "has-observability=$(jq -r .hasObservability plan.json)"
+            echo "required-lanes=$(jq -r '.requiredLanes | join(" ")' plan.json)"
+            echo "source-sha=$source_sha"
+          } >> "$GITHUB_OUTPUT"
+  validate:
+    if: needs.plan.outputs.should-publish == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/validate-packages.yml
+    with: {root: "${{ inputs.root }}"}
+  packages:
+    if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-packages == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/test-packages.yml
+    with: {root: "${{ inputs.root }}", all: true}
+  go:
+    if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-extension == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/ci-go-extension.yml
+    with: {root: "${{ inputs.root }}"}
+  ui:
+    if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-ui == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/ci-ui-extension.yml
+    with: {root: "${{ inputs.root }}"}
+  chart:
+    if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-chart == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/ci-chart.yml
+    with: {root: "${{ inputs.root }}"}
+  observability:
+    if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-observability == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/test-observability.yml
+    with: {root: "${{ inputs.root }}"}
+  compat:
+    if: needs.plan.outputs.should-publish == 'true' && (needs.plan.outputs.has-extension == 'true' || needs.plan.outputs.has-ui == 'true')
+    needs: [plan]
+    uses: $/.github/workflows/compat-check.yml
+    with: {root: "${{ inputs.root }}", mode: release}
+  runtime:
+    if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-smoke == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/test-runtime-smoke.yml
+    with: {root: "${{ inputs.root }}", mode: local, profile: ci}
+  evidence:
+    if: always() && needs.plan.outputs.should-publish == 'true'
+    needs: [plan, validate, packages, go, ui, chart, observability, compat, runtime]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - name: Record required lane results
+        env:
+          VALIDATE: "${{ needs.validate.outputs.status }}"
+          PACKAGES: "${{ needs.packages.outputs.status }}"
+          GO: "${{ needs.go.outputs.status }}"
+          UI: "${{ needs.ui.outputs.status }}"
+          CHART: "${{ needs.chart.outputs.status }}"
+          OBSERVABILITY: "${{ needs.observability.outputs.status }}"
+          COMPAT: "${{ needs.compat.outputs.status }}"
+          RUNTIME: "${{ needs.runtime.outputs.status }}"
+          HAS_PACKAGES: "${{ needs.plan.outputs.has-packages }}"
+          HAS_EXTENSION: "${{ needs.plan.outputs.has-extension }}"
+          HAS_UI: "${{ needs.plan.outputs.has-ui }}"
+          HAS_CHART: "${{ needs.plan.outputs.has-chart }}"
+          HAS_OBSERVABILITY: "${{ needs.plan.outputs.has-observability }}"
+          HAS_SMOKE: "${{ needs.plan.outputs.has-smoke }}"
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          write_lane() { jq -n --arg lane "$1" --arg status "$2" '{schema:"inari.lane-result.v1",lane:$lane,status:$status}' > "evidence/$1.json"; }
+          write_lane validate "${VALIDATE:-failed}"
+          [[ "$HAS_PACKAGES" == true ]] && write_lane package "${PACKAGES:-failed}"
+          [[ "$HAS_EXTENSION" == true ]] && write_lane go "${GO:-failed}"
+          [[ "$HAS_UI" == true ]] && write_lane ui "${UI:-failed}"
+          [[ "$HAS_CHART" == true ]] && write_lane chart "${CHART:-failed}"
+          [[ "$HAS_OBSERVABILITY" == true ]] && write_lane observability "${OBSERVABILITY:-failed}"
+          if [[ -n "$COMPAT" ]]; then write_lane compat "$COMPAT"; fi
+          [[ "$HAS_SMOKE" == true ]] && write_lane runtime-smoke "${RUNTIME:-failed}"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: needs.compat.outputs.status != ''
+        with: {name: compatibility-evidence, path: evidence}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with: {name: release-test-evidence, path: evidence, retention-days: 30}
+      - id: result
+        run: |
+          status=success
+          for file in evidence/*.json; do
+            if jq -e 'select(.schema == "inari.lane-result.v1" and .status != "passed")' "$file" >/dev/null; then status=failure; fi
+          done
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1
+  publish-packages:
+    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-packages == 'true'
+    needs: [plan, evidence]
+    strategy: {fail-fast: false, matrix: {component: "${{ fromJSON(needs.plan.outputs.package-components) }}"}}
+    uses: $/.github/workflows/release-oci.yml
+    with:
+      root: ${{ inputs.root }}
+      kind: package
+      name: ${{ matrix.component.name }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      registry-prefix: ${{ inputs.registry-prefix }}
+      environment: ${{ inputs.environment }}
+      required-lanes: ${{ needs.plan.outputs.required-lanes }}
+      edge: ${{ inputs.edge }}
+      rehearsal: ${{ inputs.rehearsal }}
+  publish-templates:
+    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-templates == 'true'
+    needs: [plan, evidence]
+    strategy: {fail-fast: false, matrix: {component: "${{ fromJSON(needs.plan.outputs.template-components) }}"}}
+    uses: $/.github/workflows/release-oci.yml
+    with:
+      root: ${{ inputs.root }}
+      kind: template
+      name: ${{ matrix.component.name }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      registry-prefix: ${{ inputs.registry-prefix }}
+      environment: ${{ inputs.environment }}
+      required-lanes: ${{ needs.plan.outputs.required-lanes }}
+      edge: ${{ inputs.edge }}
+      rehearsal: ${{ inputs.rehearsal }}
+  publish-charts:
+    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-chart == 'true'
+    needs: [plan, evidence]
+    strategy: {fail-fast: false, matrix: {component: "${{ fromJSON(needs.plan.outputs.chart-components) }}"}}
+    uses: $/.github/workflows/release-chart.yml
+    with:
+      root: ${{ inputs.root }}
+      chart: ${{ matrix.component.name }}
+      version: ${{ matrix.component.version }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      repair: ${{ inputs.repair_tag != '' }}
+      rehearsal: ${{ inputs.rehearsal }}
+      registry-prefix: ${{ inputs.registry-prefix }}
+      environment: ${{ inputs.environment }}
+      required-lanes: ${{ needs.plan.outputs.required-lanes }}
+  publish-extension:
+    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-extension == 'true' && needs.plan.outputs.has-ui == 'true'
+    needs: [plan, evidence]
+    uses: $/.github/workflows/release-extension.yml
+    with:
+      root: ${{ inputs.root }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      registry-prefix: ${{ inputs.registry-prefix }}
+      environment: ${{ inputs.environment }}
+      required-lanes: ${{ needs.plan.outputs.required-lanes }}
+      rehearsal: ${{ inputs.rehearsal }}
+  publish-smoke:
+    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-smoke == 'true'
+    needs: [plan, evidence]
+    uses: $/.github/workflows/release-smoke-suite.yml
+    with:
+      root: ${{ inputs.root }}
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      registry-prefix: ${{ inputs.registry-prefix }}
+      environment: ${{ inputs.environment }}
+      required-lanes: ${{ needs.plan.outputs.required-lanes }}
+      rehearsal: ${{ inputs.rehearsal }}
+  indexes:
+    if: needs.evidence.outputs.status == 'success' && inputs.repair_tag == '' && needs.publish-packages.result != 'failure' && needs.publish-templates.result != 'failure' && needs.publish-charts.result != 'failure' && needs.publish-extension.result != 'failure' && needs.publish-smoke.result != 'failure'
+    needs: [plan, evidence, publish-packages, publish-templates, publish-charts, publish-extension, publish-smoke]
+    uses: $/.github/workflows/release-oci.yml
+    with:
+      root: ${{ inputs.root }}
+      kind: indexes
+      source-sha: ${{ needs.plan.outputs.source-sha }}
+      registry-prefix: ${{ inputs.registry-prefix }}
+      environment: ${{ inputs.environment }}
+      required-lanes: ${{ needs.plan.outputs.required-lanes }}
+      edge: ${{ inputs.edge }}
+      rehearsal: ${{ inputs.rehearsal }}
+  finalize:
+    if: inputs.edge == false && inputs.rehearsal == false && inputs.repair_tag == '' && needs.indexes.outputs.status == 'success' && needs.plan.outputs.count != '0'
+    needs: [plan, indexes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions: {contents: write, id-token: write, actions: read}
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with: {app-id: "${{ inputs.app-id }}", private-key: "${{ secrets.release-private-key }}", owner: "${{ github.repository_owner }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ needs.plan.outputs.source-sha }}", fetch-depth: 0, token: "${{ steps.app.outputs.token }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - run: go install github.com/sigstore/gitsign@v0.18.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with: {pattern: artifact-*, path: evidence, merge-multiple: true}
+      - name: Finalize protected signed tags and Releases
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          COMPONENTS: "${{ needs.plan.outputs.components }}"
+          EXPECTED_TAG_SIGNER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release\\.yml@${{ job.workflow_sha }}$"
+        run: |
+          jq -n --argjson components "$COMPONENTS" '{components:$components}' > plan.json
+          .hiroba/workflows/scripts/finalize-release.sh --root consumer --plan plan.json --source-sha "${{ needs.plan.outputs.source-sha }}" --evidence evidence
+  edge-release:
+    if: inputs.edge && inputs.rehearsal == false && needs.indexes.outputs.status == 'success'
+    needs: [plan, indexes]
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ needs.plan.outputs.source-sha }}"}
+      - name: Move only the edge prerelease/tag
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}", SHA: "${{ needs.plan.outputs.source-sha }}"}
+        run: |
+          git -C consumer config user.name "github-actions[bot]"
+          git -C consumer config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C consumer tag -f edge "$SHA"
+          git -C consumer push -f origin refs/tags/edge
+          if gh release view edge >/dev/null 2>&1; then
+            gh release edit edge --prerelease --title "edge (${SHA:0:7})" --notes "Signed edge artifacts from $SHA. No UI assets; deploy only exact verified digests."
+          else
+            gh release create edge --prerelease --target "$SHA" --title "edge (${SHA:0:7})" --notes "Signed edge artifacts from $SHA. No UI assets; deploy only exact verified digests."
+          fi
+  result:
+    if: always()
+    needs: [plan, evidence, publish-packages, publish-templates, publish-charts, publish-extension, publish-smoke, indexes, finalize, edge-release]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env:
+          SHOULD_PUBLISH: "${{ needs.plan.outputs.should-publish }}"
+          EVIDENCE: "${{ needs.evidence.outputs.status }}"
+          PACKAGES: "${{ needs.publish-packages.result }}"
+          TEMPLATES: "${{ needs.publish-templates.result }}"
+          CHARTS: "${{ needs.publish-charts.result }}"
+          EXTENSION: "${{ needs.publish-extension.result }}"
+          SMOKE: "${{ needs.publish-smoke.result }}"
+          INDEXES: "${{ needs.indexes.outputs.status }}"
+          FINALIZE: "${{ needs.finalize.result }}"
+          EDGE: "${{ needs.edge-release.result }}"
+          IS_EDGE: "${{ inputs.edge }}"
+          REPAIR: "${{ inputs.repair_tag }}"
+        run: |
+          status=success
+          if [[ "$SHOULD_PUBLISH" == false ]]; then echo "status=$status" >> "$GITHUB_OUTPUT"; exit 0; fi
+          [[ "$EVIDENCE" == success ]] || status=failure
+          for result in "$PACKAGES" "$TEMPLATES" "$CHARTS" "$EXTENSION" "$SMOKE"; do [[ "$result" != failure && "$result" != cancelled ]] || status=failure; done
+          if [[ -z "$REPAIR" ]]; then [[ "$INDEXES" == success ]] || status=failure; fi
+          if [[ "$IS_EDGE" == true && "${{ inputs.rehearsal }}" == false ]]; then [[ "$EDGE" == success ]] || status=failure; fi
+          if [[ "$IS_EDGE" == false && -z "$REPAIR" && "${{ inputs.rehearsal }}" == false && "${{ needs.plan.outputs.count }}" != 0 ]]; then [[ "$FINALIZE" == success ]] || status=failure; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("--registry-prefix", default="ghcr.io/7k-hiroba")
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--edge", action="store_true")
+    parser.add_argument("--rehearsal", action="store_true")
     args = parser.parse_args()
     if not SHA_RE.fullmatch(args.source_sha):
         parser.error("source SHA must be full 40 characters")
@@ -42,7 +43,9 @@ def main() -> int:
         component = matches[0]
         directory = "catalog" if args.kind == "package" else "templates"
         media = PACKAGE_MEDIA if args.kind == "package" else TEMPLATE_MEDIA
-        channel = "edge" if args.edge else component["channel"]
+        channel = "" if args.rehearsal else ("edge" if args.edge else component["channel"])
+        tag = args.source_sha.lower() if args.rehearsal else component["version"]
+        release_tag = f"ci-{args.source_sha[:12]}" if args.rehearsal else f"{component['name']}-v{component['version']}"
         descriptors.append({
             "key": f"{directory}-{component['name']}",
             "name": component["name"],
@@ -50,10 +53,10 @@ def main() -> int:
             "source": component["path"],
             "file": "",
             "repository": f"{args.registry_prefix}/{app}/{directory}/{component['name']}",
-            "tag": component["version"],
+            "tag": tag,
             "channel": channel,
             "mediaType": media,
-            "releaseTag": f"{component['name']}-v{component['version']}",
+            "releaseTag": release_tag,
             "sourceSha": args.source_sha.lower(),
             "app": app,
             "trustTier": plan.get("trustTier", "experimental"),
@@ -69,7 +72,7 @@ def main() -> int:
         if build.returncode:
             print(build.stdout + build.stderr, file=sys.stderr)
             return build.returncode
-        channel = "edge" if args.edge else "latest"
+        channel = "" if args.rehearsal else ("edge" if args.edge else "latest")
         for key, directory, filename, media in (
             ("catalog", "catalog", "catalog.yaml", "application/vnd.inari.catalog.index.v1+yaml"),
             ("template", "templates", "templates.yaml", "application/vnd.inari.template.index.v1+yaml"),
@@ -84,7 +87,7 @@ def main() -> int:
                 "tag": args.source_sha.lower(),
                 "channel": channel,
                 "mediaType": media,
-                "releaseTag": f"release-set-{args.source_sha[:12]}",
+                "releaseTag": f"ci-{args.source_sha[:12]}" if args.rehearsal else f"release-set-{args.source_sha[:12]}",
                 "sourceSha": args.source_sha.lower(),
             "app": app,
             "trustTier": plan.get("trustTier", "experimental"),

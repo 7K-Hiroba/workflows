@@ -32,6 +32,7 @@ finish() {
 trap finish EXIT
 sed -e 's/__TARGET__/fixture:80/g' -e 's#__REMOTE_WRITE_URL__#http://prometheus:9090/api/v1/write#g' \
   "$ALLOY_DIR/config.river" > "$WORK/config.river"
+printf 'global: {}\n' > "$WORK/prometheus.yml"
 docker network create "$NETWORK" >/dev/null
 NGINX='nginx:1.29.3-alpine@sha256:667473807103639a0aca5b49534a216d2b64f0fb868aaa801f023da0cdd781c7'
 PROM_IMAGE='prom/prometheus:v3.5.0@sha256:8672a850efe2f9874702406c8318704edb363587f8c2ca88586b4c8fdb5cea24'
@@ -39,6 +40,7 @@ ALLOY_IMAGE='grafana/alloy:v1.13.0@sha256:d0621fba0c76cea5be5eb7e327580feb229763
 docker run -d --name "$FIXTURE" --network "$NETWORK" --network-alias fixture \
   -v "$ALLOY_DIR/input.prom:/usr/share/nginx/html/metrics:ro" "$NGINX" >/dev/null
 docker run -d --name "$PROMETHEUS" --network "$NETWORK" --network-alias prometheus \
+  -v "$WORK:/prometheus:ro" \
   -p 127.0.0.1::9090 "$PROM_IMAGE" \
   --web.enable-remote-write-receiver --storage.tsdb.path=/tmp/prometheus >/dev/null
 docker run -d --name "$ALLOY" --network "$NETWORK" \

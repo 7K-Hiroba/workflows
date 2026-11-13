@@ -1,0 +1,7 @@
+* @7K-Hiroba/workflows-maintainers
+/.github/workflows/ @7K-Hiroba/workflows-maintainers @7K-Hiroba/platform-security
+/.github/CODEOWNERS @7K-Hiroba/workflows-maintainers @7K-Hiroba/platform-security
+/scripts/ @7K-Hiroba/workflows-maintainers @7K-Hiroba/platform-security
+/schemas/ @7K-Hiroba/workflows-maintainers @7K-Hiroba/platform-security
+/scaffold/tests/smoke/ @7K-Hiroba/workflows-maintainers @7K-Hiroba/platform-security
+/docs/evidence/ @7K-Hiroba/workflows-maintainers @7K-Hiroba/platform-security

@@ -1,0 +1,152 @@
+name: Hiroba trusted OCI release
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      kind: {type: string, required: true}
+      name: {type: string, default: ""}
+      source-sha: {type: string, required: true}
+      registry-prefix: {type: string, default: ghcr.io/7k-hiroba}
+      environment: {type: string, default: release}
+      evidence-name: {type: string, default: release-test-evidence}
+      required-lanes: {type: string, default: validate}
+      edge: {type: boolean, default: false}
+      rehearsal: {type: boolean, default: false}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs: {artifacts: "${{ steps.prepare.outputs.artifacts }}"}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: inputs.kind == 'indexes'
+        with: {pattern: artifact-*, path: evidence/artifacts, merge-multiple: true}
+      - id: prepare
+        env: {KIND: "${{ inputs.kind }}"}
+        run: |
+          set -euo pipefail
+          args=(--root "consumer/${{ inputs.root }}" --kind "${{ inputs.kind }}" --name "${{ inputs.name }}" \
+            --source-sha "${{ inputs.source-sha }}" --registry-prefix "${{ inputs.registry-prefix }}")
+          if [[ "${{ inputs.edge }}" == true ]]; then args+=(--edge); fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then args+=(--rehearsal); fi
+          if [[ "$KIND" == indexes ]]; then
+            python3 .hiroba/workflows/scripts/assemble-release-evidence.py --artifacts evidence/artifacts \
+              --source-sha "${{ inputs.source-sha }}" --output evidence/release-evidence.json
+            args+=(--evidence evidence/release-evidence.json)
+          fi
+          python3 .hiroba/workflows/scripts/prepare-oci-artifacts.py "${args[@]}" > artifacts.json
+          jq -e 'length > 0' artifacts.json >/dev/null
+          echo "artifacts=$(cat artifacts.json)" >> "$GITHUB_OUTPUT"
+  publish:
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.artifacts != '[]'
+    needs: [prepare]
+    strategy: {fail-fast: false, matrix: {artifact: "${{ fromJSON(needs.prepare.outputs.artifacts) }}"}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with: {name: "${{ inputs.evidence-name }}", path: evidence}
+      - name: Log in to GHCR
+        env: {TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        run: echo "$TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Publish immutable OCI artifact
+        id: publish
+        env: {KEY: "${{ matrix.artifact.key }}"}
+        run: |
+          set -euo pipefail
+          output="evidence/artifact-$KEY.json"
+          args=(--source "consumer/${{ inputs.root }}/${{ matrix.artifact.source }}" \
+            --repository "${{ matrix.artifact.repository }}" --tag "${{ matrix.artifact.tag }}" \
+            --artifact-type "${{ matrix.artifact.mediaType }}" --channel "${{ matrix.artifact.channel }}" \
+            --source-sha "${{ matrix.artifact.sourceSha }}" --output "$output")
+          if [[ -n "${{ matrix.artifact.file }}" ]]; then args+=(--file "${{ matrix.artifact.file }}"); fi
+          .hiroba/workflows/scripts/package-and-publish.sh "${args[@]}"
+          echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
+      - name: Sign and attach release-linked test evidence
+        env:
+          ARTIFACT_REPOSITORY: "${{ matrix.artifact.repository }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REF: "${{ matrix.artifact.repository }}@${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: "${{ matrix.artifact.mediaType }}"
+          APP: "${{ matrix.artifact.app }}"
+          COMPONENT: "${{ matrix.artifact.key }}"
+          TRUST_TIER: "${{ matrix.artifact.trustTier }}"
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ matrix.artifact.sourceSha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RUN_ID: "${{ github.run_id }}"
+          RUN_ATTEMPT: "${{ github.run_attempt }}"
+          RELEASE_TAG: "${{ matrix.artifact.releaseTag }}"
+          EVIDENCE_DIR: evidence
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          PREDICATE_OUT: "evidence/test-${{ matrix.artifact.key }}.json"
+        run: .hiroba/workflows/scripts/sign-and-attest.sh
+      - name: Attach SLSA v1 provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: "${{ matrix.artifact.repository }}"
+          subject-digest: "${{ steps.publish.outputs.digest }}"
+          push-to-registry: true
+      - name: Verify signature provenance and test evidence
+        env:
+          ARTIFACT_REF: "${{ matrix.artifact.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ matrix.artifact.sourceSha }}"
+          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-oci\\.yml@${{ job.workflow_sha }}$"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RELEASE_TAG: "${{ matrix.artifact.releaseTag }}"
+          VERIFICATION_RECEIPT: "evidence/receipt-${{ matrix.artifact.key }}.json"
+        run: .hiroba/workflows/scripts/verify-release.sh
+      - name: Record receipt-backed verification
+        run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact "evidence/artifact-${{ matrix.artifact.key }}.json" --receipt "evidence/receipt-${{ matrix.artifact.key }}.json" --predicate "evidence/test-${{ matrix.artifact.key }}.json"
+      - name: Move channel only after verification
+        run: |
+          channel="${{ matrix.artifact.channel }}"
+          if [[ -n "$channel" ]]; then
+            oras tag "${{ matrix.artifact.repository }}@${{ steps.publish.outputs.digest }}" "$channel"
+            crane digest "${{ matrix.artifact.repository }}:$channel" | grep -Fx "${{ steps.publish.outputs.digest }}"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: artifact-${{ matrix.artifact.key }}
+          path: evidence/artifact-${{ matrix.artifact.key }}.json
+          retention-days: 30
+  result:
+    if: always()
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {PREPARE: "${{ needs.prepare.result }}", PUBLISH: "${{ needs.publish.result }}"}
+        run: |
+          status=success
+          if [[ "$PREPARE" != success || "$PUBLISH" == failure || "$PUBLISH" == cancelled ]]; then status=failure; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

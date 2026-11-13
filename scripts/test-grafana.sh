@@ -90,7 +90,7 @@ PY
 while read -r uid; do
   [[ -n "$uid" ]] || continue
   passed=false
-  for attempt in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     if python3 "$LIBRARY/scripts/check-grafana.py" --url "$GRAFANA_URL" --uid "$uid" --app "$APP"; then
       passed=true
       break

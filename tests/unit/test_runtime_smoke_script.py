@@ -29,6 +29,11 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         for expected in ("argo lint", "argo get", "kind delete cluster", "trap ", "kubectl get events"):
             self.assertIn(expected, text)
 
+    def test_argo_manifest_uses_server_side_create_without_apply_annotation(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
+        self.assertNotIn('kubectl apply -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
+
 
 if __name__ == "__main__":
     unittest.main()

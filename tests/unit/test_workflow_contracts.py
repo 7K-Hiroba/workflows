@@ -78,6 +78,15 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("helm repo add", text)
                 self.assertNotIn("index.yaml", text)
 
+    def test_chart_install_and_package_diagnostics_use_valid_paths_and_flags(self) -> None:
+        chart = (WORKFLOWS / "ci-chart.yml").read_text()
+        self.assertIn('--helm-extra-set-args "--set=image.repository=workflows-scaffold', chart)
+        self.assertNotIn('--helm-extra-set-args "image.repository=', chart)
+
+        packages = (WORKFLOWS / "test-packages.yml").read_text()
+        self.assertIn('path: "consumer/${{ inputs.root }}/diagnostics"', packages)
+        self.assertNotIn("path: consumer/diagnostics", packages)
+
     def test_repository_workflows_pass_pin_policy(self) -> None:
         result = subprocess.run(["python3", str(ROOT / "scripts/check-workflow-pins.py"), "--root", str(ROOT)], text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

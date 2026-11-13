@@ -20,6 +20,8 @@ finish() {
   if [[ $rc -ne 0 ]]; then
     {
       kubectl get all -A -o wide || true
+      kubectl get rgd -A -o yaml || true
+      kubectl get crd -o name || true
       kubectl get events -A --sort-by=.lastTimestamp || true
       kubectl logs -n kro-system deploy/kro --tail=200 || true
     } > "$ROOT/diagnostics/$PACKAGE.txt" 2>&1

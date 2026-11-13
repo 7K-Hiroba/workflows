@@ -92,7 +92,7 @@ else
 fi
 kubectl wait --for=condition=Available deployment -l "app.kubernetes.io/name=$APP" --namespace default --timeout 120s
 kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start-minimal.yaml"
+kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start-minimal.yaml"
 kubectl wait --for=condition=Available deployment -n argo --all --timeout 180s
 WORKFLOW_FILE=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["workflowTemplate"])' "$SUITE_DIR/suite.yaml")
 kubectl apply -f "$SUITE_DIR/$WORKFLOW_FILE"

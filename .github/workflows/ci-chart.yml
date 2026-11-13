@@ -57,7 +57,7 @@ jobs:
           ct install --config "consumer/${{ inputs.root }}/ci/ct.yaml" \
             --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}" \
             --helm-extra-args "--timeout 5m" \
-            --helm-extra-set-args "image.repository=workflows-scaffold,image.tag=ci,image.pullPolicy=Never,observability.enabled=true,observability.rules.enabled=true"
+            --helm-extra-set-args "--set=image.repository=workflows-scaffold --set=image.tag=ci --set=image.pullPolicy=Never --set=observability.enabled=true --set=observability.rules.enabled=true"
       - name: Collect chart diagnostics
         if: failure()
         run: |

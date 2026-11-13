@@ -5,6 +5,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 SCAFFOLD = ROOT / "scaffold"
 PYTHON = ROOT / ".venv" / "bin" / "python"
@@ -43,6 +45,14 @@ class ScaffoldContractTests(unittest.TestCase):
         dockerfile = (SCAFFOLD / "extension/Dockerfile").read_text()
         self.assertIn("USER 65532:65532", dockerfile)
         self.assertNotIn("USER nonroot:nonroot", dockerfile)
+
+    def test_kro_fixture_uses_the_namespace_asserted_by_its_test(self) -> None:
+        package = SCAFFOLD / "packages/observability-pack"
+        fixture = yaml.safe_load((package / "tests/fixture.yaml").read_text())
+        namespace = fixture["spec"]["namespace"]
+        assertions = (package / "tests/run.sh").read_text()
+        self.assertEqual(namespace, "default")
+        self.assertIn(f"-n {namespace}", assertions)
 
     def test_ui_uses_only_public_sdk_and_canonical_build(self) -> None:
         package = json.loads((SCAFFOLD / "ui/package.json").read_text())

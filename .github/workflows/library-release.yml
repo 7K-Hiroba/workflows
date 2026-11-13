@@ -37,7 +37,7 @@ jobs:
       - name: Install pinned gitsign
         run: go install github.com/sigstore/gitsign@v0.18.0
       - name: Create and verify signed version tag
-        env: {VERSION: "${{ inputs.version }}"}
+        env: {VERSION: "${{ inputs.version }}", GH_TOKEN: "${{ steps.app.outputs.token }}"}
         run: |
           set -euo pipefail
           tag="v$VERSION"

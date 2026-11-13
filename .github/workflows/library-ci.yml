@@ -37,6 +37,7 @@ jobs:
           python3 .hiroba/workflows/scripts/sync-release-please-config.py --root "${{ runner.temp }}/rendered" --check
           python3 .hiroba/workflows/scripts/render-observability.py --root "${{ runner.temp }}/rendered" --check
   result:
+    name: library-ci-result
     if: always()
     needs: [test, render]
     runs-on: ubuntu-latest

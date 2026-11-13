@@ -27,6 +27,7 @@ jobs:
     uses: $/.github/workflows/test-runtime-smoke.yml
     with: {root: scaffold, mode: local, profile: ci}
   result:
+    name: scaffold-ci-result
     if: always()
     needs: [validate, packages, go, ui, chart, observability, compat, runtime]
     runs-on: ubuntu-latest

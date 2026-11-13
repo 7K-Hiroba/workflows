@@ -54,6 +54,14 @@ class ScaffoldContractTests(unittest.TestCase):
         self.assertEqual(namespace, "default")
         self.assertIn(f"-n {namespace}", assertions)
 
+    def test_smoke_container_uses_verified_numeric_nonroot_identity(self) -> None:
+        workflow = yaml.safe_load((SCAFFOLD / "tests/smoke/workflowtemplate.yaml").read_text())
+        container = workflow["spec"]["templates"][0]["container"]
+        security = container["securityContext"]
+        self.assertTrue(security["runAsNonRoot"])
+        self.assertEqual(security["runAsUser"], 100)
+        self.assertEqual(security["runAsGroup"], 101)
+
     def test_ui_uses_only_public_sdk_and_canonical_build(self) -> None:
         package = json.loads((SCAFFOLD / "ui/package.json").read_text())
         self.assertEqual(package["dependencies"]["@7k-inari/ui-plugin-sdk"], "0.1.7")

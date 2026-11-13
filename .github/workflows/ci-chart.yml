@@ -1,0 +1,80 @@
+name: Hiroba independent OCI chart CI
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs: {charts: "${{ steps.plan.outputs.charts }}"}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: plan
+        run: |
+          python3 .hiroba/workflows/scripts/discover-components.py --root "consumer/${{ inputs.root }}" --all > plan.json
+          charts=$(jq -c '[.components[] | select(.kind == "chart") | {name,path}]' plan.json)
+          echo "charts=$charts" >> "$GITHUB_OUTPUT"
+  test:
+    if: needs.plan.result == 'success' && needs.plan.outputs.charts != '[]'
+    needs: [plan]
+    strategy: {fail-fast: false, matrix: {chart: "${{ fromJSON(needs.plan.outputs.charts) }}"}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
+        with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - name: Install chart-testing at an immutable release
+        run: go install github.com/helm/chart-testing/v3/ct@v3.14.0
+      - name: Build and load fixture image
+        run: |
+          set -euo pipefail
+          docker build -t workflows-scaffold:ci "consumer/${{ inputs.root }}/extension"
+          cluster=$(kind get clusters | head -n 1)
+          kind load docker-image workflows-scaffold:ci --name "$cluster"
+      - name: Install chart test CRD dependencies
+        run: kubectl apply -f "consumer/${{ inputs.root }}/packages/observability-pack/tests/deps/prometheusrule-crd.yaml"
+      - name: Chart-testing lint
+        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
+      - name: Chart-testing kind install
+        run: |
+          ct install --config "consumer/${{ inputs.root }}/ci/ct.yaml" \
+            --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}" \
+            --helm-extra-args "--timeout 5m" \
+            --helm-extra-set-args "image.repository=workflows-scaffold,image.tag=ci,image.pullPolicy=Never,observability.enabled=true,observability.rules.enabled=true"
+      - name: Collect chart diagnostics
+        if: failure()
+        run: |
+          mkdir -p consumer/diagnostics
+          kubectl get all,events -A -o wide > consumer/diagnostics/chart-${{ matrix.chart.name }}.txt 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with: {name: "chart-diagnostics-${{ matrix.chart.name }}", path: consumer/diagnostics, if-no-files-found: ignore}
+  result:
+    if: always()
+    needs: [plan, test]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {PLAN: "${{ needs.plan.result }}", TEST: "${{ needs.test.result }}"}
+        run: |
+          status=success
+          if [[ "$PLAN" != success || "$TEST" == failure || "$TEST" == cancelled ]]; then status=failure; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

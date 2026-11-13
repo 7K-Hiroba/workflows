@@ -1,0 +1,55 @@
+name: Hiroba validate repository
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      registry: {type: string, default: ""}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .hiroba/workflows
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11", cache: pip, cache-dependency-path: .hiroba/workflows/requirements-dev.txt}
+      - name: Install validated Python dependencies
+        run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - name: Validate immutable workflow references
+        run: python3 .hiroba/workflows/scripts/check-workflow-pins.py --root consumer
+      - name: Validate application contract
+        env:
+          REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          args=(--root "consumer/${{ inputs.root }}")
+          if [[ -n "$REGISTRY" ]]; then args+=(--registry "$REGISTRY"); fi
+          python3 .hiroba/workflows/scripts/validate-repository.py "${args[@]}"
+      - name: Check generated indexes
+        run: python3 .hiroba/workflows/scripts/build-indexes.py --root "consumer/${{ inputs.root }}" --check
+      - name: Check release-please metadata
+        run: python3 .hiroba/workflows/scripts/sync-release-please-config.py --root "consumer/${{ inputs.root }}" --check
+      - name: Check generated observability outputs
+        run: |
+          if [[ -f "consumer/${{ inputs.root }}/observability/observability.yaml" ]]; then
+            python3 .hiroba/workflows/scripts/render-observability.py --root "consumer/${{ inputs.root }}" --check
+          fi
+  result:
+    if: always()
+    needs: [validate]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {RESULT: "${{ needs.validate.result }}"}
+        run: |
+          echo "status=$RESULT" >> "$GITHUB_OUTPUT"
+          [[ "$RESULT" == success ]] || exit 1

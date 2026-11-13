@@ -1,0 +1,58 @@
+name: Hiroba Go extension CI
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults: {run: {working-directory: "consumer/${{ inputs.root }}/extension"}}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version-file: "consumer/${{ inputs.root }}/extension/go.mod", cache: true}
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test and record contract evidence
+        run: |
+          set -o pipefail
+          mkdir -p evidence
+          go test -json ./... | tee evidence/go-test.json
+      - name: Build
+        run: go build ./...
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with: {name: go-extension-test-evidence, path: "consumer/${{ inputs.root }}/extension/evidence/go-test.json", retention-days: 30}
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: consumer/${{ inputs.root }}/extension
+          push: false
+          provenance: false
+          sbom: false
+  result:
+    if: always()
+    needs: [test, image]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {TEST: "${{ needs.test.result }}", IMAGE: "${{ needs.image.result }}"}
+        run: |
+          status=success
+          [[ "$TEST" == success && "$IMAGE" == success ]] || status=failure
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

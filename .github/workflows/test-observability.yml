@@ -1,0 +1,63 @@
+name: Hiroba observability tests
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - name: Install pinned observability tools
+        run: |
+          .hiroba/workflows/scripts/install-ci-tools.sh promtool
+          go install github.com/grafana/dashboard-linter@c7d457aca03b773a9353be7e9d53d920b10f646c
+      - name: Validate observability and generated drift
+        run: |
+          python3 .hiroba/workflows/scripts/validate-repository.py --root "consumer/${{ inputs.root }}"
+          python3 .hiroba/workflows/scripts/render-observability.py --root "consumer/${{ inputs.root }}" --check
+      - name: Dashboard lint
+        run: |
+          for dashboard in consumer/"${{ inputs.root }}"/observability/dashboards/*.json; do
+            dashboard-linter lint "$dashboard"
+          done
+      - name: Prometheus rule syntax and unit tests
+        run: |
+          for rules in consumer/"${{ inputs.root }}"/observability/rules/*.yaml; do promtool check rules "$rules"; done
+          for test in consumer/"${{ inputs.root }}"/observability/tests/rules/*.test.yaml; do promtool test rules "$test"; done
+      - name: Derive and test central rules through real Alloy
+        run: .hiroba/workflows/scripts/test-alloy-central-rules.sh --root "consumer/${{ inputs.root }}"
+      - name: Verify ephemeral Grafana provisioning and panel queries
+        run: .hiroba/workflows/scripts/test-grafana.sh --root "consumer/${{ inputs.root }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: observability-evidence
+          path: |
+            consumer/${{ inputs.root }}/evidence
+            consumer/${{ inputs.root }}/diagnostics
+          if-no-files-found: ignore
+          retention-days: 30
+  result:
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {RESULT: "${{ needs.test.result }}"}
+        run: |
+          echo "status=$RESULT" >> "$GITHUB_OUTPUT"
+          [[ "$RESULT" == success ]] || exit 1

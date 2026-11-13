@@ -1,0 +1,73 @@
+name: Hiroba plugin contract compatibility
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      mode: {type: string, default: pr}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version-file: "consumer/${{ inputs.root }}/extension/go.mod", cache: true}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with: {node-version: 24, cache: npm, cache-dependency-path: "consumer/${{ inputs.root }}/ui/package-lock.json"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - name: Run backend stable/previous or nightly matrix
+        env: {SOURCE_SHA: "${{ github.sha }}", GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        run: .hiroba/workflows/scripts/run-compat-backend.sh --root "consumer/${{ inputs.root }}" --mode "${{ inputs.mode }}"
+      - name: Build canonical UI remote
+        working-directory: consumer/${{ inputs.root }}/ui
+        run: |
+          npm ci --include=dev --ignore-scripts
+          npm run build
+      - name: Mount every declared slot in a real stable/edge UI host
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        run: .hiroba/workflows/scripts/run-compat-browser.sh --root "consumer/${{ inputs.root }}" --mode "${{ inputs.mode }}"
+      - name: Validate source-bound fresh compatibility evidence
+        run: python3 .hiroba/workflows/scripts/check-compat-report.py --report "consumer/${{ inputs.root }}/evidence/compat-report.json" --source-sha "${{ github.sha }}" --max-age-days 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: compatibility-evidence
+          path: |
+            consumer/${{ inputs.root }}/evidence
+            consumer/${{ inputs.root }}/diagnostics
+          if-no-files-found: ignore
+          retention-days: 30
+  notify:
+    if: inputs.mode == 'nightly' && needs.test.result == 'failure'
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions: {contents: read, issues: write}
+    steps:
+      - name: Open or update one early-warning issue
+        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}", RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}
+        run: |
+          number=$(gh issue list --state open --json number,title --jq '.[] | select(.title == "[compat] edge incompatibility") | .number' | head -n 1)
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "Edge compatibility failed again. Evidence: $RUN_URL"
+          else
+            gh issue create --title '[compat] edge incompatibility' --body "Backend or browser edge compatibility failed. Evidence: $RUN_URL"
+          fi
+  result:
+    if: always()
+    needs: [test, notify]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {RESULT: "${{ needs.test.result }}"}
+        run: |
+          echo "status=$RESULT" >> "$GITHUB_OUTPUT"
+          [[ "$RESULT" == success ]] || exit 1

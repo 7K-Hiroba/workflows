@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=""
+MODE=local
+PROFILE=ci
+APP_REF=""
+SUITE_REF=""
+EXPECTED_PUBLISHER=${EXPECTED_PUBLISHER:-'https://github.com/7K-Hiroba/workflows/'}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --root) ROOT=$2; shift 2 ;;
+    --mode) MODE=$2; shift 2 ;;
+    --profile) PROFILE=$2; shift 2 ;;
+    --app-ref) APP_REF=$2; shift 2 ;;
+    --suite-ref) SUITE_REF=$2; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+[[ "$PROFILE" == ci ]] || { echo "runtime smoke driver permits only profile=ci; stage/prod belong to the gated environment verifier" >&2; exit 2; }
+[[ "$MODE" == local || "$MODE" == oci ]] || { echo "mode must be local or oci" >&2; exit 2; }
+if [[ "$MODE" == oci ]]; then
+  for ref in "$APP_REF" "$SUITE_REF"; do
+    [[ "$ref" =~ @sha256:[0-9a-fA-F]{64}$ ]] || { echo "OCI mode requires exact app and suite sha256 digest refs" >&2; exit 2; }
+  done
+fi
+[[ -d "$ROOT" ]] || { echo "--root must be a consumer directory" >&2; exit 2; }
+ROOT=$(cd "$ROOT" && pwd)
+LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
+python3 "$LIBRARY/scripts/validate-repository.py" --root "$ROOT"
+python3 "$LIBRARY/scripts/discover-components.py" --root "$ROOT" --all > "$ROOT/evidence-runtime-plan.json"
+APP=$(jq -r '.app' "$ROOT/evidence-runtime-plan.json")
+TARGET=$(jq -r '.components[] | select(.kind == "smoke") | .targetComponent' "$ROOT/evidence-runtime-plan.json")
+CHART=$(jq -r --arg target "$TARGET" '.components[] | select(.kind == "chart" and .path == $target) | .path' "$ROOT/evidence-runtime-plan.json")
+EXTENSION=$(jq -r '.components[] | select(.kind == "extension") | .path' "$ROOT/evidence-runtime-plan.json")
+[[ -n "$APP" && -n "$CHART" && -n "$EXTENSION" ]] || { echo "runtime smoke requires extension, chart, and smoke components" >&2; exit 2; }
+mkdir -p "$ROOT/diagnostics" "$ROOT/evidence"
+WORK=$(mktemp -d)
+CLUSTER="hiroba-smoke-${GITHUB_RUN_ID:-local}-$$"
+CLUSTER_CREATED=false
+WORKFLOW_NAME=""
+SUITE_DIR="$ROOT/tests/smoke"
+finish() {
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    {
+      kubectl get all,workflows,events -A -o wide || true
+      kubectl get events -A --sort-by=.lastTimestamp || true
+      if [[ -n "$WORKFLOW_NAME" ]]; then argo get "$WORKFLOW_NAME" -n default || true; argo logs "$WORKFLOW_NAME" -n default || true; fi
+      kind export logs "$WORK/kind-logs" --name "$CLUSTER" || true
+    } > "$ROOT/diagnostics/runtime-smoke.txt" 2>&1
+  fi
+  if [[ -n "$WORKFLOW_NAME" ]]; then
+    argo get "$WORKFLOW_NAME" -n default -o json > "$ROOT/evidence/argo-workflow.json" 2>/dev/null || true
+  fi
+  jq -n --arg lane runtime-smoke --arg status "$([[ $rc -eq 0 ]] && echo passed || echo failed)" \
+    --arg app "$APP" --arg mode "$MODE" --arg profile "$PROFILE" \
+    '{schema:"inari.lane-result.v1",lane:$lane,status:$status,app:$app,mode:$mode,profile:$profile}' > "$ROOT/evidence/runtime-smoke.json"
+  if [[ "$CLUSTER_CREATED" == true ]]; then kind delete cluster --name "$CLUSTER" || true; fi
+  rm -rf "$WORK"
+  rm -f "$ROOT/evidence-runtime-plan.json"
+  exit "$rc"
+}
+trap finish EXIT
+
+KIND_IMAGE='kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32'
+ARGO_COMMIT='43021573c5a35cbafae009043c132dfcef43a112'
+kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --wait 120s
+CLUSTER_CREATED=true
+if [[ "$MODE" == local ]]; then
+  docker build -t "$APP:ci" "$ROOT/$EXTENSION"
+  kind load docker-image "$APP:ci" --name "$CLUSTER"
+  helm upgrade --install "$APP" "$ROOT/$CHART" --namespace default \
+    --values "$SUITE_DIR/values.yaml" --wait --timeout 5m
+else
+  for ref in "$APP_REF" "$SUITE_REF"; do
+    cosign verify "$ref" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      --certificate-identity-regexp "$EXPECTED_PUBLISHER" >/dev/null
+    gh attestation verify "oci://$ref" --owner 7K-Hiroba >/dev/null
+    cosign verify-attestation "$ref" --type https://inari.dev/attestations/test-evidence/v1 \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      --certificate-identity-regexp "$EXPECTED_PUBLISHER" >/dev/null
+  done
+  mkdir -p "$WORK/suite"
+  oras pull --plain-http=false --output "$WORK/suite" "$SUITE_REF"
+  SUITE_DIR="$WORK/suite"
+  VERSION=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["version"])' "$SUITE_DIR/suite.yaml")
+  APP_REPOSITORY=${APP_REF%@*}
+  crane digest "$APP_REPOSITORY:$VERSION" | grep -Fx "${APP_REF#*@}"
+  helm upgrade --install "$APP" "oci://$APP_REPOSITORY" --namespace default --version "$VERSION" --wait --timeout 5m
+  crane digest "$APP_REPOSITORY:$VERSION" | grep -Fx "${APP_REF#*@}"
+fi
+kubectl wait --for=condition=Available deployment -l "app.kubernetes.io/name=$APP" --namespace default --timeout 120s
+kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start-minimal.yaml"
+kubectl wait --for=condition=Available deployment -n argo --all --timeout 180s
+WORKFLOW_FILE=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["workflowTemplate"])' "$SUITE_DIR/suite.yaml")
+kubectl apply -f "$SUITE_DIR/$WORKFLOW_FILE"
+argo lint "$SUITE_DIR/$WORKFLOW_FILE"
+WORKFLOW_NAME=$(argo submit --from "workflowtemplate/$APP" --namespace default -o name)
+TIMEOUT=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["timeout"])' "$SUITE_DIR/suite.yaml")
+argo wait "$WORKFLOW_NAME" --namespace default --timeout "$TIMEOUT"
+argo get "$WORKFLOW_NAME" --namespace default -o json | jq -e '.status.phase == "Succeeded"' >/dev/null

@@ -3,6 +3,7 @@
 prometheus.scrape "workflows_scaffold" {
   targets = [{"__address__" = "__TARGET__", "job" = "workflows-scaffold"}]
   scrape_interval = "1s"
+  honor_labels    = true
   forward_to = [prometheus.relabel.central.receiver]
 }
 

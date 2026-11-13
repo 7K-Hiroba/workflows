@@ -34,6 +34,11 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertIn('kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
         self.assertNotIn('kubectl apply -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
 
+    def test_argo_wait_uses_external_suite_timeout(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('timeout "$TIMEOUT" argo wait "$WORKFLOW_NAME"', text)
+        self.assertNotIn('argo wait "$WORKFLOW_NAME" --namespace default --timeout', text)
+
 
 if __name__ == "__main__":
     unittest.main()

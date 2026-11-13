@@ -99,5 +99,5 @@ kubectl apply -f "$SUITE_DIR/$WORKFLOW_FILE"
 argo lint "$SUITE_DIR/$WORKFLOW_FILE"
 WORKFLOW_NAME=$(argo submit --from "workflowtemplate/$APP" --namespace default -o name)
 TIMEOUT=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["timeout"])' "$SUITE_DIR/suite.yaml")
-argo wait "$WORKFLOW_NAME" --namespace default --timeout "$TIMEOUT"
+timeout "$TIMEOUT" argo wait "$WORKFLOW_NAME" --namespace default
 argo get "$WORKFLOW_NAME" --namespace default -o json | jq -e '.status.phase == "Succeeded"' >/dev/null

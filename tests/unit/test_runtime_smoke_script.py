@@ -39,6 +39,12 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertIn('timeout "$TIMEOUT" argo wait "$WORKFLOW_NAME"', text)
         self.assertNotIn('argo wait "$WORKFLOW_NAME" --namespace default --timeout', text)
 
+    def test_artifactless_smoke_disables_invalid_quick_start_driver(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('"path":"/data/artifactRepository"', text)
+        self.assertIn('"op":"remove"', text)
+        self.assertIn("rollout restart deployment/workflow-controller --namespace argo", text)
+
 
 if __name__ == "__main__":
     unittest.main()

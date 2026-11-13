@@ -93,6 +93,10 @@ fi
 kubectl wait --for=condition=Available deployment -l "app.kubernetes.io/name=$APP" --namespace default --timeout 120s
 kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
 kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start-minimal.yaml"
+# The pinned quick-start names a controller-test artifact plugin. This suite is artifactless.
+kubectl patch configmap workflow-controller-configmap --namespace argo --type=json \
+  --patch='[{"op":"remove","path":"/data/artifactRepository"}]'
+kubectl rollout restart deployment/workflow-controller --namespace argo
 kubectl wait --for=condition=Available deployment -n argo --all --timeout 180s
 WORKFLOW_FILE=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["workflowTemplate"])' "$SUITE_DIR/suite.yaml")
 kubectl apply -f "$SUITE_DIR/$WORKFLOW_FILE"

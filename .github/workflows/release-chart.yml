@@ -118,7 +118,7 @@ jobs:
           SOURCE_SHA: "${{ inputs.source-sha }}"
           WORKFLOW_SHA: "${{ job.workflow_sha }}"
           REQUIRED_LANES: "${{ inputs.required-lanes }}"
-          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-chart\\.yml@${{ job.workflow_sha }}$"
+          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-chart\\.yml@${{ github.ref }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ steps.publish.outputs.release-tag }}"
           VERIFICATION_RECEIPT: "evidence/receipt-chart-${{ inputs.chart }}.json"

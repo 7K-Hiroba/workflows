@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -91,6 +92,32 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("attestations: write", text)
                 self.assertNotIn("pull_request_target:", text)
                 self.assertNotIn("secrets: inherit", text)
+
+    def test_publisher_verification_uses_exact_workflow_ref_san(self) -> None:
+        expected_jobs = {
+            "release-oci.yml": ("publish",),
+            "release-extension.yml": ("backend", "ui"),
+            "release-chart.yml": ("publish",),
+            "release-smoke-suite.yml": ("publish",),
+        }
+        for workflow_name, job_names in expected_jobs.items():
+            workflow = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
+            for job_name in job_names:
+                with self.subTest(workflow=workflow_name, job=job_name):
+                    steps = [step for step in workflow["jobs"][job_name]["steps"] if "EXPECTED_PUBLISHER" in step.get("env", {})]
+                    self.assertEqual(len(steps), 1)
+                    env = steps[0]["env"]
+                    escaped_name = workflow_name.replace(".", "\\.")
+                    expected = f"^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/{escaped_name}@${{{{ github.ref }}}}$"
+                    self.assertEqual(env["EXPECTED_PUBLISHER"], expected)
+                    self.assertEqual(env["WORKFLOW_SHA"], "${{ job.workflow_sha }}")
+                    self.assertTrue(env["SOURCE_SHA"])
+                    pattern = env["EXPECTED_PUBLISHER"].replace("${{ github.ref }}", "refs/heads/main")
+                    identity = f"https://github.com/7K-Hiroba/workflows/.github/workflows/{workflow_name}@refs/heads/main"
+                    self.assertIsNotNone(re.fullmatch(pattern, identity))
+                    self.assertNotIn(".*", pattern)
+                    for different_ref in ("refs/heads/main-next", "refs/heads/feature", "refs/tags/main", "a" * 40):
+                        self.assertIsNone(re.fullmatch(pattern, identity.replace("refs/heads/main", different_ref)))
 
     def test_forbidden_dependencies_and_distribution_are_absent(self) -> None:
         for path in WORKFLOWS.glob("*.yml"):

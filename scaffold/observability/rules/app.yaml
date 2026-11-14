@@ -1,0 +1,14 @@
+groups:
+  - name: workflows-scaffold
+    interval: 1m
+    rules:
+      - record: workflows_scaffold:up:sum
+        expr: sum(workflows_scaffold_up)
+      - alert: WorkflowsScaffoldDown
+        expr: workflows_scaffold_up == 0
+        for: 5m
+        labels:
+          severity: critical
+          app: workflows-scaffold
+        annotations:
+          summary: Synthetic workflows-scaffold target is down

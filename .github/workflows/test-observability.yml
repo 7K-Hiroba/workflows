@@ -1,0 +1,49 @@
+name: Hiroba observability tests
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - name: Install pinned offline observability tools
+        run: .hiroba/workflows/scripts/install-ci-tools.sh promtool gcx alloy
+      - name: Validate observability and generated drift
+        run: |
+          python3 .hiroba/workflows/scripts/validate-repository.py --root "consumer/${{ inputs.root }}"
+          python3 .hiroba/workflows/scripts/render-observability.py --root "consumer/${{ inputs.root }}" --check
+      - name: Validate Alloy offline and test reviewed central fixtures
+        run: .hiroba/workflows/scripts/test-offline-observability.sh --root "consumer/${{ inputs.root }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: observability-evidence
+          path: |
+            consumer/${{ inputs.root }}/evidence
+            consumer/${{ inputs.root }}/diagnostics
+          if-no-files-found: ignore
+          retention-days: 30
+  result:
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {RESULT: "${{ needs.test.result }}"}
+        run: |
+          echo "status=$RESULT" >> "$GITHUB_OUTPUT"
+          [[ "$RESULT" == success ]] || exit 1

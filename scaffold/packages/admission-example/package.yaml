@@ -1,0 +1,5 @@
+version: 0.1.0
+channel: incubating
+type: policy-pack
+description: CEL admission policy fixture for the workflow test matrix
+category: security

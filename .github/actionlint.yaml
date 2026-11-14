@@ -1,0 +1,7 @@
+# actionlint v1.7.12 does not yet model GitHub.com's documented
+# job.workflow_* context or $/ same-commit reusable-workflow syntax.
+paths:
+  .github/workflows/*.{yml,yaml}:
+    ignore:
+      - 'property "(workflow_repository|workflow_sha|workflow_file_path)" is not defined.*'
+      - 'reusable workflow call "\$/.*'

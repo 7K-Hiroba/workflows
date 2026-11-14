@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "pinDigests": true,
+  "packageRules": [
+    {
+      "description": "Trusted workflow and action SHAs always require human review",
+      "matchManagers": ["github-actions"],
+      "automerge": false
+    },
+    {
+      "description": "Keep non-major dependencies grouped but reviewed",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
+      "groupName": "reviewed non-major dependencies",
+      "automerge": false
+    }
+  ]
+}

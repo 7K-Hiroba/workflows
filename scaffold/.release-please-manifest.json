@@ -1,0 +1,9 @@
+{
+  "charts/workflows-scaffold": "0.1.0",
+  "extension": "0.1.0",
+  "packages/admission-example": "0.1.0",
+  "packages/app": "0.1.0",
+  "packages/observability-pack": "0.1.0",
+  "templates/service": "0.1.0",
+  "ui": "0.1.0"
+}

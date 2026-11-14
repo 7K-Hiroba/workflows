@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/smoke-suite-v1.json",
+  "type": "object",
+  "required": ["suiteSchema", "target", "compatibleAppVersions", "parameterContract", "dependencies", "timeout", "profiles", "rbacRequirements", "workflowTemplate", "entrypoint"],
+  "properties": {
+    "suiteSchema": {"const": "inari.smoke.v1"},
+    "target": {"type": "object", "required": ["id", "version", "component"], "properties": {"id": {"type": "string"}, "version": {"type": "string"}, "component": {"type": "string"}}},
+    "compatibleAppVersions": {"type": "string", "minLength": 1},
+    "parameterContract": {"type": "string"},
+    "dependencies": {"type": "array"},
+    "timeout": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"},
+    "profiles": {
+      "type": "object",
+      "required": ["ci", "stage", "prod"],
+      "properties": {
+        "ci": {"$ref": "#/$defs/profile"},
+        "stage": {"$ref": "#/$defs/profile"},
+        "prod": {"$ref": "#/$defs/profile"}
+      }
+    },
+    "rbacRequirements": {"type": "array"},
+    "workflowTemplate": {"type": "string"},
+    "entrypoint": {"type": "string"}
+  },
+  "$defs": {
+    "profile": {"type": "object", "required": ["sideEffects", "cleanup"], "properties": {"sideEffects": {"enum": ["readOnly", "syntheticWrite", "mutating"]}, "cleanup": {"const": "required"}}}
+  }
+}

@@ -1,0 +1,6 @@
+repoURL: oci://ghcr.io/7k-hiroba/workflows-scaffold/charts
+chart: workflows-scaffold
+namespace: workflows-scaffold
+channels:
+  incubating: 0.1.0
+  stable: 0.1.0

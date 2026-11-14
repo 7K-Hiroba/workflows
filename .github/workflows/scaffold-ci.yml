@@ -1,0 +1,47 @@
+name: scaffold CI
+on: {pull_request: {branches: [main]}, push: {branches: [main]}, merge_group: {}}
+permissions: {contents: read}
+jobs:
+  validate:
+    uses: $/.github/workflows/validate-packages.yml
+    with: {root: scaffold, registry: consumer/tests/fixtures/app-registry.yaml}
+  packages:
+    uses: $/.github/workflows/test-packages.yml
+    with: {root: scaffold, all: true}
+  go:
+    uses: $/.github/workflows/ci-go-extension.yml
+    with: {root: scaffold}
+  ui:
+    uses: $/.github/workflows/ci-ui-extension.yml
+    with: {root: scaffold}
+  chart:
+    uses: $/.github/workflows/ci-chart.yml
+    with: {root: scaffold}
+  observability:
+    uses: $/.github/workflows/test-observability.yml
+    with: {root: scaffold}
+  compat:
+    uses: $/.github/workflows/compat-check.yml
+    with: {root: scaffold, mode: pr}
+  runtime:
+    uses: $/.github/workflows/test-runtime-smoke.yml
+    with: {root: scaffold, mode: local, profile: ci}
+  result:
+    name: scaffold-ci-result
+    if: always()
+    needs: [validate, packages, go, ui, chart, observability, compat, runtime]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          VALIDATE: "${{ needs.validate.outputs.status }}"
+          PACKAGES: "${{ needs.packages.outputs.status }}"
+          GO: "${{ needs.go.outputs.status }}"
+          UI: "${{ needs.ui.outputs.status }}"
+          CHART: "${{ needs.chart.outputs.status }}"
+          OBSERVABILITY: "${{ needs.observability.outputs.status }}"
+          COMPAT: "${{ needs.compat.outputs.status }}"
+          RUNTIME: "${{ needs.runtime.outputs.status }}"
+        run: |
+          for status in "$VALIDATE" "$PACKAGES" "$GO" "$UI" "$CHART" "$OBSERVABILITY" "$COMPAT" "$RUNTIME"; do
+            [[ "$status" == success ]] || exit 1
+          done

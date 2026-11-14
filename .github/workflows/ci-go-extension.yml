@@ -1,0 +1,80 @@
+name: Hiroba Go extension CI
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs: {extension-path: "${{ steps.plan.outputs.extension-path }}"}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: plan
+        run: |
+          set -euo pipefail
+          python3 .hiroba/workflows/scripts/discover-components.py --root "consumer/${{ inputs.root }}" --all > plan.json
+          path=$(jq -r 'first(.components[] | select(.kind == "extension") | .path) // empty' plan.json)
+          [[ -n "$path" ]] || { echo "extension component is not configured" >&2; exit 2; }
+          echo "extension-path=$path" >> "$GITHUB_OUTPUT"
+  test:
+    needs: [plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults: {run: {working-directory: "consumer/${{ inputs.root }}/${{ needs.plan.outputs.extension-path }}"}}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version-file: "consumer/${{ inputs.root }}/${{ needs.plan.outputs.extension-path }}/go.mod", cache: true}
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test and record contract evidence
+        run: |
+          set -o pipefail
+          mkdir -p evidence
+          go test -json ./... | tee evidence/go-test.json
+      - name: Build
+        run: go build ./...
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with: {name: go-extension-test-evidence, path: "consumer/${{ inputs.root }}/${{ needs.plan.outputs.extension-path }}/evidence/go-test.json", retention-days: 30}
+  image:
+    needs: [plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: consumer/${{ inputs.root }}/${{ needs.plan.outputs.extension-path }}
+          push: false
+          provenance: false
+          sbom: false
+  result:
+    if: always()
+    needs: [plan, test, image]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {PLAN: "${{ needs.plan.result }}", TEST: "${{ needs.test.result }}", IMAGE: "${{ needs.image.result }}"}
+        run: |
+          status=success
+          [[ "$PLAN" == success && "$TEST" == success && "$IMAGE" == success ]] || status=failure
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/extension-v1.json",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "kind": {"const": "Extension"},
+    "metadata": {"type": "object", "required": ["name"]},
+    "spec": {
+      "type": "object",
+      "required": ["version", "backend", "ui", "contracts"],
+      "properties": {
+        "version": {"type": "string"},
+        "backend": {
+          "type": "object",
+          "required": ["image", "digestPinning"],
+          "properties": {"image": {"type": "string"}, "digestPinning": {"const": "required"}}
+        },
+        "ui": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["remoteEntryOci", "slots"],
+          "properties": {
+            "remoteEntryOci": {"type": "string", "pattern": "^ghcr\\.io/7k-hiroba/[a-z0-9-]+/extension-ui$"},
+            "slots": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["kind", "name"], "properties": {"kind": {"enum": ["nav-item", "catalog-card", "cluster-tab", "instance-action", "form-widget", "page"]}, "name": {"type": "string"}}}}
+          }
+        },
+        "contracts": {
+          "type": "object",
+          "required": ["backend", "ui"],
+          "properties": {
+            "backend": {"type": "array", "contains": {"const": "inari.plugin.v1"}},
+            "ui": {"type": "object", "required": ["sdk", "hostApi"], "properties": {"sdk": {"type": "string", "minLength": 1}, "hostApi": {"const": "inari.ui.v1"}}}
+          }
+        }
+      }
+    }
+  }
+}

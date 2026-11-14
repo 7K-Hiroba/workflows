@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import unittest
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+SCAFFOLD = ROOT / "scaffold"
+PYTHON = ROOT / ".venv" / "bin" / "python"
+if not PYTHON.exists():
+    PYTHON = Path("python3")
+
+
+class ScaffoldContractTests(unittest.TestCase):
+    def run_script(self, name: str, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([str(PYTHON), str(ROOT / "scripts" / name), "--root", str(SCAFFOLD), *args], text=True, capture_output=True, check=False)
+
+    def test_scaffold_validates_against_registry(self) -> None:
+        result = self.run_script("validate-repository.py", "--registry", str(ROOT / "tests/fixtures/app-registry.yaml"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_generated_outputs_are_in_sync(self) -> None:
+        for script in ("build-indexes.py", "sync-release-please-config.py", "render-observability.py"):
+            with self.subTest(script=script):
+                result = self.run_script(script, "--check")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_component_matrix_is_complete(self) -> None:
+        result = self.run_script("discover-components.py", "--all")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        kinds = {component["kind"] for component in plan["components"]}
+        self.assertEqual(kinds, {"extension", "ui", "chart", "package", "template", "smoke"})
+
+    def test_caller_templates_are_pin_safe(self) -> None:
+        result = self.run_script("check-workflow-pins.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rendered = self.run_script("check-workflow-pins.py", "--require-rendered")
+        self.assertNotEqual(rendered.returncode, 0)
+
+    def test_image_uses_numeric_nonroot_user(self) -> None:
+        dockerfile = (SCAFFOLD / "extension/Dockerfile").read_text()
+        self.assertIn("USER 65532:65532", dockerfile)
+        self.assertNotIn("USER nonroot:nonroot", dockerfile)
+
+    def test_kro_fixture_uses_the_namespace_asserted_by_its_test(self) -> None:
+        package = SCAFFOLD / "packages/observability-pack"
+        fixture = yaml.safe_load((package / "tests/fixture.yaml").read_text())
+        namespace = fixture["spec"]["namespace"]
+        assertions = (package / "tests/run.sh").read_text()
+        self.assertEqual(namespace, "default")
+        self.assertIn(f"-n {namespace}", assertions)
+
+    def test_compat_matrix_tracks_current_and_previous_stable_ui(self) -> None:
+        matrix = json.loads((SCAFFOLD / "ci/compatibility-matrix.json").read_text())
+        self.assertEqual([entry["ui"] for entry in matrix["entries"]], ["2.1.1", "2.0.0"])
+        self.assertEqual(matrix["entries"][0]["uiHostSha"], "e2562aff1e23fb61cba41d378147a2f508b505d3")
+
+    def test_browser_compat_uses_offline_host_fixture(self) -> None:
+        browser = (SCAFFOLD / "ui/tests/browser.spec.ts").read_text()
+        self.assertIn("baseURL}/acme/extensions", browser)
+        self.assertIn("getByRole('link', { name: 'Clusters'", browser)
+        self.assertIn("getByText('ready'", browser)
+        self.assertIn("test('slot cluster-tab:health'", browser)
+        driver = (ROOT / "scripts/run-compat-browser.sh").read_text()
+        self.assertIn("NODE_ENV=development VITE_MOCK_API=true", driver)
+        self.assertIn("--oidc-fixture", driver)
+        self.assertIn("./node_modules/.bin/playwright test --reporter=json", driver)
+
+    def test_smoke_container_uses_verified_numeric_nonroot_identity(self) -> None:
+        workflow = yaml.safe_load((SCAFFOLD / "tests/smoke/workflowtemplate.yaml").read_text())
+        container = workflow["spec"]["templates"][0]["container"]
+        security = container["securityContext"]
+        self.assertTrue(security["runAsNonRoot"])
+        self.assertEqual(security["runAsUser"], 100)
+        self.assertEqual(security["runAsGroup"], 101)
+
+    def test_ui_uses_only_public_sdk_and_canonical_build(self) -> None:
+        package = json.loads((SCAFFOLD / "ui/package.json").read_text())
+        self.assertEqual(package["dependencies"]["@7k-inari/ui-plugin-sdk"], "0.1.8")
+        extension = yaml.safe_load((SCAFFOLD / "extension.yaml").read_text())
+        self.assertEqual(extension["spec"]["contracts"]["ui"]["sdk"], ">=0.1.8 <2.0.0")
+        self.assertEqual(package["scripts"]["build"], "inari-ui-ext build --name workflows-scaffold")
+        self.assertFalse((SCAFFOLD / "ui/webpack.config.mjs").exists())
+        source = "\n".join(path.read_text() for path in (SCAFFOLD / "ui").rglob("*.ts*") if "node_modules" not in path.parts)
+        self.assertNotIn("build-sdk", source)
+        self.assertNotIn("postinstall", source)
+
+
+if __name__ == "__main__":
+    unittest.main()

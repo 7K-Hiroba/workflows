@@ -36,6 +36,14 @@ class PrepareOciTests(unittest.TestCase):
         self.assertEqual(template.returncode, 0, template.stdout + template.stderr)
         self.assertEqual(json.loads(template.stdout)[0]["mediaType"], "application/vnd.inari.template.v1")
 
+    def test_edge_uses_resolved_prerelease_version_and_release_tag(self) -> None:
+        result = self.run_prepare("--kind", "package", "--name", "app", "--edge", "--version", "0.2.0-0123456")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        descriptor = json.loads(result.stdout)[0]
+        self.assertEqual(descriptor["tag"], "0.2.0-0123456")
+        self.assertEqual(descriptor["releaseTag"], "app-v0.2.0-0123456")
+        self.assertEqual(descriptor["channel"], "edge")
+
     def test_indexes_require_evidence_and_use_source_sha(self) -> None:
         missing = self.run_prepare("--kind", "indexes")
         self.assertNotEqual(missing.returncode, 0)

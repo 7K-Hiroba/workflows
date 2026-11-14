@@ -204,6 +204,7 @@ jobs:
       root: ${{ inputs.root }}
       kind: package
       name: ${{ matrix.component.name }}
+      version: ${{ matrix.component.version }}
       source-sha: ${{ needs.plan.outputs.source-sha }}
       registry-prefix: ${{ inputs.registry-prefix }}
       environment: ${{ inputs.environment }}
@@ -219,6 +220,7 @@ jobs:
       root: ${{ inputs.root }}
       kind: template
       name: ${{ matrix.component.name }}
+      version: ${{ matrix.component.version }}
       source-sha: ${{ needs.plan.outputs.source-sha }}
       registry-prefix: ${{ inputs.registry-prefix }}
       environment: ${{ inputs.environment }}

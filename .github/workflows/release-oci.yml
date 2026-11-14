@@ -5,6 +5,7 @@ on:
       root: {type: string, default: .}
       kind: {type: string, required: true}
       name: {type: string, default: ""}
+      version: {type: string, default: ""}
       source-sha: {type: string, required: true}
       registry-prefix: {type: string, default: ghcr.io/7k-hiroba}
       environment: {type: string, default: release}
@@ -38,6 +39,7 @@ jobs:
           args=(--root "consumer/${{ inputs.root }}" --kind "${{ inputs.kind }}" --name "${{ inputs.name }}" \
             --source-sha "${{ inputs.source-sha }}" --registry-prefix "${{ inputs.registry-prefix }}")
           if [[ "${{ inputs.edge }}" == true ]]; then args+=(--edge); fi
+          if [[ -n "${{ inputs.version }}" ]]; then args+=(--version "${{ inputs.version }}"); fi
           if [[ "${{ inputs.rehearsal }}" == true ]]; then args+=(--rehearsal); fi
           if [[ "$KIND" == indexes ]]; then
             python3 .hiroba/workflows/scripts/assemble-release-evidence.py --artifacts evidence/artifacts \

@@ -118,6 +118,31 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertNotEqual(mismatch.returncode, 0)
         self.assertIn("repository", (mismatch.stdout + mismatch.stderr).lower())
 
+    def test_edge_indexes_use_verified_prerelease_tags_and_edge_channels(self) -> None:
+        artifacts = {}
+        for kind, name in (("catalog", "admission-example"), ("catalog", "app"), ("catalog", "observability-pack"), ("template", "service")):
+            directory = "catalog" if kind == "catalog" else "templates"
+            artifacts[f"{kind}/{name}"] = {
+                "repository": f"ghcr.io/7k-hiroba/workflows-scaffold/{directory}/{name}",
+                "digest": "sha256:" + name.encode().hex().ljust(64, "0")[:64],
+                "mediaType": "application/vnd.inari.template.v1" if kind == "template" else "application/vnd.inari.catalog.package.v1+yaml",
+                "sourceSha": "a" * 40,
+                "tag": "0.2.0-0123456",
+                "channel": "edge",
+                "signature": {"verified": True},
+                "provenance": {"verified": True},
+                "testEvidence": {"status": "passed"},
+            }
+        evidence = self.root / "edge-evidence.json"
+        evidence.write_text(json.dumps({"sourceSha": "a" * 40, "artifacts": artifacts}))
+        result = self.run_script("build-indexes.py", "--release-evidence", str(evidence))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        catalog = yaml.safe_load((self.root / "catalog.yaml").read_text())
+        for entry in catalog["packages"]:
+            self.assertEqual(entry["version"], "0.2.0-0123456")
+            self.assertEqual(entry["channel"], "edge")
+            self.assertTrue(entry["channelRef"].endswith(":edge"))
+
     def test_release_please_config_covers_every_component(self) -> None:
         result = self.run_script("sync-release-please-config.py")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

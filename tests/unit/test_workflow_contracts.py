@@ -132,6 +132,8 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_edge_threads_versions_and_channels_through_every_publisher(self) -> None:
         release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        for job_name in ("publish-packages", "publish-templates"):
+            self.assertEqual(release["jobs"][job_name]["with"]["version"], "${{ matrix.component.version }}")
         extension = release["jobs"]["publish-extension"]["with"]
         self.assertEqual(extension["edge"], "${{ inputs.edge }}")
         self.assertEqual(extension["backend-version"], "${{ needs.plan.outputs.extension-version }}")

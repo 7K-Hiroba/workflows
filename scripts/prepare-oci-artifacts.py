@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ from lib.metadata import SHA_RE, discover  # noqa: E402
 
 PACKAGE_MEDIA = "application/vnd.inari.catalog.package.v1+yaml"
 TEMPLATE_MEDIA = "application/vnd.inari.template.v1"
+VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$")
 
 
 def main() -> int:
@@ -24,6 +26,7 @@ def main() -> int:
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--registry-prefix", default="ghcr.io/7k-hiroba")
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--version", help="Resolved package/template version, including an edge prerelease")
     parser.add_argument("--edge", action="store_true")
     parser.add_argument("--rehearsal", action="store_true")
     args = parser.parse_args()
@@ -41,11 +44,14 @@ def main() -> int:
             print(f"::error::expected one {args.kind} named {args.name}", file=sys.stderr)
             return 1
         component = matches[0]
+        version = args.version or component["version"]
+        if not VERSION_RE.fullmatch(version):
+            parser.error("package/template version must be SemVer without build metadata")
         directory = "catalog" if args.kind == "package" else "templates"
         media = PACKAGE_MEDIA if args.kind == "package" else TEMPLATE_MEDIA
         channel = "" if args.rehearsal else ("edge" if args.edge else component["channel"])
-        tag = args.source_sha.lower() if args.rehearsal else component["version"]
-        release_tag = f"ci-{args.source_sha[:12]}" if args.rehearsal else f"{component['name']}-v{component['version']}"
+        tag = args.source_sha.lower() if args.rehearsal else version
+        release_tag = f"ci-{args.source_sha[:12]}" if args.rehearsal else f"{component['name']}-v{version}"
         descriptors.append({
             "key": f"{directory}-{component['name']}",
             "name": component["name"],

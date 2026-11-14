@@ -51,6 +51,9 @@ def build(root: Path, evidence_path: Path | None, registry_prefix: str = "ghcr.i
         if artifacts is not None and source_sha is not None:
             evidence = verified_artifact(artifacts, f"catalog/{name}", PACKAGE_MEDIA, source_sha, repository=repository)
             entry.update({
+                "version": evidence.get("tag", component["version"]),
+                "channel": evidence.get("channel", component["channel"]),
+                "channelRef": f"{repository}:{evidence.get('channel', component['channel'])}",
                 "ociRef": f"{repository}@{evidence['digest']}",
                 "digest": evidence["digest"],
                 "mediaType": PACKAGE_MEDIA,
@@ -79,6 +82,9 @@ def build(root: Path, evidence_path: Path | None, registry_prefix: str = "ghcr.i
         if artifacts is not None and source_sha is not None:
             evidence = verified_artifact(artifacts, f"template/{name}", TEMPLATE_MEDIA, source_sha, repository=repository)
             entry.update({
+                "version": evidence.get("tag", component["version"]),
+                "channel": evidence.get("channel", component["channel"]),
+                "channelRef": f"{repository}:{evidence.get('channel', component['channel'])}",
                 "ociRef": f"{repository}@{evidence['digest']}",
                 "digest": evidence["digest"],
                 "mediaType": TEMPLATE_MEDIA,

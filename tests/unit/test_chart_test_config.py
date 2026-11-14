@@ -40,7 +40,7 @@ class ChartTestConfigTests(unittest.TestCase):
             (chart / "test.yaml").write_text("schema: inari.chart-test.v1\ndependencies: [../outside.yaml]\n")
             result = self.run_config(root, "charts/example")
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("escapes", result.stdout + result.stderr)
+            self.assertIn("outside", result.stdout + result.stderr)
             (chart / "test.yaml").write_text("schema: inari.chart-test.v1\nimage: {context: /tmp, repository: example, tag: ci}\n")
             result = self.run_config(root, "charts/example")
             self.assertNotEqual(result.returncode, 0)

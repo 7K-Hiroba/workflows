@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from lib.paths import relative_path
+
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
 
@@ -37,12 +39,12 @@ def discover(root: Path) -> dict[str, Any]:
             components.append({
                 "kind": kind,
                 "name": kind,
-                "path": item["path"],
+                "path": relative_path(root, item["path"], f"components.{kind}.path"),
                 "version": str(item["version"]),
                 "channel": "stable",
             })
 
-    charts_root = configured.get("chartsRoot", "charts")
+    charts_root = relative_path(root, configured.get("chartsRoot", "charts"), "components.chartsRoot")
     for chart_path in sorted((root / charts_root).glob("*/Chart.yaml")):
         chart = load_yaml(chart_path)
         components.append({
@@ -53,7 +55,7 @@ def discover(root: Path) -> dict[str, Any]:
             "channel": "stable",
         })
 
-    packages_root = configured.get("packagesRoot", "packages")
+    packages_root = relative_path(root, configured.get("packagesRoot", "packages"), "components.packagesRoot")
     for manifest in sorted((root / packages_root).glob("*/package.yaml")):
         package = load_yaml(manifest)
         components.append({
@@ -68,7 +70,7 @@ def discover(root: Path) -> dict[str, Any]:
             "observability": package.get("observability"),
         })
 
-    templates_root = configured.get("templatesRoot", "templates")
+    templates_root = relative_path(root, configured.get("templatesRoot", "templates"), "components.templatesRoot")
     for manifest in sorted((root / templates_root).glob("*/template.yaml")):
         template = load_yaml(manifest)
         components.append({
@@ -83,15 +85,16 @@ def discover(root: Path) -> dict[str, Any]:
 
     smoke = config.get("smoke")
     if isinstance(smoke, dict):
-        suite = load_yaml(root / smoke["path"] / "suite.yaml")
+        smoke_path = relative_path(root, smoke["path"], "smoke.path")
+        suite = load_yaml(root / smoke_path / "suite.yaml")
         target = suite["target"]
         components.append({
             "kind": "smoke",
             "name": str(target["id"]),
-            "path": str(smoke["path"]),
+            "path": smoke_path,
             "version": str(target["version"]),
             "channel": "stable",
-            "targetComponent": str(target["component"]),
+            "targetComponent": relative_path(root, str(target["component"]), "smoke.target.component"),
             "compatibleAppVersions": str(suite["compatibleAppVersions"]),
         })
 

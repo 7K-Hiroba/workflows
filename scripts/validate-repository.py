@@ -15,6 +15,8 @@ from typing import Any, Iterable
 import jsonschema
 import yaml
 
+from lib.paths import confined_path
+
 LIBRARY_ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = LIBRARY_ROOT / "schemas"
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
@@ -74,15 +76,11 @@ class Validator:
             self.error(path, f"{field}: {error.message}")
 
     def safe_path(self, base: Path, relative: str, label: Path) -> Path | None:
-        candidate = Path(relative)
-        if candidate.is_absolute() or ".." in candidate.parts:
-            self.error(label, f"unsafe path {relative!r}")
+        try:
+            return confined_path(base, relative, str(label))
+        except ValueError as exc:
+            self.error(label, str(exc))
             return None
-        resolved = (base / candidate).resolve()
-        if not resolved.is_relative_to(base.resolve()):
-            self.error(label, f"path escapes content root: {relative!r}")
-            return None
-        return resolved
 
     def validate_symlinks(self) -> None:
         for directory, dirs, files in os.walk(self.root, followlinks=False):
@@ -94,7 +92,9 @@ class Validator:
 
     def validate_packages(self, root_name: str) -> dict[str, dict[str, Any]]:
         packages: dict[str, dict[str, Any]] = {}
-        packages_root = self.root / root_name
+        packages_root = self.safe_path(self.root, root_name, self.root / ".hiroba.yaml")
+        if packages_root is None:
+            return packages
         if not packages_root.is_dir():
             return packages
         for directory in sorted(packages_root.iterdir()):
@@ -149,7 +149,9 @@ class Validator:
 
     def validate_templates(self, root_name: str) -> dict[str, dict[str, Any]]:
         templates: dict[str, dict[str, Any]] = {}
-        templates_root = self.root / root_name
+        templates_root = self.safe_path(self.root, root_name, self.root / ".hiroba.yaml")
+        if templates_root is None:
+            return templates
         if not templates_root.is_dir():
             return templates
         for directory in sorted(templates_root.iterdir()):
@@ -181,6 +183,10 @@ class Validator:
         return templates
 
     def validate_extension(self, config: dict[str, Any]) -> None:
+        for kind in ("extension", "ui"):
+            component = config["components"].get(kind)
+            if isinstance(component, dict):
+                self.safe_path(self.root, component.get("path", ""), self.root / ".hiroba.yaml")
         path = self.root / "extension.yaml"
         if not path.is_file():
             if "extension" in config["components"] or "ui" in config["components"]:
@@ -206,6 +212,8 @@ class Validator:
         settings = config.get("observability")
         if not isinstance(settings, dict):
             return
+        for key in ("chart", "package", "alloyConfig"):
+            self.safe_path(self.root, settings.get(key, ""), self.root / ".hiroba.yaml")
         base_path = self.safe_path(self.root, settings.get("path", ""), self.root / ".hiroba.yaml")
         if base_path is None:
             return
@@ -273,6 +281,7 @@ class Validator:
         target = suite.get("target") if isinstance(suite.get("target"), dict) else {}
         if target.get("component") != settings.get("targetComponent"):
             self.error(suite_path, "target.component must match .hiroba.yaml smoke.targetComponent")
+        self.safe_path(self.root, target.get("component", ""), suite_path)
         if not SEMVER.fullmatch(str(target.get("version", ""))):
             self.error(suite_path, "target.version must be SemVer")
         profiles = suite.get("profiles") if isinstance(suite.get("profiles"), dict) else {}
@@ -294,8 +303,9 @@ class Validator:
             for document in documents:
                 self.validate_smoke_value(document, path)
         workflow = suite.get("workflowTemplate")
-        if not isinstance(workflow, str) or not (base_path / workflow).is_file():
-            self.error(suite_path, "workflowTemplate must reference an existing file")
+        workflow_path = self.safe_path(base_path, workflow, suite_path) if isinstance(workflow, str) else None
+        if workflow_path is None or not workflow_path.is_file():
+            self.error(suite_path, "workflowTemplate must reference an existing file inside the suite")
         if not (base_path / "README.md").is_file():
             self.error(suite_path, "smoke suite requires README.md")
         self.counts["smoke"] += 1

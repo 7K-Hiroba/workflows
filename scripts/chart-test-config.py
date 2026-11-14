@@ -11,22 +11,14 @@ from pathlib import Path
 import jsonschema
 import yaml
 
+from lib.paths import confined_path
+
 SCHEMA = Path(__file__).resolve().parents[1] / "schemas/chart-test-v1.schema.json"
-
-
-def confined(root: Path, value: str, label: str) -> Path:
-    path = Path(value)
-    if path.is_absolute() or ".." in path.parts:
-        raise ValueError(f"{label} escapes the consumer root: {value!r}")
-    resolved = (root / path).resolve()
-    if not resolved.is_relative_to(root):
-        raise ValueError(f"{label} escapes the consumer root: {value!r}")
-    return resolved
 
 
 def load(root: Path, chart: str) -> dict:
     root = root.resolve()
-    chart_dir = confined(root, chart, "chart")
+    chart_dir = confined_path(root, chart, "chart")
     if not chart_dir.is_dir():
         raise ValueError("chart directory is missing")
     path = chart_dir / "ci/test.yaml"
@@ -40,10 +32,10 @@ def load(root: Path, chart: str) -> dict:
     jsonschema.validate(data, schema)
     result = {"image": data.get("image"), "dependencies": data.get("dependencies", []), "install": data.get("install", {"timeout": "5m"})}
     if result["image"] is not None:
-        if not confined(root, result["image"]["context"], "image.context").is_dir():
+        if not confined_path(root, result["image"]["context"], "image.context").is_dir():
             raise ValueError("image.context must be an existing consumer directory")
     for dependency in result["dependencies"]:
-        if Path(dependency).suffix not in {".yaml", ".yml"} or not confined(root, dependency, "dependency").is_file():
+        if Path(dependency).suffix not in {".yaml", ".yml"} or not confined_path(root, dependency, "dependency").is_file():
             raise ValueError(f"dependency must be an existing consumer YAML file: {dependency!r}")
     return result
 

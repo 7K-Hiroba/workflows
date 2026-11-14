@@ -8,7 +8,8 @@ done
 ROOT=$(cd "$ROOT" && pwd)
 LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
 PYTHON=${HIROBA_PYTHON:-python3}
-ALLOY_CONFIG="$ROOT/$($PYTHON -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["observability"]["alloyConfig"])' "$ROOT/.hiroba.yaml")"
+ALLOY_RELATIVE=$($PYTHON -c 'import sys,yaml; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; data=yaml.safe_load(open(sys.argv[1])); print(relative_path(Path(sys.argv[3]), data["observability"]["alloyConfig"], "observability.alloyConfig"))' "$ROOT/.hiroba.yaml" "$LIBRARY/scripts" "$ROOT")
+ALLOY_CONFIG="$ROOT/$ALLOY_RELATIVE"
 ALLOY_DIR=$(dirname "$ALLOY_CONFIG")
 FIXTURE="$ALLOY_DIR/expected-central-series.json"
 "$PYTHON" - "$FIXTURE" "$ALLOY_CONFIG" <<'PY'

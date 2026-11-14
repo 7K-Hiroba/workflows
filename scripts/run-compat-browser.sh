@@ -9,7 +9,11 @@ done
 ROOT=$(cd "$ROOT" && pwd)
 SOURCE_SHA=${SOURCE_SHA:-$(git -C "$ROOT" rev-parse HEAD)}
 LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
+PYTHON=${HIROBA_PYTHON:-python3}
 MATRIX="$ROOT/ci/compatibility-matrix.json"
+if [[ -f "$ROOT/.hiroba.yaml" ]]; then
+  MATRIX="$ROOT/$($PYTHON -c 'import sys,yaml; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; data=yaml.safe_load(open(sys.argv[1])); print(relative_path(Path(sys.argv[3]), data["compatibility"]["matrix"], "compatibility.matrix"))' "$ROOT/.hiroba.yaml" "$LIBRARY/scripts" "$ROOT")"
+fi
 if [[ "$MODE" == nightly ]]; then
   HOST_SHA=$(gh api repos/7K-Inari/inari-ui/commits/main --jq '.sha')
 else

@@ -278,6 +278,27 @@ class ValidateRepositoryTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("symlink", result.stdout + result.stderr)
 
+    def test_rejects_parent_traversal_in_component_roots_and_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_valid_repo(root)
+            config = root / ".hiroba.yaml"
+            config.write_text(config.read_text().replace("packagesRoot: packages", "packagesRoot: ../outside"))
+            validation = subprocess.run([str(PYTHON), str(SCRIPT), "--root", str(root)], text=True, capture_output=True, check=False)
+            self.assertNotEqual(validation.returncode, 0)
+            self.assertIn("unsafe", (validation.stdout + validation.stderr).lower())
+            discovery = subprocess.run([str(PYTHON), str(ROOT / "scripts/discover-components.py"), "--root", str(root), "--all"], text=True, capture_output=True, check=False)
+            self.assertNotEqual(discovery.returncode, 0)
+
+    def test_rejects_smoke_workflow_template_outside_suite(self) -> None:
+        def invalid(root: Path) -> None:
+            write(root, "outside.yaml", "apiVersion: v1\nkind: ConfigMap\n")
+            suite = root / "tests/smoke/suite.yaml"
+            suite.write_text(suite.read_text().replace("workflowTemplate: workflowtemplate.yaml", "workflowTemplate: ../../outside.yaml"))
+        result = self.run_validation(invalid)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsafe", (result.stdout + result.stderr).lower())
+
     def test_rejects_duplicate_registry_app(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

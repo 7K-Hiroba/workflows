@@ -4,6 +4,6 @@ PR/release lanes execute public pluginsdk testkit Info/Capabilities/Invoke/Healt
 
 Nightly resolves inari-server/inari-ui edge to full commits, records them in `compat-report.json`, reruns backend/browser suites, and opens or updates one early-warning issue on failure. Reviewed evidence freshness is seven days.
 
-The scaffold uses `@7k-inari/ui-plugin-sdk@0.1.7` and the existing `ApiClient.invokeExtension`. It never recreates those APIs. The production build requires canonical `inari-ui-ext build`; if unavailable in the published SDK, this is an upstream dependency, not permission to add clone/postinstall/custom-webpack workarounds.
+The scaffold uses the stable `@7k-inari/ui-plugin-sdk@0.1.8` registry release and the existing `ApiClient.invokeExtension`. It never recreates those APIs. Production build uses canonical `inari-ui-ext build`; clone/postinstall/custom-webpack workarounds remain prohibited.
 
 Core registration, contract metadata, degraded state, and UI preflight belong to the dedicated core-contract task.

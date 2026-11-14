@@ -64,8 +64,10 @@ class ScaffoldContractTests(unittest.TestCase):
 
     def test_ui_uses_only_public_sdk_and_canonical_build(self) -> None:
         package = json.loads((SCAFFOLD / "ui/package.json").read_text())
-        self.assertEqual(package["dependencies"]["@7k-inari/ui-plugin-sdk"], "0.1.7")
-        self.assertEqual(package["scripts"]["build"], "inari-ui-ext build")
+        self.assertEqual(package["dependencies"]["@7k-inari/ui-plugin-sdk"], "0.1.8")
+        extension = yaml.safe_load((SCAFFOLD / "extension.yaml").read_text())
+        self.assertEqual(extension["spec"]["contracts"]["ui"]["sdk"], ">=0.1.8 <2.0.0")
+        self.assertEqual(package["scripts"]["build"], "inari-ui-ext build --name workflows-scaffold")
         self.assertFalse((SCAFFOLD / "ui/webpack.config.mjs").exists())
         source = "\n".join(path.read_text() for path in (SCAFFOLD / "ui").rglob("*.ts*") if "node_modules" not in path.parts)
         self.assertNotIn("build-sdk", source)

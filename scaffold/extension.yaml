@@ -16,7 +16,7 @@ spec:
   contracts:
     backend: [inari.plugin.v1]
     ui:
-      sdk: ">=0.1.7 <2.0.0"
+      sdk: ">=0.1.8 <2.0.0"
       hostApi: inari.ui.v1
   permissions:
     - extensions:invoke:workflows-scaffold

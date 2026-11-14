@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "inari-ui-ext build",
+    "build": "inari-ui-ext build --name workflows-scaffold",
     "dev": "inari-ui-ext dev",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -12,7 +12,7 @@
     "test:browser": "playwright test"
   },
   "dependencies": {
-    "@7k-inari/ui-plugin-sdk": "0.1.7",
+    "@7k-inari/ui-plugin-sdk": "0.1.8",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "4.6.7"

@@ -1,0 +1,3 @@
+apps:
+  - name: workflows-scaffold
+    repository: 7K-Hiroba/workflows

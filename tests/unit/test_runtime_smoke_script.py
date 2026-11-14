@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts" / "run-runtime-smoke.sh"
+
+
+class RuntimeSmokeScriptTests(unittest.TestCase):
+    def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["bash", str(SCRIPT), "--root", str(ROOT / "scaffold"), *args], text=True, capture_output=True, check=False)
+
+    def test_rejects_real_environment_profiles_before_cluster_creation(self) -> None:
+        for profile in ("stage", "prod"):
+            with self.subTest(profile=profile):
+                result = self.run_script("--mode", "local", "--profile", profile)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("profile=ci", result.stdout + result.stderr)
+
+    def test_oci_mode_requires_exact_app_and_suite_digests(self) -> None:
+        result = self.run_script("--mode", "oci", "--profile", "ci")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("digest", (result.stdout + result.stderr).lower())
+
+    def test_oci_mode_uses_common_fully_bound_release_verifier(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('"$LIBRARY/scripts/verify-release.sh"', text)
+        self.assertIn('REQUIRED_LANES="$required"', text)
+        self.assertIn('WORKFLOW_SHA="$WORKFLOW_SHA"', text)
+        self.assertIn('ARTIFACT_REPOSITORY="$repository"', text)
+        self.assertNotIn("cosign verify-attestation", text)
+        workflow = (ROOT / ".github/workflows/test-runtime-smoke.yml").read_text()
+        self.assertIn('WORKFLOW_SHA: "${{ job.workflow_sha }}"', workflow)
+
+    def test_runtime_and_browser_evidence_are_source_bound(self) -> None:
+        runtime = SCRIPT.read_text()
+        self.assertIn('--arg sourceSha "$SOURCE_SHA"', runtime)
+        browser = (ROOT / "scripts/run-compat-browser.sh").read_text()
+        self.assertIn('SOURCE_SHA=${SOURCE_SHA:-$(git -C "$ROOT" rev-parse HEAD)}', browser)
+        self.assertIn('--arg sourceSha "$SOURCE_SHA"', browser)
+        workflow = (ROOT / ".github/workflows/compat-check.yml").read_text()
+        self.assertIn('${{ inputs.source-sha || github.sha }}', workflow)
+
+    def test_partial_kind_create_still_deletes_and_collects_app_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "scaffold"
+            shutil.copytree(ROOT / "scaffold", root, ignore=shutil.ignore_patterns("node_modules", "dist", "evidence", "diagnostics"))
+            bin_dir = base / "bin"
+            bin_dir.mkdir()
+            kind_log = base / "kind.log"
+            kind = bin_dir / "kind"
+            kind.write_text("#!/usr/bin/env bash\necho \"$@\" >> \"$KIND_LOG\"\nif [[ \"$1\" == create ]]; then exit 1; fi\n")
+            git = bin_dir / "git"
+            git.write_text("#!/usr/bin/env bash\nprintf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n")
+            kubectl = bin_dir / "kubectl"
+            kubectl.write_text("#!/usr/bin/env bash\necho kubectl \"$@\"\n")
+            for tool in (kind, git, kubectl):
+                tool.chmod(0o755)
+            env = {**os.environ, "PATH": str(ROOT / ".venv/bin") + ":" + str(bin_dir) + ":/usr/local/go/bin:/usr/bin:/bin", "KIND_LOG": str(kind_log), "GITHUB_RUN_ID": "negative"}
+            result = subprocess.run(["bash", str(SCRIPT), "--root", str(root), "--mode", "local", "--profile", "ci"], env=env, text=True, capture_output=True, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            calls = kind_log.read_text()
+            self.assertIn("create cluster", calls)
+            self.assertIn("delete cluster", calls)
+            diagnostics = (root / "diagnostics/runtime-smoke.txt").read_text()
+            self.assertIn("logs -A", diagnostics)
+            self.assertIn("export logs", calls)
+
+    def test_driver_has_argo_lint_diagnostics_and_guaranteed_kind_cleanup(self) -> None:
+        text = SCRIPT.read_text()
+        for expected in ("argo lint", "argo get", "kind delete cluster", "trap ", "kubectl get events"):
+            self.assertIn(expected, text)
+
+    def test_argo_manifest_uses_server_side_create_without_apply_annotation(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
+        self.assertNotIn('kubectl apply -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
+
+    def test_argo_wait_uses_external_suite_timeout(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('timeout "$TIMEOUT" argo wait "$WORKFLOW_NAME"', text)
+        self.assertNotIn('argo wait "$WORKFLOW_NAME" --namespace default --timeout', text)
+
+    def test_artifactless_smoke_disables_invalid_quick_start_driver(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('"path":"/data/artifactRepository"', text)
+        self.assertIn('"op":"remove"', text)
+        self.assertIn("rollout restart deployment/workflow-controller --namespace argo", text)
+
+    def test_default_executor_uses_canonical_task_result_rbac(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn("manifests/quick-start/base/executor/emissary/executor-role.yaml", text)
+        self.assertIn("manifests/quick-start/base/executor-default-rolebinding.yaml", text)
+        self.assertEqual(text.count("kubectl create --namespace default -f"), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

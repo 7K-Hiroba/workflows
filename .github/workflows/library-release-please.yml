@@ -1,0 +1,10 @@
+name: library release PR
+on: {push: {branches: [main]}}
+permissions: {contents: read}
+jobs:
+  propose:
+    uses: $/.github/workflows/release-please.yml
+    with: {root: ., app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"}
+    secrets:
+      release-private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}"
+    permissions: {contents: write, pull-requests: write}

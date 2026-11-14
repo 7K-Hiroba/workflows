@@ -1,0 +1,246 @@
+name: Hiroba trusted extension release
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      source-sha: {type: string, required: true}
+      registry-prefix: {type: string, default: ghcr.io/7k-hiroba}
+      environment: {type: string, default: release}
+      evidence-name: {type: string, default: release-test-evidence}
+      required-lanes: {type: string, default: validate}
+      rehearsal: {type: boolean, default: false}
+      edge: {type: boolean, default: false}
+      backend-version: {type: string, default: ""}
+      ui-version: {type: string, default: ""}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: ${{ inputs.environment }}
+    outputs: {digest: "${{ steps.publish.outputs.digest }}"}
+    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with: {name: "${{ inputs.evidence-name }}", path: evidence}
+      - id: config
+        run: |
+          app=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["app"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["extension"]["version"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          release_tag="extension-v$version"
+          if [[ -n "${{ inputs.backend-version }}" ]]; then version="${{ inputs.backend-version }}"; release_tag="extension-v$version"; fi
+          channel=""
+          if [[ "${{ inputs.edge }}" == true ]]; then channel=edge; fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; channel=""; fi
+          {
+            echo "release-tag=$release_tag"
+            echo "app=$app"
+            echo "tier=$tier"
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "repository=${{ inputs.registry-prefix }}/$app/extension"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}"}
+      - id: publish
+        name: Build candidate and enforce immutable backend digest
+        run: |
+          set -euo pipefail
+          output=evidence/artifact-extension.json
+          .hiroba/workflows/scripts/release-backend.sh --context "consumer/${{ inputs.root }}/extension" \
+            --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
+            --channel "${{ steps.config.outputs.channel }}" --source-sha "${{ inputs.source-sha }}" --output "$output"
+          echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
+          echo "media-type=$(jq -r .mediaType "$output")" >> "$GITHUB_OUTPUT"
+      - name: Sign backend and attach test evidence
+        env:
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: "${{ steps.publish.outputs.media-type }}"
+          APP: "${{ steps.config.outputs.app }}"
+          COMPONENT: extension
+          TRUST_TIER: "${{ steps.config.outputs.tier }}"
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RUN_ID: "${{ github.run_id }}"
+          RUN_ATTEMPT: "${{ github.run_attempt }}"
+          RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"
+          EVIDENCE_DIR: evidence
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          PREDICATE_OUT: evidence/test-extension.json
+        run: .hiroba/workflows/scripts/sign-and-attest.sh
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with: {subject-name: "${{ steps.config.outputs.repository }}", subject-digest: "${{ steps.publish.outputs.digest }}", push-to-registry: true}
+      - name: Verify backend evidence
+        env:
+          ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: "${{ steps.publish.outputs.media-type }}"
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-extension\\.yml@${{ job.workflow_sha }}$"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"
+          VERIFICATION_RECEIPT: evidence/receipt-extension.json
+        run: .hiroba/workflows/scripts/verify-release.sh
+      - run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact evidence/artifact-extension.json --receipt evidence/receipt-extension.json --predicate evidence/test-extension.json
+      - name: Move backend edge channel only after verification
+        if: inputs.edge
+        run: |
+          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
+          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with: {name: artifact-extension, path: evidence/artifact-extension.json, retention-days: 30}
+  ui:
+    needs: [backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: ${{ inputs.environment }}
+    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with: {node-version: 24, cache: npm, cache-dependency-path: "consumer/${{ inputs.root }}/ui/package-lock.json"}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with: {name: "${{ inputs.evidence-name }}", path: evidence}
+      - id: config
+        run: |
+          app=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["app"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["ui"]["version"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          release_tag="ui-v$version"
+          if [[ -n "${{ inputs.ui-version }}" ]]; then version="${{ inputs.ui-version }}"; release_tag="ui-v$version"; fi
+          channel=""
+          if [[ "${{ inputs.edge }}" == true ]]; then channel=edge; fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; channel=""; fi
+          {
+            echo "release-tag=$release_tag"
+            echo "app=$app"
+            echo "tier=$tier"
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "repository=${{ inputs.registry-prefix }}/$app/extension-ui"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build and validate UI remote
+        working-directory: consumer/${{ inputs.root }}/ui
+        run: |
+          npm ci --include=dev --ignore-scripts
+          npm run build
+          python3 "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/check-ui-bundle.py" --dist dist --output ui-bundle-manifest.json
+      - name: Log in to GHCR
+        env: {TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        run: echo "$TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - id: publish
+        run: |
+          set -euo pipefail
+          output=evidence/artifact-extension-ui.json
+          .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/ui/dist" \
+            --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
+            --artifact-type application/vnd.inari.extension.ui.v1 --channel "${{ steps.config.outputs.channel }}" \
+            --source-sha "${{ inputs.source-sha }}" --output "$output"
+          echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
+      - name: Sign UI OCI remote and attach test evidence
+        env:
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.inari.extension.ui.v1
+          APP: "${{ steps.config.outputs.app }}"
+          COMPONENT: ui
+          TRUST_TIER: "${{ steps.config.outputs.tier }}"
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RUN_ID: "${{ github.run_id }}"
+          RUN_ATTEMPT: "${{ github.run_attempt }}"
+          RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"
+          EVIDENCE_DIR: evidence
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          PREDICATE_OUT: evidence/test-extension-ui.json
+        run: .hiroba/workflows/scripts/sign-and-attest.sh
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with: {subject-name: "${{ steps.config.outputs.repository }}", subject-digest: "${{ steps.publish.outputs.digest }}", push-to-registry: true}
+      - name: Verify UI evidence
+        env:
+          ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.inari.extension.ui.v1
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-extension\\.yml@${{ job.workflow_sha }}$"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"
+          VERIFICATION_RECEIPT: evidence/receipt-extension-ui.json
+        run: .hiroba/workflows/scripts/verify-release.sh
+      - run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact evidence/artifact-extension-ui.json --receipt evidence/receipt-extension-ui.json --predicate evidence/test-extension-ui.json
+      - name: Pull exact UI OCI and compare every asset
+        run: |
+          mkdir -p evidence/oci-ui
+          oras pull --output evidence/oci-ui "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/ui/dist" --oci-dir evidence/oci-ui --manifest "consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json"
+      - name: Move UI edge channel only after verification and byte comparison
+        if: inputs.edge
+        run: |
+          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
+          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with: {name: artifact-extension, path: evidence/backend}
+      - name: Render exact extension registration metadata
+        run: python3 .hiroba/workflows/scripts/render-extension-release.py --extension "consumer/${{ inputs.root }}/extension.yaml" --backend evidence/backend/artifact-extension.json --ui evidence/artifact-extension-ui.json --ui-manifest "consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json" --output evidence/extension.release.yaml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: artifact-extension-ui
+          path: |
+            evidence/artifact-extension-ui.json
+            evidence/extension.release.yaml
+          retention-days: 30
+  result:
+    if: always()
+    needs: [backend, ui]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {BACKEND: "${{ needs.backend.result }}", UI: "${{ needs.ui.result }}"}
+        run: |
+          status=success
+          [[ "$BACKEND" == success && "$UI" == success ]] || status=failure
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

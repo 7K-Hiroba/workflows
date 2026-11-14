@@ -1,0 +1,20 @@
+suiteSchema: inari.smoke.v1
+target:
+  id: workflows-scaffold
+  version: 0.1.0
+  component: charts/workflows-scaffold
+compatibleAppVersions: ">=0.1.0 <2.0.0"
+parameterContract: inari.smoke.params.v1
+dependencies: []
+timeout: 5m
+profiles:
+  ci: {sideEffects: readOnly, cleanup: required}
+  stage: {sideEffects: readOnly, cleanup: required}
+  prod: {sideEffects: readOnly, cleanup: required}
+rbacRequirements:
+  - verbs: [get, list]
+    resources: [pods, services]
+workflowTemplate: workflowtemplate.yaml
+entrypoint: smoke
+idempotency: safe
+cleanup: no resources are created by the read-only journey

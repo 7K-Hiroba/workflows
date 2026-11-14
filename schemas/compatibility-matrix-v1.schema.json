@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/compatibility-matrix-v1.json",
+  "type": "object",
+  "required": ["schema", "entries"],
+  "properties": {
+    "schema": {"const": "inari.compat.v1"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["server", "ui", "pluginSdk", "pluginSdkSha", "pluginContracts", "uiHostApis"],
+        "properties": {
+          "server": {"type": "string"},
+          "ui": {"type": "string"},
+          "uiHostSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "pluginSdk": {"type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"},
+          "pluginSdkSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "pluginContracts": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "uiHostApis": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        }
+      }
+    }
+  }
+}

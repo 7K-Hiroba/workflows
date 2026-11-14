@@ -1,0 +1,60 @@
+name: Hiroba UI extension CI
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .hiroba/workflows
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with: {node-version: 24, cache: npm, cache-dependency-path: "consumer/${{ inputs.root }}/ui/package-lock.json"}
+      - name: Install without lifecycle scripts
+        working-directory: consumer/${{ inputs.root }}/ui
+        run: npm ci --include=dev --ignore-scripts
+      - name: Test
+        working-directory: consumer/${{ inputs.root }}/ui
+        run: npm test -- --reporter=json --outputFile=evidence/vitest.json
+      - name: Typecheck
+        working-directory: consumer/${{ inputs.root }}/ui
+        run: npm run typecheck
+      - name: Lint
+        working-directory: consumer/${{ inputs.root }}/ui
+        run: npm run lint
+      - name: Build canonical Module Federation remote
+        working-directory: consumer/${{ inputs.root }}/ui
+        run: npm run build
+      - name: Verify complete flat OCI asset set
+        run: python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/ui/dist" --output "consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: ui-extension-evidence
+          path: |
+            consumer/${{ inputs.root }}/ui/evidence/vitest.json
+            consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json
+          if-no-files-found: ignore
+          retention-days: 30
+  result:
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {RESULT: "${{ needs.test.result }}"}
+        run: |
+          echo "status=$RESULT" >> "$GITHUB_OUTPUT"
+          [[ "$RESULT" == success ]] || exit 1

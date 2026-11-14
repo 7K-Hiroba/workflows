@@ -1,0 +1,62 @@
+name: protected library signed release
+on:
+  workflow_dispatch:
+    inputs:
+      version: {required: true, type: string, description: SemVer such as 1.0.0}
+      update_major: {type: boolean, default: false}
+permissions: {contents: read}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions: {contents: write, id-token: write, actions: read}
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with: {app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}", private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}", owner: 7K-Hiroba}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: main, fetch-depth: 0, token: "${{ steps.app.outputs.token }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - name: Verify approved main and required checks
+        env: {GH_TOKEN: "${{ steps.app.outputs.token }}", VERSION: "${{ inputs.version }}"}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
+          [[ "$(git -C consumer branch --show-current)" == main ]] || exit 2
+          sha=$(git -C consumer rev-parse HEAD)
+          if git -C consumer rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then echo "tag already exists" >&2; exit 2; fi
+          gh api "repos/7K-Hiroba/workflows/commits/$sha/check-runs" --paginate \
+            --jq '.check_runs[] | {name,status,conclusion}' > candidate-checks.ndjson
+          python3 .hiroba/workflows/scripts/check-required-checks.py --input candidate-checks.ndjson \
+            --required library-ci-result --required scaffold-ci-result
+          jq -r '.["."]' consumer/.release-please-manifest.json | grep -Fx "$VERSION"
+          grep -q "## \[$VERSION\]" consumer/CHANGELOG.md
+          echo "source-sha=$sha" >> "$GITHUB_ENV"
+      - name: Install pinned gitsign
+        run: go install github.com/sigstore/gitsign@v0.18.0
+      - name: Create and verify signed version tag
+        env: {VERSION: "${{ inputs.version }}", GH_TOKEN: "${{ steps.app.outputs.token }}"}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          git -C consumer config gpg.format x509
+          git -C consumer config gpg.x509.program gitsign
+          git -C consumer config gitsign.tokenProvider github-actions
+          git -C consumer tag -s -a "$tag" -m "Hiroba workflows $tag" "$source_sha"
+          gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ job.workflow_sha }}$" "$tag"
+          git -C consumer push origin "$tag"
+          gh release create "$tag" --title "Hiroba workflows $tag" --notes "Reviewed, QA-verified immutable workflow release. Consumers pin to $(git -C consumer rev-parse "$tag^{commit}")."
+      - name: Optionally move signed documentation-only major alias
+        if: inputs.update_major
+        env: {VERSION: "${{ inputs.version }}"}
+        run: |
+          major="v${VERSION%%.*}"
+          git -C consumer tag -s -f -a "$major" -m "Hiroba workflows $major documentation alias" "$source_sha"
+          gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ job.workflow_sha }}$" "$major"
+          git -C consumer push -f origin "refs/tags/$major"

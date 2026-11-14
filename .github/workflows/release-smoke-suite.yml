@@ -1,0 +1,142 @@
+name: Hiroba signed smoke-suite release
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      source-sha: {type: string, required: true}
+      registry-prefix: {type: string, default: ghcr.io/7k-hiroba}
+      environment: {type: string, default: release}
+      evidence-name: {type: string, default: release-test-evidence}
+      required-lanes: {type: string, default: runtime-smoke}
+      rehearsal: {type: boolean, default: false}
+      edge: {type: boolean, default: false}
+      target-version: {type: string, default: ""}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  test:
+    uses: $/.github/workflows/test-runtime-smoke.yml
+    with: {root: "${{ inputs.root }}", mode: local, profile: ci, source-sha: "${{ inputs.source-sha }}"}
+  publish:
+    needs: [test]
+    if: needs.test.outputs.status == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: ${{ inputs.environment }}
+    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with: {go-version: "1.26.3", cache: false}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with: {name: "${{ inputs.evidence-name }}", path: evidence}
+      - name: Add runtime lane and validate suite safety
+        run: |
+          mkdir -p evidence
+          jq -n --arg sourceSha "${{ inputs.source-sha }}" '{schema:"inari.lane-result.v1",lane:"runtime-smoke",status:"passed",sourceSha:$sourceSha}' > evidence/runtime-smoke.json
+          python3 .hiroba/workflows/scripts/validate-repository.py --root "consumer/${{ inputs.root }}"
+      - id: config
+        run: |
+          app=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["app"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          target=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["id"])' "consumer/${{ inputs.root }}/tests/smoke/suite.yaml")
+          version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["version"])' "consumer/${{ inputs.root }}/tests/smoke/suite.yaml")
+          release_tag="${target}-v${version}"
+          if [[ -n "${{ inputs.target-version }}" ]]; then version="${{ inputs.target-version }}"; release_tag="${target}-v${version}"; fi
+          channel=""
+          if [[ "${{ inputs.edge }}" == true ]]; then channel=edge; fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; channel=""; fi
+          {
+            echo "release-tag=$release_tag"
+            echo "app=$app"
+            echo "tier=$tier"
+            echo "target=$target"
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "repository=${{ inputs.registry-prefix }}/$app/smoke/$target"
+          } >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        env: {TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        run: echo "$TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - id: publish
+        run: |
+          set -euo pipefail
+          output=evidence/artifact-smoke-${{ steps.config.outputs.target }}.json
+          .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/tests/smoke" \
+            --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
+            --artifact-type application/vnd.inari.smoke.suite.v1+yaml --channel "${{ steps.config.outputs.channel }}" \
+            --source-sha "${{ inputs.source-sha }}" --output "$output"
+          echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
+      - name: Sign smoke suite and attach test evidence
+        env:
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.inari.smoke.suite.v1+yaml
+          APP: "${{ steps.config.outputs.app }}"
+          COMPONENT: "${{ steps.config.outputs.target }}"
+          TRUST_TIER: "${{ steps.config.outputs.tier }}"
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RUN_ID: "${{ github.run_id }}"
+          RUN_ATTEMPT: "${{ github.run_attempt }}"
+          RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"
+          EVIDENCE_DIR: evidence
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          PREDICATE_OUT: "evidence/test-smoke-${{ steps.config.outputs.target }}.json"
+        run: .hiroba/workflows/scripts/sign-and-attest.sh
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with: {subject-name: "${{ steps.config.outputs.repository }}", subject-digest: "${{ steps.publish.outputs.digest }}", push-to-registry: true}
+      - name: Verify smoke-suite evidence
+        env:
+          ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
+          ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.inari.smoke.suite.v1+yaml
+          SOURCE_REPOSITORY: "${{ github.repository }}"
+          SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-smoke-suite\\.yml@${{ job.workflow_sha }}$"
+          WORKFLOW_PATH: "${{ job.workflow_file_path }}"
+          RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"
+          VERIFICATION_RECEIPT: "evidence/receipt-smoke-${{ steps.config.outputs.target }}.json"
+        run: .hiroba/workflows/scripts/verify-release.sh
+      - run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact "evidence/artifact-smoke-${{ steps.config.outputs.target }}.json" --receipt "evidence/receipt-smoke-${{ steps.config.outputs.target }}.json" --predicate "evidence/test-smoke-${{ steps.config.outputs.target }}.json"
+      - name: Pull and byte-compare packaged suite
+        run: |
+          mkdir -p evidence/packaged-smoke
+          oras pull --output evidence/packaged-smoke "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          diff -r "consumer/${{ inputs.root }}/tests/smoke" evidence/packaged-smoke
+      - name: Move smoke edge channel only after verification and byte comparison
+        if: inputs.edge
+        run: |
+          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
+          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with: {name: "artifact-smoke-${{ steps.config.outputs.target }}", path: "evidence/artifact-smoke-${{ steps.config.outputs.target }}.json", retention-days: 30}
+  result:
+    if: always()
+    needs: [test, publish]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {TEST: "${{ needs.test.outputs.status }}", PUBLISH: "${{ needs.publish.result }}"}
+        run: |
+          status=success
+          [[ "$TEST" == success && "$PUBLISH" == success ]] || status=failure
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

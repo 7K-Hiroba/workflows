@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/release-manifest-v1.json",
+  "type": "object",
+  "required": ["schema", "sourceSha", "artifacts"],
+  "properties": {
+    "schema": {"const": "inari.release-manifest.v1"},
+    "sourceSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "artifacts": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "object", "required": ["repository", "digest", "mediaType", "sourceSha", "signature", "provenance", "testEvidence"]}}
+  }
+}

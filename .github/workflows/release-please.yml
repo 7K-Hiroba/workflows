@@ -1,0 +1,81 @@
+name: Hiroba release-please PR flow
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      app-id: {type: string, required: true}
+    secrets:
+      release-private-key: {required: true}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {contents: write, pull-requests: write}
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with: {app-id: "${{ inputs.app-id }}", private-key: "${{ secrets.release-private-key }}", owner: "${{ github.repository_owner }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, fetch-depth: 2, token: "${{ steps.app.outputs.token }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - name: Skip release merges
+        id: gate
+        run: |
+          subject=$(git -C consumer log -1 --pretty=%s)
+          parent=$(git -C consumer log -1 --pretty=%s HEAD^2 2>/dev/null || true)
+          if grep -qiE '^chore(\(.*\))?: release' <<< "$subject" || grep -qiE '^chore(\(.*\))?: release' <<< "$parent"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Synchronize components through a PR when drift exists
+        if: steps.gate.outputs.skip != 'true'
+        id: sync
+        env: {GH_TOKEN: "${{ steps.app.outputs.token }}", ROOT: "${{ inputs.root }}"}
+        run: |
+          set -euo pipefail
+          [[ "$ROOT" == . ]] || { echo "release-please requires repository root" >&2; exit 2; }
+          python3 .hiroba/workflows/scripts/sync-release-please-config.py --root consumer
+          if git -C consumer diff --quiet -- release-please-config.json .release-please-manifest.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          branch="chore/sync-release-please-${GITHUB_RUN_ID}"
+          git -C consumer checkout -b "$branch"
+          git -C consumer config user.name "hiroba-release[bot]"
+          git -C consumer config user.email "hiroba-release[bot]@users.noreply.github.com"
+          git -C consumer add release-please-config.json .release-please-manifest.json
+          git -C consumer commit -m "chore: sync release-please components"
+          git -C consumer push origin "HEAD:refs/heads/$branch"
+          existing=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number')
+          if [[ -z "$existing" ]]; then
+            gh pr create --base main --head "$branch" --title "chore: sync release-please components" --body "Generated from the declarative Hiroba component layout. Merge after CI; release-please will run on the next main push."
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Open or update aggregated Release PR
+        if: steps.gate.outputs.skip != 'true' && steps.sync.outputs.changed != 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          include-component-in-tag: true
+          skip-github-release: true
+  result:
+    if: always()
+    needs: [propose]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env: {RESULT: "${{ needs.propose.result }}"}
+        run: |
+          echo "status=$RESULT" >> "$GITHUB_OUTPUT"
+          [[ "$RESULT" == success ]] || exit 1

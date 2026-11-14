@@ -1,0 +1,5 @@
+name: service
+version: 0.1.0
+channel: incubating
+description: Minimal component scaffold used by workflow contract tests
+kind: component

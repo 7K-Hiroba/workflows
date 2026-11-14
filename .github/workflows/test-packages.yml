@@ -1,0 +1,112 @@
+name: Hiroba package type tests
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
+      all: {type: boolean, default: false}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      kro: ${{ steps.matrix.outputs.kro }}
+      policy: ${{ steps.matrix.outputs.policy }}
+      app: ${{ steps.matrix.outputs.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: matrix
+        env: {BASE: "${{ github.base_ref }}", ALL: "${{ inputs.all }}", ROOT: "${{ inputs.root }}"}
+        run: |
+          set -euo pipefail
+          args=(--root "consumer/$ROOT")
+          if [[ "$ALL" == true || "${GITHUB_EVENT_NAME}" != pull_request ]]; then
+            args+=(--all)
+          else
+            git -C consumer fetch origin "$BASE" --depth=1
+            git -C consumer diff --name-only "origin/$BASE" HEAD > changed.txt
+            args+=(--changed-files changed.txt)
+          fi
+          python3 .hiroba/workflows/scripts/discover-components.py "${args[@]}" > plan.json
+          jq -c '[.components[] | select(.kind == "package" and .packageType == "kro-rgd") | {name,path}]' plan.json > kro.json
+          jq -c '[.components[] | select(.kind == "package" and .packageType == "policy-pack") | {name,path}]' plan.json > policy.json
+          jq -c '[.components[] | select(.kind == "package" and .packageType == "platform-app") | {name,path}]' plan.json > app.json
+          {
+            echo "kro=$(cat kro.json)"
+            echo "policy=$(cat policy.json)"
+            echo "app=$(cat app.json)"
+          } >> "$GITHUB_OUTPUT"
+  kro:
+    if: needs.plan.outputs.kro != '[]'
+    needs: [plan]
+    strategy: {fail-fast: false, matrix: {package: "${{ fromJSON(needs.plan.outputs.kro) }}"}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
+        with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
+      - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type kro-rgd --package "${{ matrix.package.name }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with: {name: "kro-diagnostics-${{ matrix.package.name }}", path: "consumer/${{ inputs.root }}/diagnostics", if-no-files-found: ignore}
+  policy:
+    if: needs.plan.outputs.policy != '[]'
+    needs: [plan]
+    strategy: {fail-fast: false, matrix: {package: "${{ fromJSON(needs.plan.outputs.policy) }}"}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
+        with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
+      - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type policy-pack --package "${{ matrix.package.name }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with: {name: "policy-diagnostics-${{ matrix.package.name }}", path: "consumer/${{ inputs.root }}/diagnostics", if-no-files-found: ignore}
+  app:
+    if: needs.plan.outputs.app != '[]'
+    needs: [plan]
+    strategy: {fail-fast: false, matrix: {package: "${{ fromJSON(needs.plan.outputs.app) }}"}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
+      - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type platform-app --package "${{ matrix.package.name }}"
+  result:
+    if: always()
+    needs: [plan, kro, policy, app]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env:
+          PLAN: ${{ needs.plan.result }}
+          KRO: ${{ needs.kro.result }}
+          POLICY: ${{ needs.policy.result }}
+          APP: ${{ needs.app.result }}
+        run: |
+          status=success
+          if [[ "$PLAN" != success || "$KRO" == failure || "$KRO" == cancelled || "$POLICY" == failure || "$POLICY" == cancelled || "$APP" == failure || "$APP" == cancelled ]]; then status=failure; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

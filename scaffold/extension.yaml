@@ -1,0 +1,22 @@
+apiVersion: inari.io/v1alpha1
+kind: Extension
+metadata:
+  name: workflows-scaffold
+spec:
+  version: 0.1.0 # x-release-please-version
+  kinds: [backend, ui]
+  backend:
+    image: ghcr.io/7k-hiroba/workflows-scaffold/extension
+    digestPinning: required
+    actions: [scaffold.ping]
+  ui:
+    remoteEntryOci: ghcr.io/7k-hiroba/workflows-scaffold/extension-ui
+    slots:
+      - {kind: cluster-tab, name: health}
+  contracts:
+    backend: [inari.plugin.v1]
+    ui:
+      sdk: ">=0.1.8 <2.0.0"
+      hostApi: inari.ui.v1
+  permissions:
+    - extensions:invoke:workflows-scaffold

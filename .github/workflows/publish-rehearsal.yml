@@ -1,0 +1,45 @@
+name: protected CI publish rehearsal
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha: {required: true, type: string}
+      mode: {required: true, type: choice, options: [full, repair-chart]}
+      chart: {required: false, type: string}
+      version: {required: false, type: string}
+permissions: {contents: read}
+jobs:
+  full:
+    if: inputs.mode == 'full' && inputs.source_sha == github.sha
+    uses: $/.github/workflows/release.yml
+    with:
+      root: scaffold
+      rehearsal: true
+      registry-prefix: ghcr.io/7k-hiroba/workflows/ci
+      environment: ci-publish
+    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+  reuse-chart:
+    if: inputs.mode == 'repair-chart' && inputs.source_sha == github.sha
+    uses: $/.github/workflows/release-chart.yml
+    with:
+      root: scaffold
+      chart: ${{ inputs.chart }}
+      version: ${{ inputs.version }}
+      source-sha: ${{ inputs.source_sha }}
+      repair: false
+      rehearsal: true
+      standalone: true
+      registry-prefix: ghcr.io/7k-hiroba/workflows/ci
+      environment: ci-publish
+      required-lanes: chart
+    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+  result:
+    if: always()
+    needs: [full, reuse-chart]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          MODE: "${{ inputs.mode }}"
+          FULL: "${{ needs.full.outputs.status }}"
+          REUSE: "${{ needs.reuse-chart.outputs.status }}"
+        run: |
+          if [[ "$MODE" == full ]]; then [[ "$FULL" == success ]] || exit 1; else [[ "$REUSE" == success ]] || exit 1; fi

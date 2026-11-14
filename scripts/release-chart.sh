@@ -6,6 +6,7 @@ VERSION=""
 REPOSITORY_BASE=""
 SOURCE_SHA=""
 OUTPUT=""
+CHANNEL=""
 REPAIR=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -14,6 +15,7 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION=$2; shift 2 ;;
     --repository-base) REPOSITORY_BASE=$2; shift 2 ;;
     --source-sha) SOURCE_SHA=$2; shift 2 ;;
+    --channel) CHANNEL=$2; shift 2 ;;
     --output) OUTPUT=$2; shift 2 ;;
     --repair) REPAIR=$2; shift 2 ;;
     *) echo "unknown argument $1" >&2; exit 2 ;;
@@ -22,6 +24,8 @@ done
 [[ "$CHART" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "invalid chart name" >&2; exit 2; }
 [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]] || { echo "chart version must be SemVer" >&2; exit 2; }
 [[ "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "source SHA must be full 40 characters" >&2; exit 2; }
+[[ -z "$CHANNEL" || "$CHANNEL" == edge ]] || { echo "chart channel may only be edge" >&2; exit 2; }
+[[ "$REPAIR" != true || -z "$CHANNEL" ]] || { echo "chart repair cannot move a channel" >&2; exit 2; }
 CHART_DIR="$ROOT/charts/$CHART"
 CHART_YAML="$CHART_DIR/Chart.yaml"
 [[ -f "$CHART_YAML" ]] || { echo "missing $CHART_YAML" >&2; exit 2; }
@@ -51,6 +55,6 @@ fi
 RESOLVED=$(crane digest "$REPOSITORY:$VERSION")
 [[ "$RESOLVED" == "$DIGEST" ]] || { echo "chart digest mismatch after publish" >&2; exit 1; }
 mkdir -p "$(dirname "$OUTPUT")"
-jq -n --arg repository "$REPOSITORY" --arg digest "$DIGEST" --arg sourceSha "$SOURCE_SHA" --arg tag "$TAG" \
-  '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:"application/vnd.cncf.helm.chart.v1",sourceSha:$sourceSha,tag:$tag,channel:"",signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"
+jq -n --arg repository "$REPOSITORY" --arg digest "$DIGEST" --arg sourceSha "$SOURCE_SHA" --arg tag "$TAG" --arg channel "$CHANNEL" \
+  '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:"application/vnd.cncf.helm.chart.v1",sourceSha:$sourceSha,tag:$tag,channel:$channel,signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"
 echo "published or verified chart $REPOSITORY@$DIGEST"

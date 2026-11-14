@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -37,7 +38,14 @@ def main() -> int:
     all_components = plan["components"]
     tags = set(subprocess.check_output(["git", "-C", str(root), "tag", "--list"], text=True).splitlines())
     components = []
-    if args.rehearsal:
+    release_merge = False
+    if args.edge:
+        subject = subprocess.check_output(["git", "-C", str(root), "log", "-1", "--pretty=%s"], text=True).strip()
+        parent = subprocess.run(["git", "-C", str(root), "log", "-1", "--pretty=%s", "HEAD^2"], text=True, capture_output=True, check=False).stdout.strip()
+        release_merge = any(re.match(r"^chore(\(.*\))?: release", value, re.IGNORECASE) for value in (subject, parent))
+    if release_merge:
+        components = []
+    elif args.rehearsal:
         components = []
     elif args.repair_tag:
         for component in all_components:
@@ -105,6 +113,7 @@ def main() -> int:
         "shouldPublish": bool(publish_components),
         "repair": bool(args.repair_tag),
         "rehearsal": bool(args.rehearsal),
+        "releaseMerge": release_merge,
         "hasExtension": "extension" in kinds,
         "hasUI": "ui" in kinds,
         "hasChart": "chart" in kinds,

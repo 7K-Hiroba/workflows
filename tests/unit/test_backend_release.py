@@ -42,11 +42,16 @@ class BackendReleaseTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def publish(self) -> subprocess.CompletedProcess[str]:
+    def publish(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([
             "bash", str(SCRIPT), "--context", str(self.context), "--repository", "ghcr.io/7k-hiroba/app/extension",
-            "--tag", "1.0.0", "--source-sha", "a" * 40, "--output", str(self.root / "artifact.json"),
+            "--tag", "1.0.0", "--source-sha", "a" * 40, "--output", str(self.root / "artifact.json"), *extra,
         ], env=self.env, text=True, capture_output=True, check=False)
+
+    def test_edge_channel_is_recorded_only_when_requested(self) -> None:
+        result = self.publish("--channel", "edge")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads((self.root / "artifact.json").read_text())["channel"], "edge")
 
     def test_always_builds_and_pushes_missing_candidate(self) -> None:
         result = self.publish()

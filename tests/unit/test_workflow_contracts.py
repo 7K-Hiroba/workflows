@@ -126,6 +126,27 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
         self.assertIn('refs/tags/$TAG^{}', repair_text)
 
+    def test_edge_threads_versions_and_channels_through_every_publisher(self) -> None:
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        extension = release["jobs"]["publish-extension"]["with"]
+        self.assertEqual(extension["edge"], "${{ inputs.edge }}")
+        self.assertEqual(extension["backend-version"], "${{ needs.plan.outputs.extension-version }}")
+        self.assertEqual(extension["ui-version"], "${{ needs.plan.outputs.ui-version }}")
+        smoke = release["jobs"]["publish-smoke"]["with"]
+        self.assertEqual(smoke["edge"], "${{ inputs.edge }}")
+        self.assertEqual(smoke["target-version"], "${{ needs.plan.outputs.smoke-version }}")
+        self.assertEqual(release["jobs"]["publish-charts"]["with"]["edge"], "${{ inputs.edge }}")
+        for name in ("release-extension.yml", "release-smoke-suite.yml", "release-chart.yml"):
+            data = yaml.safe_load((WORKFLOWS / name).read_text())
+            self.assertIn("edge", data.get("on", data.get(True, {}))["workflow_call"]["inputs"])
+            text = (WORKFLOWS / name).read_text()
+            self.assertIn('oras tag', text)
+        extension_text = (WORKFLOWS / "release-extension.yml").read_text()
+        self.assertIn('version="${{ inputs.backend-version }}"', extension_text)
+        self.assertIn('version="${{ inputs.ui-version }}"', extension_text)
+        smoke_text = (WORKFLOWS / "release-smoke-suite.yml").read_text()
+        self.assertIn('version="${{ inputs.target-version }}"', smoke_text)
+
     def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
         extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         uploads = [step for step in extension["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@")]

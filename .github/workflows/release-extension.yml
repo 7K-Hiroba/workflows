@@ -9,6 +9,9 @@ on:
       evidence-name: {type: string, default: release-test-evidence}
       required-lanes: {type: string, default: validate}
       rehearsal: {type: boolean, default: false}
+      edge: {type: boolean, default: false}
+      backend-version: {type: string, default: ""}
+      ui-version: {type: string, default: ""}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
@@ -30,6 +33,8 @@ jobs:
         with: {go-version: "1.26.3", cache: false}
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
       - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with: {name: "${{ inputs.evidence-name }}", path: evidence}
       - id: config
@@ -38,12 +43,16 @@ jobs:
           tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["extension"]["version"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           release_tag="extension-v$version"
-          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; fi
+          if [[ -n "${{ inputs.backend-version }}" ]]; then version="${{ inputs.backend-version }}"; release_tag="extension-v$version"; fi
+          channel=""
+          if [[ "${{ inputs.edge }}" == true ]]; then channel=edge; fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; channel=""; fi
           {
             echo "release-tag=$release_tag"
             echo "app=$app"
             echo "tier=$tier"
             echo "version=$version"
+            echo "channel=$channel"
             echo "repository=${{ inputs.registry-prefix }}/$app/extension"
           } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -56,7 +65,7 @@ jobs:
           output=evidence/artifact-extension.json
           .hiroba/workflows/scripts/release-backend.sh --context "consumer/${{ inputs.root }}/extension" \
             --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
-            --source-sha "${{ inputs.source-sha }}" --output "$output"
+            --channel "${{ steps.config.outputs.channel }}" --source-sha "${{ inputs.source-sha }}" --output "$output"
           echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
           echo "media-type=$(jq -r .mediaType "$output")" >> "$GITHUB_OUTPUT"
       - name: Sign backend and attach test evidence
@@ -97,6 +106,11 @@ jobs:
           VERIFICATION_RECEIPT: evidence/receipt-extension.json
         run: .hiroba/workflows/scripts/verify-release.sh
       - run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact evidence/artifact-extension.json --receipt evidence/receipt-extension.json --predicate evidence/test-extension.json
+      - name: Move backend edge channel only after verification
+        if: inputs.edge
+        run: |
+          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
+          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with: {name: artifact-extension, path: evidence/artifact-extension.json, retention-days: 30}
   ui:
@@ -128,12 +142,16 @@ jobs:
           tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["ui"]["version"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           release_tag="ui-v$version"
-          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; fi
+          if [[ -n "${{ inputs.ui-version }}" ]]; then version="${{ inputs.ui-version }}"; release_tag="ui-v$version"; fi
+          channel=""
+          if [[ "${{ inputs.edge }}" == true ]]; then channel=edge; fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; channel=""; fi
           {
             echo "release-tag=$release_tag"
             echo "app=$app"
             echo "tier=$tier"
             echo "version=$version"
+            echo "channel=$channel"
             echo "repository=${{ inputs.registry-prefix }}/$app/extension-ui"
           } >> "$GITHUB_OUTPUT"
       - name: Build and validate UI remote
@@ -151,7 +169,8 @@ jobs:
           output=evidence/artifact-extension-ui.json
           .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/ui/dist" \
             --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
-            --artifact-type application/vnd.inari.extension.ui.v1 --source-sha "${{ inputs.source-sha }}" --output "$output"
+            --artifact-type application/vnd.inari.extension.ui.v1 --channel "${{ steps.config.outputs.channel }}" \
+            --source-sha "${{ inputs.source-sha }}" --output "$output"
           echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
       - name: Sign UI OCI remote and attach test evidence
         env:
@@ -196,6 +215,11 @@ jobs:
           mkdir -p evidence/oci-ui
           oras pull --output evidence/oci-ui "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/ui/dist" --oci-dir evidence/oci-ui --manifest "consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json"
+      - name: Move UI edge channel only after verification and byte comparison
+        if: inputs.edge
+        run: |
+          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
+          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with: {name: artifact-extension, path: evidence/backend}
       - name: Render exact extension registration metadata

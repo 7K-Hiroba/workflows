@@ -34,6 +34,9 @@ jobs:
       has-smoke: "${{ steps.plan.outputs.has-smoke }}"
       has-observability: "${{ steps.plan.outputs.has-observability }}"
       required-lanes: "${{ steps.plan.outputs.required-lanes }}"
+      extension-version: "${{ steps.plan.outputs.extension-version }}"
+      ui-version: "${{ steps.plan.outputs.ui-version }}"
+      smoke-version: "${{ steps.plan.outputs.smoke-version }}"
       source-sha: "${{ steps.plan.outputs.source-sha }}"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -66,8 +69,13 @@ jobs:
             while read -r path; do
               [[ -n "$path" ]] || continue
               kind=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .kind' edge-plan.json)
-              [[ "$kind" == smoke ]] && continue
-              version=$(cd "consumer/${{ inputs.root }}" && "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/resolve-edge-version.sh" "$path")
+              if [[ "$kind" == smoke ]]; then
+                target=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .targetComponent' edge-plan.json)
+                version=$(jq -r --arg target "$target" 'first(.publishComponents[] | select(.path == $target) | .version) // empty' edge-plan.json)
+              else
+                version=$(cd "consumer/${{ inputs.root }}" && "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/resolve-edge-version.sh" "$path")
+              fi
+              [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[0-9A-Za-z.-]+$ ]] || { echo "invalid resolved edge version for $path" >&2; exit 2; }
               jq --arg path "$path" --arg version "$version" '.components |= map(if .path == $path then .version = $version else . end) | .publishComponents |= map(if .path == $path then .version = $version else . end)' edge-plan.json > edge-plan.tmp
               mv edge-plan.tmp edge-plan.json
             done < <(jq -r '.publishComponents[].path' plan.json)
@@ -90,6 +98,9 @@ jobs:
             echo "has-smoke=$(jq -r .hasSmoke plan.json)"
             echo "has-observability=$(jq -r .hasObservability plan.json)"
             echo "required-lanes=$(jq -r '.requiredLanes | join(" ")' plan.json)"
+            echo "extension-version=$(jq -r 'first(.publishComponents[] | select(.kind == "extension") | .version) // ""' plan.json)"
+            echo "ui-version=$(jq -r 'first(.publishComponents[] | select(.kind == "ui") | .version) // ""' plan.json)"
+            echo "smoke-version=$(jq -r 'first(.publishComponents[] | select(.kind == "smoke") | .version) // ""' plan.json)"
             echo "source-sha=$source_sha"
           } >> "$GITHUB_OUTPUT"
   validate:
@@ -229,6 +240,7 @@ jobs:
       registry-prefix: ${{ inputs.registry-prefix }}
       environment: ${{ inputs.environment }}
       required-lanes: ${{ needs.plan.outputs.required-lanes }}
+      edge: ${{ inputs.edge }}
   publish-extension:
     if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-extension == 'true' && needs.plan.outputs.has-ui == 'true'
     needs: [plan, evidence]
@@ -240,6 +252,9 @@ jobs:
       environment: ${{ inputs.environment }}
       required-lanes: ${{ needs.plan.outputs.required-lanes }}
       rehearsal: ${{ inputs.rehearsal }}
+      edge: ${{ inputs.edge }}
+      backend-version: ${{ needs.plan.outputs.extension-version }}
+      ui-version: ${{ needs.plan.outputs.ui-version }}
   publish-smoke:
     if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-smoke == 'true'
     needs: [plan, evidence]
@@ -251,6 +266,8 @@ jobs:
       environment: ${{ inputs.environment }}
       required-lanes: ${{ needs.plan.outputs.required-lanes }}
       rehearsal: ${{ inputs.rehearsal }}
+      edge: ${{ inputs.edge }}
+      target-version: ${{ needs.plan.outputs.smoke-version }}
   indexes:
     if: needs.evidence.outputs.status == 'success' && inputs.repair_tag == '' && needs.publish-packages.result != 'failure' && needs.publish-templates.result != 'failure' && needs.publish-charts.result != 'failure' && needs.publish-extension.result != 'failure' && needs.publish-smoke.result != 'failure'
     needs: [plan, evidence, publish-packages, publish-templates, publish-charts, publish-extension, publish-smoke]

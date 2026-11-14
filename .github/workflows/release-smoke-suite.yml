@@ -9,6 +9,8 @@ on:
       evidence-name: {type: string, default: release-test-evidence}
       required-lanes: {type: string, default: runtime-smoke}
       rehearsal: {type: boolean, default: false}
+      edge: {type: boolean, default: false}
+      target-version: {type: string, default: ""}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
@@ -50,13 +52,17 @@ jobs:
           target=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["id"])' "consumer/${{ inputs.root }}/tests/smoke/suite.yaml")
           version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["version"])' "consumer/${{ inputs.root }}/tests/smoke/suite.yaml")
           release_tag="${target}-v${version}"
-          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; fi
+          if [[ -n "${{ inputs.target-version }}" ]]; then version="${{ inputs.target-version }}"; release_tag="${target}-v${version}"; fi
+          channel=""
+          if [[ "${{ inputs.edge }}" == true ]]; then channel=edge; fi
+          if [[ "${{ inputs.rehearsal }}" == true ]]; then version="${{ inputs.source-sha }}"; release_tag="ci-${version:0:12}"; channel=""; fi
           {
             echo "release-tag=$release_tag"
             echo "app=$app"
             echo "tier=$tier"
             echo "target=$target"
             echo "version=$version"
+            echo "channel=$channel"
             echo "repository=${{ inputs.registry-prefix }}/$app/smoke/$target"
           } >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
@@ -68,7 +74,8 @@ jobs:
           output=evidence/artifact-smoke-${{ steps.config.outputs.target }}.json
           .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/tests/smoke" \
             --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
-            --artifact-type application/vnd.inari.smoke.suite.v1+yaml --source-sha "${{ inputs.source-sha }}" --output "$output"
+            --artifact-type application/vnd.inari.smoke.suite.v1+yaml --channel "${{ steps.config.outputs.channel }}" \
+            --source-sha "${{ inputs.source-sha }}" --output "$output"
           echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
       - name: Sign smoke suite and attach test evidence
         env:
@@ -113,6 +120,11 @@ jobs:
           mkdir -p evidence/packaged-smoke
           oras pull --output evidence/packaged-smoke "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           diff -r "consumer/${{ inputs.root }}/tests/smoke" evidence/packaged-smoke
+      - name: Move smoke edge channel only after verification and byte comparison
+        if: inputs.edge
+        run: |
+          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
+          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with: {name: "artifact-smoke-${{ steps.config.outputs.target }}", path: "evidence/artifact-smoke-${{ steps.config.outputs.target }}.json", retention-days: 30}
   result:

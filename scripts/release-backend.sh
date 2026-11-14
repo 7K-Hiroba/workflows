@@ -5,12 +5,14 @@ REPOSITORY=""
 TAG=""
 SOURCE_SHA=""
 OUTPUT=""
+CHANNEL=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --context) CONTEXT=$2; shift 2 ;;
     --repository) REPOSITORY=$2; shift 2 ;;
     --tag) TAG=$2; shift 2 ;;
     --source-sha) SOURCE_SHA=$2; shift 2 ;;
+    --channel) CHANNEL=$2; shift 2 ;;
     --output) OUTPUT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -18,6 +20,7 @@ done
 [[ -d "$CONTEXT" && -n "$REPOSITORY" && -n "$OUTPUT" ]] || { echo "context, repository, and output are required" >&2; exit 2; }
 [[ "$TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ || "$TAG" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "backend tag must be SemVer, a prerelease, or a full source SHA" >&2; exit 2; }
 [[ "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "source SHA must be full 40 characters" >&2; exit 2; }
+[[ -z "$CHANNEL" || "$CHANNEL" == edge ]] || { echo "backend channel may only be edge" >&2; exit 2; }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 CANDIDATE_ARCHIVE="$WORK/candidate.tar"
@@ -51,6 +54,6 @@ fi
 RESOLVED=$(crane digest "$REPOSITORY:$TAG")
 [[ "$RESOLVED" == "$CANDIDATE_DIGEST" ]] || { echo "resolved backend digest differs from candidate" >&2; exit 1; }
 mkdir -p "$(dirname "$OUTPUT")"
-jq -n --arg repository "$REPOSITORY" --arg digest "$CANDIDATE_DIGEST" --arg mediaType "$MEDIA_TYPE" --arg sourceSha "$SOURCE_SHA" --arg tag "$TAG" \
-  '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:$mediaType,sourceSha:$sourceSha,tag:$tag,channel:"",signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"
+jq -n --arg repository "$REPOSITORY" --arg digest "$CANDIDATE_DIGEST" --arg mediaType "$MEDIA_TYPE" --arg sourceSha "$SOURCE_SHA" --arg tag "$TAG" --arg channel "$CHANNEL" \
+  '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:$mediaType,sourceSha:$sourceSha,tag:$tag,channel:$channel,signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"
 echo "published or verified immutable backend $REPOSITORY@$CANDIDATE_DIGEST"

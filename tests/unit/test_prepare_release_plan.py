@@ -54,6 +54,14 @@ class PrepareReleasePlanTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(json.loads(result.stdout)["components"]), 8)
 
+    def test_edge_skips_release_merges(self) -> None:
+        subprocess.run(["git", "-C", str(self.root), "commit", "--allow-empty", "-m", "chore: release app 0.2.0"], check=True, capture_output=True)
+        result = self.run_plan("--edge")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertFalse(plan["shouldPublish"])
+        self.assertEqual(plan["publishComponents"], [])
+
     def test_rehearsal_publishes_all_without_finalization_components(self) -> None:
         result = self.run_plan("--rehearsal")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -54,8 +54,8 @@ esac
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def run_chart(self, repair: bool = False) -> subprocess.CompletedProcess[str]:
-        args = ["bash", str(SCRIPT), "--root", str(self.root), "--chart", "example", "--version", "0.1.0", "--repository-base", "ghcr.io/7k-hiroba/app/charts", "--source-sha", "f" * 40, "--output", str(self.root / "artifact.json")]
+    def run_chart(self, repair: bool = False, channel: str = "") -> subprocess.CompletedProcess[str]:
+        args = ["bash", str(SCRIPT), "--root", str(self.root), "--chart", "example", "--version", "0.1.0", "--repository-base", "ghcr.io/7k-hiroba/app/charts", "--source-sha", "f" * 40, "--output", str(self.root / "artifact.json"), "--channel", channel]
         if repair:
             args += ["--repair", "true"]
         return subprocess.run(args, env=self.env, text=True, capture_output=True, check=False)
@@ -79,6 +79,13 @@ esac
         result = self.run_chart()
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("helm push", self.log.read_text())
+
+    def test_edge_channel_is_recorded_without_changing_immutable_version(self) -> None:
+        result = self.run_chart(channel="edge")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        artifact = json.loads((self.root / "artifact.json").read_text())
+        self.assertEqual(artifact["channel"], "edge")
+        self.assertEqual(artifact["tag"], "example-v0.1.0")
 
     def test_repair_requires_existing_tag_at_current_source(self) -> None:
         result = self.run_chart(repair=True)

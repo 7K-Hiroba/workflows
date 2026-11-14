@@ -16,7 +16,8 @@ SHA = "a" * 40
 class CompatEvidenceTests(unittest.TestCase):
     def test_backend_matrix_runs_and_writes_report(self) -> None:
         result = subprocess.run(
-            ["bash", str(ROOT / "scripts/run-compat-backend.sh"), "--root", str(ROOT / "scaffold"), "--mode", "pr"],
+            ["bash", "scripts/run-compat-backend.sh", "--root", "scaffold", "--mode", "pr"],
+            cwd=ROOT,
             text=True,
             capture_output=True,
             check=False,

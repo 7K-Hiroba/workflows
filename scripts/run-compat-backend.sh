@@ -7,8 +7,8 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$MODE" == pr || "$MODE" == release || "$MODE" == nightly ]] || { echo "invalid compat mode" >&2; exit 2; }
 ROOT=$(cd "$ROOT" && pwd)
-cd "$ROOT"
 LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
 PYTHON=${HIROBA_PYTHON:-python3}
 MATRIX="$ROOT/ci/compatibility-matrix.json"
 if [[ -f "$ROOT/.hiroba.yaml" ]]; then

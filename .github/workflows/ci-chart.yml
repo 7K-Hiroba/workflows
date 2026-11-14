@@ -69,10 +69,15 @@ jobs:
         run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
       - name: Chart-testing kind install
         run: |
+          set -euo pipefail
           timeout=$(jq -r .install.timeout chart-test.json)
+          args=(--helm-extra-args "--timeout $timeout")
+          while read -r values_file; do
+            [[ -n "$values_file" ]] || continue
+            args+=(--helm-extra-args "--values consumer/${{ inputs.root }}/$values_file")
+          done < <(jq -r '.install.values[]' chart-test.json)
           ct install --config "consumer/${{ inputs.root }}/ci/ct.yaml" \
-            --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}" \
-            --helm-extra-args "--timeout $timeout"
+            --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}" "${args[@]}"
       - name: Collect chart diagnostics
         if: failure()
         run: |

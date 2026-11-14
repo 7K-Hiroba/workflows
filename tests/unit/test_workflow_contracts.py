@@ -112,6 +112,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("workflows-scaffold", chart)
         self.assertNotIn("prometheusrule-crd.yaml", chart)
         self.assertNotIn("--helm-extra-set-args", chart)
+        self.assertIn('args+=(--helm-extra-args "--values consumer/', chart)
 
         packages = (WORKFLOWS / "test-packages.yml").read_text()
         self.assertIn('path: "consumer/${{ inputs.root }}/diagnostics"', packages)
@@ -159,6 +160,13 @@ class WorkflowContractTests(unittest.TestCase):
         downloads = [step for step in release["jobs"]["finalize"]["steps"] if str(step.get("uses", "")).startswith("actions/download-artifact@")]
         patterns = [step["with"]["pattern"] for step in downloads]
         self.assertTrue(any(fnmatch.fnmatch("artifact-extension-ui", pattern) for pattern in patterns))
+
+    def test_render_job_installs_actionlint_for_rendered_callers(self) -> None:
+        data = yaml.safe_load((WORKFLOWS / "library-ci.yml").read_text())
+        steps = data["jobs"]["render"]["steps"]
+        self.assertTrue(any(str(step.get("uses", "")).startswith("actions/setup-go@") for step in steps))
+        self.assertTrue(any("go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12" in str(step.get("run", "")) for step in steps))
+        self.assertTrue(any("lint-rendered-workflows.sh" in str(step.get("run", "")) for step in steps))
 
     def test_shell_entrypoints_used_directly_by_workflows_are_executable(self) -> None:
         for name in ("lint-rendered-workflows.sh", "release-backend.sh"):

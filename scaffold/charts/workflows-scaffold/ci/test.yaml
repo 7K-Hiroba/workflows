@@ -7,3 +7,5 @@ dependencies:
   - packages/observability-pack/tests/deps/prometheusrule-crd.yaml
 install:
   timeout: 5m
+  values:
+    - charts/workflows-scaffold/ci/values.yaml

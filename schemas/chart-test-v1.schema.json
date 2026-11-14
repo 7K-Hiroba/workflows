@@ -21,7 +21,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["timeout"],
-      "properties": {"timeout": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"}}
+      "properties": {
+        "timeout": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"},
+        "values": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
     }
   }
 }

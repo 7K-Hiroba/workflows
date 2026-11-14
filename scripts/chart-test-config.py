@@ -30,13 +30,18 @@ def load(root: Path, chart: str) -> dict:
         data = loaded
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     jsonschema.validate(data, schema)
-    result = {"image": data.get("image"), "dependencies": data.get("dependencies", []), "install": data.get("install", {"timeout": "5m"})}
+    install = data.get("install", {"timeout": "5m"})
+    install.setdefault("values", [])
+    result = {"image": data.get("image"), "dependencies": data.get("dependencies", []), "install": install}
     if result["image"] is not None:
         if not confined_path(root, result["image"]["context"], "image.context").is_dir():
             raise ValueError("image.context must be an existing consumer directory")
     for dependency in result["dependencies"]:
         if Path(dependency).suffix not in {".yaml", ".yml"} or not confined_path(root, dependency, "dependency").is_file():
             raise ValueError(f"dependency must be an existing consumer YAML file: {dependency!r}")
+    for values_file in result["install"]["values"]:
+        if Path(values_file).suffix not in {".yaml", ".yml"} or not confined_path(root, values_file, "install.values").is_file():
+            raise ValueError(f"install values must be an existing consumer YAML file: {values_file!r}")
     return result
 
 

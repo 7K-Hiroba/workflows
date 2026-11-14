@@ -86,6 +86,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             ("template", "service", "templates/service"),
         ):
             artifacts[f"{kind}/{name}"] = {
+                "repository": f"ghcr.io/7k-hiroba/workflows-scaffold/{'catalog' if kind == 'catalog' else 'templates'}/{name}",
                 "digest": "sha256:" + name.encode().hex().ljust(64, "0")[:64],
                 "mediaType": "application/vnd.inari.template.v1" if kind == "template" else "application/vnd.inari.catalog.package.v1+yaml",
                 "sourceSha": "a" * 40,
@@ -101,6 +102,21 @@ class ReleaseMetadataTests(unittest.TestCase):
             self.assertIn("@sha256:", entry["ociRef"])
             self.assertEqual(entry["sourceSha"], "a" * 40)
             self.assertEqual(entry["testEvidence"]["status"], "passed")
+        prefix = "ghcr.io/7k-hiroba/workflows/ci"
+        for key, artifact in artifacts.items():
+            kind, name = key.split("/", 1)
+            directory = "catalog" if kind == "catalog" else "templates"
+            artifact["repository"] = f"{prefix}/workflows-scaffold/{directory}/{name}"
+        evidence.write_text(json.dumps({"sourceSha": "a" * 40, "artifacts": artifacts}))
+        custom = self.run_script("build-indexes.py", "--release-evidence", str(evidence), "--registry-prefix", prefix)
+        self.assertEqual(custom.returncode, 0, custom.stdout + custom.stderr)
+        catalog = yaml.safe_load((self.root / "catalog.yaml").read_text())
+        self.assertTrue(all(entry["ociRef"].startswith(prefix + "/") for entry in catalog["packages"]))
+        artifacts["catalog/app"]["repository"] = "ghcr.io/7k-hiroba/untrusted/catalog/app"
+        evidence.write_text(json.dumps({"sourceSha": "a" * 40, "artifacts": artifacts}))
+        mismatch = self.run_script("build-indexes.py", "--release-evidence", str(evidence), "--registry-prefix", prefix)
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertIn("repository", (mismatch.stdout + mismatch.stderr).lower())
 
     def test_release_please_config_covers_every_component(self) -> None:
         result = self.run_script("sync-release-please-config.py")

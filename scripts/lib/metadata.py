@@ -130,7 +130,7 @@ def release_artifacts(evidence_path: Path) -> tuple[str, dict[str, Any]]:
     return source_sha, artifacts
 
 
-def verified_artifact(artifacts: dict[str, Any], key: str, media_type: str, source_sha: str) -> dict[str, Any]:
+def verified_artifact(artifacts: dict[str, Any], key: str, media_type: str, source_sha: str, repository: str | None = None) -> dict[str, Any]:
     artifact = artifacts.get(key)
     if not isinstance(artifact, dict):
         raise ValueError(f"missing release evidence for {key}")
@@ -138,6 +138,8 @@ def verified_artifact(artifacts: dict[str, Any], key: str, media_type: str, sour
         raise ValueError(f"{key}: invalid or missing OCI digest")
     if artifact.get("mediaType") != media_type:
         raise ValueError(f"{key}: unexpected mediaType")
+    if repository is not None and artifact.get("repository", "").lower() != repository.lower():
+        raise ValueError(f"{key}: evidence repository does not match expected repository")
     if artifact.get("sourceSha") != source_sha:
         raise ValueError(f"{key}: artifact sourceSha does not match release")
     if artifact.get("signature", {}).get("verified") is not True:

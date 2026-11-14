@@ -43,6 +43,7 @@ class PrepareOciTests(unittest.TestCase):
         artifacts = {}
         for kind, name in (("catalog", "admission-example"), ("catalog", "app"), ("catalog", "observability-pack"), ("template", "service")):
             artifacts[f"{kind}/{name}"] = {
+                "repository": f"ghcr.io/7k-hiroba/workflows-scaffold/{'catalog' if kind == 'catalog' else 'templates'}/{name}",
                 "digest": "sha256:" + (name.encode().hex().ljust(64, "0")[:64]),
                 "mediaType": "application/vnd.inari.template.v1" if kind == "template" else "application/vnd.inari.catalog.package.v1+yaml",
                 "sourceSha": SHA,

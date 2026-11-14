@@ -68,6 +68,7 @@ def main() -> int:
         build = subprocess.run([
             sys.executable, str(Path(__file__).resolve().parent / "build-indexes.py"),
             "--root", str(root), "--release-evidence", str(args.evidence),
+            "--registry-prefix", args.registry_prefix,
         ], text=True, capture_output=True, check=False)
         if build.returncode:
             print(build.stdout + build.stderr, file=sys.stderr)

@@ -59,6 +59,6 @@ mkdir -p "$WORK/exact"
 oras pull --output "$WORK/exact" "$REPOSITORY@$DIGEST"
 cmp "$PACKAGE" "$WORK/exact/$CHART-$VERSION.tgz" || { echo "packaged chart differs for $REPOSITORY@$DIGEST" >&2; exit 1; }
 mkdir -p "$(dirname "$OUTPUT")"
-jq -n --arg repository "$REPOSITORY" --arg digest "$DIGEST" --arg sourceSha "$SOURCE_SHA" --arg tag "$TAG" --arg channel "$CHANNEL" \
-  '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:"application/vnd.cncf.helm.chart.v1",sourceSha:$sourceSha,tag:$tag,channel:$channel,signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"
+jq -n --arg repository "$REPOSITORY" --arg digest "$DIGEST" --arg sourceSha "$SOURCE_SHA" --arg tag "$VERSION" --arg releaseTag "$TAG" --arg channel "$CHANNEL" \
+  '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:"application/vnd.cncf.helm.chart.v1",sourceSha:$sourceSha,tag:$tag,releaseTag:$releaseTag,channel:$channel,signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"
 echo "published or verified chart $REPOSITORY@$DIGEST"

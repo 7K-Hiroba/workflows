@@ -107,7 +107,8 @@ fi
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         artifact = json.loads((self.root / "artifact.json").read_text())
         self.assertEqual(artifact["channel"], "edge")
-        self.assertEqual(artifact["tag"], "example-v0.1.0")
+        self.assertEqual(artifact["tag"], "0.1.0")
+        self.assertEqual(artifact["releaseTag"], "example-v0.1.0")
 
     def test_uses_configured_charts_root(self) -> None:
         configured = self.root / "helm/example"

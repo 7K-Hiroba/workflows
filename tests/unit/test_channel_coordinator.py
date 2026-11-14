@@ -33,8 +33,8 @@ class ChannelCoordinatorTests(unittest.TestCase):
         self.plan.write_text(json.dumps({
             "app": "app",
             "publishComponents": [
-                {"kind": "package", "name": "app", "channel": "incubating"},
-                {"kind": "template", "name": "service", "channel": "stable"},
+                {"kind": "package", "name": "app", "channel": "incubating", "version": "0.1.0"},
+                {"kind": "template", "name": "service", "channel": "stable", "version": "0.1.0"},
             ],
         }))
         for key, repository, media, channel in (
@@ -50,15 +50,20 @@ class ChannelCoordinatorTests(unittest.TestCase):
 
     def artifact(self, key: str, repository: str, media: str, channel: str) -> Path:
         path = self.evidence / f"artifact-{key}.json"
+        component = key.split("-", 1)[1]
+        is_index = key.startswith("index-")
+        tag = SOURCE if is_index else "0.1.0"
+        release_tag = f"release-set-{SOURCE[:12]}" if is_index else f"{component}-v0.1.0"
         path.write_text(json.dumps({
             "repository": repository,
             "digest": DIGEST,
             "mediaType": media,
+            "tag": tag,
             "sourceSha": SOURCE,
             "channel": channel,
             "signature": {"verified": True},
             "provenance": {"verified": True},
-            "testEvidence": {"status": "passed"},
+            "testEvidence": {"status": "passed", "releaseTag": release_tag},
         }))
         return path
 
@@ -85,10 +90,27 @@ class ChannelCoordinatorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.log.exists(), self.log.read_text() if self.log.exists() else "")
 
+    def test_mismatched_version_or_signed_release_tag_prevents_all_moves(self) -> None:
+        path = self.evidence / "artifact-catalog-app.json"
+        baseline = json.loads(path.read_text())
+        for mutate in (
+            lambda data: data.update(repository="ghcr.io/7k-hiroba/other/catalog/app"),
+            lambda data: data.update(tag="9.9.9"),
+            lambda data: data["testEvidence"].update(releaseTag="app-v9.9.9"),
+        ):
+            data = json.loads(json.dumps(baseline))
+            mutate(data)
+            path.write_text(json.dumps(data))
+            result = self.run_coordinator()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.log.exists())
+
     def test_rehearsal_validates_without_moving_channels(self) -> None:
         for path in self.evidence.glob("artifact-*.json"):
             data = json.loads(path.read_text())
             data["channel"] = ""
+            data["tag"] = SOURCE
+            data["testEvidence"]["releaseTag"] = f"ci-{SOURCE[:12]}"
             path.write_text(json.dumps(data))
         result = self.run_coordinator("rehearsal")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

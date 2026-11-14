@@ -10,12 +10,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.metadata import SHA_RE, verified_artifact  # noqa: E402
-
-PACKAGE_MEDIA = "application/vnd.inari.catalog.package.v1+yaml"
-TEMPLATE_MEDIA = "application/vnd.inari.template.v1"
-CATALOG_INDEX_MEDIA = "application/vnd.inari.catalog.index.v1+yaml"
-TEMPLATE_INDEX_MEDIA = "application/vnd.inari.template.index.v1+yaml"
+from lib.metadata import SHA_RE  # noqa: E402
+from lib.release_contract import contract, validate_artifact  # noqa: E402
 
 
 def main() -> int:
@@ -32,36 +28,36 @@ def main() -> int:
             raise ValueError("source SHA must be full 40 characters")
         plan = json.loads(args.plan.read_text(encoding="utf-8"))
         app = plan["app"]
-        components = plan["publishComponents"]
-        expected: list[tuple[str, str, str, str]] = []
+        components = list(plan["publishComponents"])
+        expected: list[tuple[dict, str]] = []
         for component in components:
-            kind = component.get("kind")
-            if kind not in {"package", "template"}:
-                continue
-            directory = "catalog" if kind == "package" else "templates"
-            prefix = "catalog" if kind == "package" else "template"
-            media = PACKAGE_MEDIA if kind == "package" else TEMPLATE_MEDIA
-            channel = "" if args.mode == "rehearsal" else ("edge" if args.mode == "edge" else component["channel"])
-            expected.append((f"{prefix}-{component['name']}", f"{args.registry_prefix}/{app}/{directory}/{component['name']}", media, channel))
+            if args.mode == "rehearsal":
+                channel = ""
+            elif args.mode == "edge":
+                channel = "edge"
+            else:
+                channel = component.get("channel", "") if component["kind"] in {"package", "template"} else ""
+            expected.append((component, channel))
         index_channel = "" if args.mode == "rehearsal" else ("edge" if args.mode == "edge" else "latest")
         expected.extend([
-            ("index-catalog", f"{args.registry_prefix}/{app}/catalog/index", CATALOG_INDEX_MEDIA, index_channel),
-            ("index-template", f"{args.registry_prefix}/{app}/templates/index", TEMPLATE_INDEX_MEDIA, index_channel),
+            ({"kind": "index", "name": "catalog"}, index_channel),
+            ({"kind": "index", "name": "template"}, index_channel),
         ])
         moves: list[tuple[str, str, str]] = []
         seen: set[tuple[str, str]] = set()
-        for key, repository, media, channel in expected:
-            path = args.evidence / f"artifact-{key}.json"
-            data = json.loads(path.read_text(encoding="utf-8"))
-            artifact = verified_artifact({"artifact": data}, "artifact", media, source_sha, repository=repository)
+        for component, channel in expected:
+            expected_contract = contract(component, app, args.registry_prefix, source_sha, args.mode)
+            key = expected_contract["key"]
+            data = json.loads((args.evidence / f"artifact-{key}.json").read_text(encoding="utf-8"))
+            validate_artifact(data, component, app, args.registry_prefix, source_sha, args.mode)
             if data.get("channel", "") != channel:
                 raise ValueError(f"{key}: channel does not match the coordinated release mode")
             if not channel:
                 continue
-            move = (repository, artifact["digest"], channel)
-            identity = (repository, channel)
+            move = (expected_contract["repository"], data["digest"], channel)
+            identity = (expected_contract["repository"], channel)
             if identity in seen:
-                raise ValueError(f"duplicate channel destination: {repository}:{channel}")
+                raise ValueError(f"duplicate channel destination: {expected_contract['repository']}:{channel}")
             seen.add(identity)
             moves.append(move)
         # Validation of the complete set intentionally precedes the first mutation.

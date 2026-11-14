@@ -345,6 +345,9 @@ jobs:
         with: {path: consumer, ref: "${{ needs.plan.outputs.source-sha }}", fetch-depth: 0, token: "${{ steps.app.outputs.token }}"}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with: {go-version: "1.26.3", cache: false}
       - run: go install github.com/sigstore/gitsign@v0.18.0
@@ -356,7 +359,7 @@ jobs:
           COMPONENTS: "${{ needs.plan.outputs.components }}"
           EXPECTED_TAG_SIGNER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release\\.yml@${{ job.workflow_sha }}$"
         run: |
-          jq -n --argjson components "$COMPONENTS" '{components:$components}' > plan.json
+          jq -n --arg app "${{ needs.plan.outputs.app }}" --arg registry "${{ inputs.registry-prefix }}" --argjson components "$COMPONENTS" '{app:$app,registryPrefix:$registry,components:$components}' > plan.json
           .hiroba/workflows/scripts/finalize-release.sh --root consumer --plan plan.json --source-sha "${{ needs.plan.outputs.source-sha }}" --evidence evidence
   edge-release:
     if: inputs.edge && inputs.rehearsal == false && needs.channels.outputs.status == 'success'

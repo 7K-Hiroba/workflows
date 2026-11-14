@@ -14,25 +14,24 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -d "$ROOT" && -f "$PLAN" && -d "$EVIDENCE" && "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "invalid finalization arguments" >&2; exit 2; }
-export PLAN EVIDENCE SOURCE_SHA
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+export PLAN EVIDENCE SOURCE_SHA SCRIPT_DIR
 python3 - <<'PY'
-import json, os
+import json, os, sys
 from pathlib import Path
+sys.path.insert(0, os.environ["SCRIPT_DIR"])
+from lib.release_contract import contract, validate_artifact
 plan = json.load(open(os.environ["PLAN"]))
 evidence = Path(os.environ["EVIDENCE"])
 source = os.environ["SOURCE_SHA"].lower()
 for component in plan["components"]:
-    kind, name = component["kind"], component["name"]
-    prefix = {"package": "catalog", "template": "template", "chart": "chart"}.get(kind)
-    filename = f"artifact-{prefix}-{name}.json" if prefix else (f"artifact-smoke-{name}.json" if kind == "smoke" else ("artifact-extension-ui.json" if kind == "ui" else f"artifact-{kind}.json"))
+    expected = contract(component, plan["app"], plan["registryPrefix"], source, "normal")
+    filename = f"artifact-{expected['key']}.json"
     path = evidence / filename
     if not path.is_file():
-        raise SystemExit(f"missing verified artifact evidence for {kind}/{name}: {filename}")
+        raise SystemExit(f"missing verified artifact evidence for {component['kind']}/{component['name']}: {filename}")
     data = json.load(open(path))
-    if data.get("sourceSha", "").lower() != source:
-        raise SystemExit(f"sourceSha mismatch for {filename}")
-    if data.get("signature", {}).get("verified") is not True or data.get("provenance", {}).get("verified") is not True or data.get("testEvidence", {}).get("status") != "passed":
-        raise SystemExit(f"artifact is not fully verified: {filename}")
+    validate_artifact(data, component, plan["app"], plan["registryPrefix"], source, "normal")
 PY
 mapfile -t COMPONENTS < <(jq -r '.components[] | select(.kind != "smoke") | [.kind,.name,.path,.version] | @tsv' "$PLAN")
 [[ ${#COMPONENTS[@]} -gt 0 ]] || { echo "no components to finalize" >&2; exit 2; }

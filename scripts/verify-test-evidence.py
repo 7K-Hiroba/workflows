@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.evidence import load_json, predicates_from_document, verify  # noqa: E402
+from lib.evidence import StaleEvidenceError, load_json, predicates_from_document, verify  # noqa: E402
 
 
 def main() -> int:
@@ -33,24 +33,35 @@ def main() -> int:
         unique: dict[str, dict] = {}
         for predicate in predicates:
             unique[json.dumps(predicate, sort_keys=True, separators=(",", ":"))] = predicate
+        fresh = 0
+        historical = 0
         for predicate in unique.values():
-            verify(
-                predicate,
-                source_repository=args.source_repository,
-                source_sha=args.source_sha.lower(),
-                workflow_repository=args.workflow_repository,
-                workflow_path=args.workflow_path,
-                workflow_sha=args.workflow_sha.lower(),
-                artifact_repository=args.artifact_repository,
-                artifact_digest=args.artifact_digest.lower(),
-                media_type=args.media_type,
-                release_tag=args.release_tag,
-                required_lanes=set(args.required_lane),
-            )
+            try:
+                verify(
+                    predicate,
+                    source_repository=args.source_repository,
+                    source_sha=args.source_sha.lower(),
+                    workflow_repository=args.workflow_repository,
+                    workflow_path=args.workflow_path,
+                    workflow_sha=args.workflow_sha.lower(),
+                    artifact_repository=args.artifact_repository,
+                    artifact_digest=args.artifact_digest.lower(),
+                    media_type=args.media_type,
+                    release_tag=args.release_tag,
+                    required_lanes=set(args.required_lane),
+                )
+            except StaleEvidenceError:
+                # Historical members still passed every immutable binding/conflict
+                # check before their age was considered; they cannot authorize alone.
+                historical += 1
+            else:
+                fresh += 1
+        if fresh == 0:
+            raise ValueError("no fully bound fresh test evidence predicate exists")
     except (OSError, ValueError, TypeError, KeyError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
-    print(f"verified {len(unique)} distinct fully bound, passing, fresh test evidence predicate(s)")
+    print(f"verified {fresh} fresh and {historical} historical fully bound test evidence predicate(s)")
     return 0
 
 

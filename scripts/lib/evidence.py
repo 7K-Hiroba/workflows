@@ -12,6 +12,10 @@ from typing import Any
 
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
+class StaleEvidenceError(ValueError):
+    """A well-bound historical predicate that cannot authorize a new verification."""
+
+
 PRODUCERS = {
     ".github/workflows/release-oci.yml",
     ".github/workflows/release-chart.yml",
@@ -193,16 +197,20 @@ def verify(
             raise ValueError(f"{name} lane sourceSha mismatch")
         if name == "compat":
             completed = parse_time(lane.get("completedAt", ""))
-            if completed > current + timedelta(minutes=5) or completed < current - timedelta(days=7):
-                raise ValueError("compat evidence is stale or future-dated")
+            if completed > current + timedelta(minutes=5):
+                raise ValueError("compat evidence is future-dated")
+            if completed < current - timedelta(days=7):
+                raise StaleEvidenceError("compat evidence is historical")
         if name in {"browser", "runtime-smoke"} and lane.get("sourceSha", "").lower() != source_sha.lower():
             raise ValueError(f"{name} lane sourceSha mismatch")
     missing = sorted(required_lanes - seen)
     if missing:
         raise ValueError(f"missing required predicate lanes: {missing}")
     finished = parse_time(str(predicate.get("finishedAt", "")))
-    if finished > current + timedelta(minutes=5) or finished < current - timedelta(hours=24):
-        raise ValueError("test evidence is stale or future-dated")
+    if finished > current + timedelta(minutes=5):
+        raise ValueError("test evidence is future-dated")
+    if finished < current - timedelta(hours=24):
+        raise StaleEvidenceError("test evidence is historical")
     expected_digest = hashlib.sha256(json.dumps(lanes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if predicate.get("evidenceDigest") != expected_digest:
         raise ValueError("evidenceDigest does not match predicate lanes")

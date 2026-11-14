@@ -147,6 +147,25 @@ class TrustedEvidenceTests(unittest.TestCase):
         self.output.write_text(json.dumps([{"predicate": first}, {"predicate": second}]))
         self.assertNotEqual(self.verify_output(*chart_args).returncode, 0)
 
+    def test_late_repair_requires_fresh_valid_predicate_and_bound_history(self) -> None:
+        self.assertEqual(self.run_build().returncode, 0)
+        fresh = json.loads(self.output.read_text())
+        fresh["producer"]["runAttempt"] = "2"
+        stale = json.loads(json.dumps(fresh))
+        stale["producer"]["runAttempt"] = "1"
+        stale["finishedAt"] = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat().replace("+00:00", "Z")
+        self.output.write_text(json.dumps([{"predicate": stale}, {"predicate": fresh}]))
+        self.assertEqual(self.verify_output().returncode, 0)
+        self.output.write_text(json.dumps([{"predicate": stale}]))
+        self.assertNotEqual(self.verify_output().returncode, 0)
+        future = json.loads(json.dumps(fresh))
+        future["finishedAt"] = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+        self.output.write_text(json.dumps([{"predicate": fresh}, {"predicate": future}]))
+        self.assertNotEqual(self.verify_output().returncode, 0)
+        stale["sourceSha"] = "d" * 40
+        self.output.write_text(json.dumps([{"predicate": stale}, {"predicate": fresh}]))
+        self.assertNotEqual(self.verify_output().returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

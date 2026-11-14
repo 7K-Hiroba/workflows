@@ -21,7 +21,7 @@ class ChartTestConfigTests(unittest.TestCase):
         self.assertEqual(config["image"], {"context": "extension", "repository": "workflows-scaffold", "tag": "ci"})
         self.assertEqual(config["dependencies"], ["packages/observability-pack/tests/deps/prometheusrule-crd.yaml"])
         self.assertEqual(config["install"]["timeout"], "5m")
-        self.assertEqual(config["install"]["values"], ["charts/workflows-scaffold/ci/values.yaml"])
+        self.assertEqual(config["install"]["values"], ["charts/workflows-scaffold/ci/kind-values.yaml"])
 
     def test_generic_chart_has_no_scaffold_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

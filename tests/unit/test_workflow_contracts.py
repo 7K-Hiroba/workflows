@@ -112,7 +112,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("workflows-scaffold", chart)
         self.assertNotIn("prometheusrule-crd.yaml", chart)
         self.assertNotIn("--helm-extra-set-args", chart)
-        self.assertIn('args+=(--helm-extra-args "--values consumer/', chart)
+        self.assertNotIn('args+=(--helm-extra-args "--values', chart)
 
         packages = (WORKFLOWS / "test-packages.yml").read_text()
         self.assertIn('path: "consumer/${{ inputs.root }}/diagnostics"', packages)

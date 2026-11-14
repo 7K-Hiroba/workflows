@@ -42,6 +42,9 @@ def load(root: Path, chart: str) -> dict:
     for values_file in result["install"]["values"]:
         if Path(values_file).suffix not in {".yaml", ".yml"} or not confined_path(root, values_file, "install.values").is_file():
             raise ValueError(f"install values must be an existing consumer YAML file: {values_file!r}")
+    native_values = sorted(path.relative_to(root).as_posix() for path in (chart_dir / "ci").glob("*-values.yaml"))
+    if set(native_values) != set(result["install"]["values"]):
+        raise ValueError("install.values must exactly declare every ci/*-values.yaml file used by chart-testing")
     return result
 
 

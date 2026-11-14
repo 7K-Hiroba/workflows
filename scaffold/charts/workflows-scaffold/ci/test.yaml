@@ -8,4 +8,4 @@ dependencies:
 install:
   timeout: 5m
   values:
-    - charts/workflows-scaffold/ci/values.yaml
+    - charts/workflows-scaffold/ci/kind-values.yaml

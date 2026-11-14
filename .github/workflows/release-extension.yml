@@ -46,35 +46,25 @@ jobs:
             echo "version=$version"
             echo "repository=${{ inputs.registry-prefix }}/$app/extension"
           } >> "$GITHUB_OUTPUT"
-      - id: existing
-        env: {REPOSITORY: "${{ steps.config.outputs.repository }}", VERSION: "${{ steps.config.outputs.version }}"}
-        run: echo "digest=$(crane digest "$REPOSITORY:$VERSION" 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}"}
-      - id: build
-        if: steps.existing.outputs.digest == ''
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: consumer/${{ inputs.root }}/extension
-          push: true
-          tags: "${{ steps.config.outputs.repository }}:${{ steps.config.outputs.version }}"
-          provenance: false
-          sbom: false
       - id: publish
-        env: {BUILD: "${{ steps.build.outputs.digest }}", EXISTING: "${{ steps.existing.outputs.digest }}"}
+        name: Build candidate and enforce immutable backend digest
         run: |
-          digest=${BUILD:-$EXISTING}
-          [[ -n "$digest" ]] || exit 1
-          jq -n --arg repository "${{ steps.config.outputs.repository }}" --arg digest "$digest" --arg sourceSha "${{ inputs.source-sha }}" \
-            '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:"application/vnd.oci.image.manifest.v1+json",sourceSha:$sourceSha,tag:"extension",channel:"",signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > evidence/artifact-extension.json
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          output=evidence/artifact-extension.json
+          .hiroba/workflows/scripts/release-backend.sh --context "consumer/${{ inputs.root }}/extension" \
+            --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
+            --source-sha "${{ inputs.source-sha }}" --output "$output"
+          echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
+          echo "media-type=$(jq -r .mediaType "$output")" >> "$GITHUB_OUTPUT"
       - name: Sign backend and attach test evidence
         env:
           ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
           ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
-          MEDIA_TYPE: application/vnd.oci.image.manifest.v1+json
+          MEDIA_TYPE: "${{ steps.publish.outputs.media-type }}"
           APP: "${{ steps.config.outputs.app }}"
           COMPONENT: extension
           TRUST_TIER: "${{ steps.config.outputs.tier }}"
@@ -96,7 +86,7 @@ jobs:
           ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
-          MEDIA_TYPE: application/vnd.oci.image.manifest.v1+json
+          MEDIA_TYPE: "${{ steps.publish.outputs.media-type }}"
           SOURCE_REPOSITORY: "${{ github.repository }}"
           SOURCE_SHA: "${{ inputs.source-sha }}"
           WORKFLOW_SHA: "${{ job.workflow_sha }}"

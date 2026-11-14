@@ -54,6 +54,9 @@ jobs:
         run: echo "$TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Publish or repair immutable chart
         id: publish
+        env:
+          GHCR_ACTOR: "${{ github.actor }}"
+          GHCR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         run: |
           set -euo pipefail
           chart_path=$(python3 .hiroba/workflows/scripts/discover-components.py --root "consumer/${{ inputs.root }}" --all | jq -r --arg chart "${{ inputs.chart }}" 'first(.components[] | select(.kind == "chart" and .name == $chart) | .path) // empty')

@@ -56,11 +56,21 @@ helm package "$CHART_DIR" --destination "$WORK/new"
 PACKAGE="$WORK/new/$CHART-$VERSION.tgz"
 [[ -f "$PACKAGE" ]] || { echo "Helm package missing: $PACKAGE" >&2; exit 1; }
 REPOSITORY="$REPOSITORY_BASE/$CHART"
+crane_login() {
+  [[ -n "${GHCR_ACTOR:-}" && -n "${GHCR_TOKEN:-}" ]] || { echo "GHCR_ACTOR and GHCR_TOKEN are required for crane authentication" >&2; return 1; }
+  if ! crane login ghcr.io -u "$GHCR_ACTOR" -p "$GHCR_TOKEN" >/dev/null 2>&1; then
+    echo "crane login failed for ghcr.io" >&2
+    return 1
+  fi
+}
+crane_login
 DIGEST=$(crane digest "$REPOSITORY:$VERSION" 2>/dev/null || true)
 if [[ -z "$DIGEST" ]]; then
   helm push "$PACKAGE" "oci://$REPOSITORY_BASE"
+  crane_login
   DIGEST=$(crane digest "$REPOSITORY:$VERSION")
 fi
+crane_login
 RESOLVED=$(crane digest "$REPOSITORY:$VERSION")
 [[ "$RESOLVED" == "$DIGEST" ]] || { echo "chart digest mismatch after publish" >&2; exit 1; }
 mkdir -p "$WORK/exact"

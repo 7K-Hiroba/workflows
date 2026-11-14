@@ -30,13 +30,18 @@ class ReleaseChartTests(unittest.TestCase):
         crane.write_text("""#!/usr/bin/env bash
 set -e
 case "$1" in
+  auth)
+    [[ "$2" == login ]] || { echo "unsupported crane auth command" >&2; exit 1; }
+    echo crane auth login ghcr.io -u "$5" -p '[masked]' >> "$CALL_LOG"
+    echo "fake credential output: $7"
+    ;;
   login)
-    echo crane login ghcr.io -u "$4" -p '[masked]' >> "$CALL_LOG"
-    echo "fake credential output: $6"
+    echo "unknown command login for crane" >&2
+    exit 1
     ;;
   digest)
     echo crane digest "$2" >> "$CALL_LOG"
-    if ! tail -n 2 "$CALL_LOG" | head -n 1 | grep -q '^crane login ghcr.io '; then
+    if ! tail -n 2 "$CALL_LOG" | head -n 1 | grep -q '^crane auth login ghcr.io '; then
       echo "unauthenticated crane digest" >&2
       exit 1
     fi
@@ -123,14 +128,36 @@ fi
         calls = self.log.read_text()
         self.assertNotIn("secret-token", calls)
         crane_calls = [line for line in calls.splitlines() if line.startswith("crane ")]
-        login = "crane login ghcr.io -u octocat -p [masked]"
+        login = "crane auth login ghcr.io -u octocat -p [masked]"
         digest = "crane digest ghcr.io/7k-hiroba/app/charts/example:0.1.0"
         self.assertEqual(crane_calls, [login, digest, login, digest, login, digest])
+        script = SCRIPT.read_text()
+        self.assertIn('crane auth login ghcr.io -u "$GHCR_ACTOR" -p "$GHCR_TOKEN"', script)
+        self.assertNotIn("crane login ghcr.io", script)
 
         workflow = yaml.safe_load((ROOT / ".github/workflows/release-chart.yml").read_text())
         publish = next(step for step in workflow["jobs"]["publish"]["steps"] if step.get("id") == "publish")
         self.assertEqual(publish["env"]["GHCR_ACTOR"], "${{ github.actor }}")
         self.assertEqual(publish["env"]["GHCR_TOKEN"], "${{ secrets.GITHUB_TOKEN }}")
+
+    def test_pinned_crane_cli_rejects_legacy_login_offline(self) -> None:
+        configured = os.environ.get("HIROBA_CRANE")
+        if configured:
+            crane = Path(configured)
+        else:
+            install_env = {**os.environ, "RUNNER_TEMP": str(self.root), "GITHUB_PATH": ""}
+            installed = subprocess.run(["bash", str(ROOT / "scripts/install-ci-tools.sh"), "crane"], env=install_env, text=True, capture_output=True, check=False)
+            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+            crane = self.root / "hiroba-bin/crane"
+        version = subprocess.run([str(crane), "version"], text=True, capture_output=True, check=False)
+        self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
+        self.assertEqual(version.stdout.strip(), "v0.20.7")
+        supported = subprocess.run([str(crane), "auth", "login", "--help"], text=True, capture_output=True, check=False)
+        self.assertEqual(supported.returncode, 0, supported.stdout + supported.stderr)
+        self.assertIn("crane auth login [OPTIONS] [SERVER]", supported.stdout)
+        legacy = subprocess.run([str(crane), "login", "--help"], text=True, capture_output=True, check=False)
+        self.assertNotEqual(legacy.returncode, 0, legacy.stdout + legacy.stderr)
+        self.assertIn('unknown command "login"', legacy.stdout + legacy.stderr)
 
     def test_new_chart_tampered_exact_digest_pull_fails(self) -> None:
         self.env["TAMPER"] = "yes"

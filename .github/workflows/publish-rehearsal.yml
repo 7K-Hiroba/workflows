@@ -7,6 +7,7 @@ on:
       chart: {required: false, type: string}
       version: {required: false, type: string}
 permissions: {contents: read}
+concurrency: {group: "hiroba-library-release-${{ github.repository }}", cancel-in-progress: false}
 jobs:
   full:
     if: inputs.mode == 'full' && inputs.source_sha == github.sha

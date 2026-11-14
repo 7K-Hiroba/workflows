@@ -146,7 +146,7 @@ class WorkflowContractTests(unittest.TestCase):
             data = yaml.safe_load((WORKFLOWS / name).read_text())
             self.assertIn("edge", data.get("on", data.get(True, {}))["workflow_call"]["inputs"])
             text = (WORKFLOWS / name).read_text()
-            self.assertIn('oras tag', text)
+            self.assertNotIn('oras tag', text)
         extension_text = (WORKFLOWS / "release-extension.yml").read_text()
         self.assertIn('version="${{ inputs.backend-version }}"', extension_text)
         self.assertIn('version="${{ inputs.ui-version }}"', extension_text)
@@ -190,6 +190,24 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["finalize"]["if"])
         self.assertIn("channels", release["jobs"]["edge-release"]["needs"])
         self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["edge-release"]["if"])
+
+    def test_release_mutations_are_serialized_per_consumer_without_cancellation(self) -> None:
+        paths = [
+            ROOT / "scaffold/.github/workflows/release.yml.template",
+            ROOT / "scaffold/.github/workflows/edge.yml.template",
+            ROOT / "scaffold/.github/workflows/chart-repair.yml.template",
+            WORKFLOWS / "library-release.yml",
+            WORKFLOWS / "publish-rehearsal.yml",
+        ]
+        for path in paths:
+            with self.subTest(path=path.name):
+                data = yaml.safe_load(path.read_text())
+                concurrency = data.get("concurrency")
+                self.assertIsInstance(concurrency, dict)
+                self.assertIn("github.repository", concurrency["group"])
+                self.assertIs(concurrency["cancel-in-progress"], False)
+        consumer_groups = [yaml.safe_load(path.read_text())["concurrency"]["group"] for path in paths[:3]]
+        self.assertEqual(len(set(consumer_groups)), 1)
 
     def test_library_release_please_uses_static_manifest_mode(self) -> None:
         library = yaml.safe_load((WORKFLOWS / "library-release-please.yml").read_text())

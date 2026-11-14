@@ -322,7 +322,11 @@ jobs:
           set -euo pipefail
           jq -n --arg app "$APP" --argjson components "$COMPONENTS" '{app:$app,publishComponents:$components}' > plan.json
           python3 .hiroba/workflows/scripts/move-release-channels.py --plan plan.json --evidence evidence \
-            --source-sha "${{ needs.plan.outputs.source-sha }}" --registry-prefix "${{ inputs.registry-prefix }}" --mode "$MODE"
+            --source-sha "${{ needs.plan.outputs.source-sha }}" --registry-prefix "${{ inputs.registry-prefix }}" --mode "$MODE" \
+            --report evidence/channel-reconciliation.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with: {name: channel-reconciliation, path: evidence/channel-reconciliation.json, if-no-files-found: ignore, retention-days: 30}
       - id: result
         if: always()
         run: |

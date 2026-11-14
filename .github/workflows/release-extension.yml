@@ -112,11 +112,6 @@ jobs:
           VERIFICATION_RECEIPT: evidence/receipt-extension.json
         run: .hiroba/workflows/scripts/verify-release.sh
       - run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact evidence/artifact-extension.json --receipt evidence/receipt-extension.json --predicate evidence/test-extension.json
-      - name: Move backend edge channel only after verification
-        if: inputs.edge
-        run: |
-          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
-          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with: {name: artifact-extension, path: evidence/artifact-extension.json, retention-days: 30}
   ui:
@@ -225,11 +220,6 @@ jobs:
           mkdir -p evidence/oci-ui
           oras pull --output evidence/oci-ui "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/dist" --oci-dir evidence/oci-ui --manifest "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/ui-bundle-manifest.json"
-      - name: Move UI edge channel only after verification and byte comparison
-        if: inputs.edge
-        run: |
-          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
-          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with: {name: artifact-extension, path: evidence/backend}
       - name: Render exact extension registration metadata

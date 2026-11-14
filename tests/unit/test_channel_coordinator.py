@@ -71,6 +71,7 @@ class ChannelCoordinatorTests(unittest.TestCase):
         return subprocess.run([
             str(ROOT / ".venv/bin/python"), str(SCRIPT), "--plan", str(self.plan), "--evidence", str(self.evidence),
             "--source-sha", SOURCE, "--registry-prefix", "ghcr.io/7k-hiroba", "--mode", mode,
+            "--report", str(self.root / "channel-reconciliation.json"),
         ], env=self.env, text=True, capture_output=True, check=False)
 
     def test_moves_all_channels_only_after_every_receipt_validates(self) -> None:
@@ -89,6 +90,47 @@ class ChannelCoordinatorTests(unittest.TestCase):
         result = self.run_coordinator()
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.log.exists(), self.log.read_text() if self.log.exists() else "")
+        report = json.loads((self.root / "channel-reconciliation.json").read_text())
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(report["moves"], [])
+
+    def test_second_move_failure_rolls_back_and_reports_reconciliation(self) -> None:
+        old_digest = "sha256:" + "d" * 64
+        state = self.root / "channel-state"
+        state.mkdir()
+        count = self.root / "move-count"
+        oras = self.bin / "oras"
+        oras.write_text("""#!/usr/bin/env bash
+set -e
+echo oras \"$@\" >> \"$CALL_LOG\"
+repository=${2%@*}
+digest=${2#*@}
+key=$(printf '%s' \"$repository:$3\" | sha256sum | awk '{print $1}')
+number=0
+[[ ! -f \"$COUNT_FILE\" ]] || number=$(cat \"$COUNT_FILE\")
+number=$((number + 1))
+echo \"$number\" > \"$COUNT_FILE\"
+if [[ \"$number\" -eq 2 ]]; then exit 1; fi
+printf '%s' \"$digest\" > \"$STATE/$key\"
+""")
+        crane = self.bin / "crane"
+        crane.write_text("""#!/usr/bin/env bash
+set -e
+echo crane \"$@\" >> \"$CALL_LOG\"
+key=$(printf '%s' \"$2\" | sha256sum | awk '{print $1}')
+if [[ -f \"$STATE/$key\" ]]; then cat \"$STATE/$key\"; else echo \"$OLD_DIGEST\"; fi
+""")
+        oras.chmod(0o755)
+        crane.chmod(0o755)
+        self.env.update({"STATE": str(state), "COUNT_FILE": str(count), "OLD_DIGEST": old_digest})
+        result = self.run_coordinator()
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads((self.root / "channel-reconciliation.json").read_text())
+        self.assertEqual(report["status"], "rolled-back")
+        self.assertEqual(report["reconciliationRequired"], [])
+        import hashlib
+        key = hashlib.sha256(b"ghcr.io/7k-hiroba/app/catalog/app:incubating").hexdigest()
+        self.assertEqual((state / key).read_text(), old_digest)
 
     def test_mismatched_version_or_signed_release_tag_prevents_all_moves(self) -> None:
         path = self.evidence / "artifact-catalog-app.json"

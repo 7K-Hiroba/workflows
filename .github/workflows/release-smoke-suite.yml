@@ -123,11 +123,6 @@ jobs:
           mkdir -p evidence/packaged-smoke
           oras pull --output evidence/packaged-smoke "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           diff -r "consumer/${{ inputs.root }}/${{ steps.config.outputs.suite-path }}" evidence/packaged-smoke
-      - name: Move smoke edge channel only after verification and byte comparison
-        if: inputs.edge
-        run: |
-          oras tag "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}" edge
-          crane digest "${{ steps.config.outputs.repository }}:edge" | grep -Fx "${{ steps.publish.outputs.digest }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with: {name: "artifact-smoke-${{ steps.config.outputs.target }}", path: "evidence/artifact-smoke-${{ steps.config.outputs.target }}.json", retention-days: 30}
   result:

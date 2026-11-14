@@ -5,6 +5,7 @@ on:
       chart: {required: true, type: string}
       version: {required: true, type: string}
 permissions: {contents: read}
+concurrency: {group: "hiroba-release-${{ github.repository }}", cancel-in-progress: false}
 jobs:
   resolve:
     runs-on: ubuntu-latest

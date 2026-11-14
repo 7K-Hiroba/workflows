@@ -116,6 +116,7 @@ jobs:
           push-to-registry: true
       - name: Verify signature provenance and test evidence
         env:
+          GH_TOKEN: "${{ github.token }}"
           ARTIFACT_REF: "${{ matrix.artifact.repository }}@${{ steps.publish.outputs.digest }}"
           ARTIFACT_REPOSITORY: "${{ matrix.artifact.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"

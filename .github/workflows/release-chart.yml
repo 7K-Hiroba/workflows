@@ -113,6 +113,7 @@ jobs:
           push-to-registry: true
       - name: Verify chart evidence
         env:
+          GH_TOKEN: "${{ github.token }}"
           ARTIFACT_REF: "${{ inputs.registry-prefix }}/${{ steps.publish.outputs.app }}/charts/${{ inputs.chart }}@${{ steps.publish.outputs.digest }}"
           ARTIFACT_REPOSITORY: "${{ inputs.registry-prefix }}/${{ steps.publish.outputs.app }}/charts/${{ inputs.chart }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"

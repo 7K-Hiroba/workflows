@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,6 +45,32 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertIn('--arg sourceSha "$SOURCE_SHA"', browser)
         workflow = (ROOT / ".github/workflows/compat-check.yml").read_text()
         self.assertIn('${{ inputs.source-sha || github.sha }}', workflow)
+
+    def test_partial_kind_create_still_deletes_and_collects_app_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "scaffold"
+            shutil.copytree(ROOT / "scaffold", root, ignore=shutil.ignore_patterns("node_modules", "dist", "evidence", "diagnostics"))
+            bin_dir = base / "bin"
+            bin_dir.mkdir()
+            kind_log = base / "kind.log"
+            kind = bin_dir / "kind"
+            kind.write_text("#!/usr/bin/env bash\necho \"$@\" >> \"$KIND_LOG\"\nif [[ \"$1\" == create ]]; then exit 1; fi\n")
+            git = bin_dir / "git"
+            git.write_text("#!/usr/bin/env bash\nprintf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n")
+            kubectl = bin_dir / "kubectl"
+            kubectl.write_text("#!/usr/bin/env bash\necho kubectl \"$@\"\n")
+            for tool in (kind, git, kubectl):
+                tool.chmod(0o755)
+            env = {**os.environ, "PATH": str(ROOT / ".venv/bin") + ":" + str(bin_dir) + ":/usr/local/go/bin:/usr/bin:/bin", "KIND_LOG": str(kind_log), "GITHUB_RUN_ID": "negative"}
+            result = subprocess.run(["bash", str(SCRIPT), "--root", str(root), "--mode", "local", "--profile", "ci"], env=env, text=True, capture_output=True, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            calls = kind_log.read_text()
+            self.assertIn("create cluster", calls)
+            self.assertIn("delete cluster", calls)
+            diagnostics = (root / "diagnostics/runtime-smoke.txt").read_text()
+            self.assertIn("logs -A", diagnostics)
+            self.assertIn("export logs", calls)
 
     def test_driver_has_argo_lint_diagnostics_and_guaranteed_kind_cleanup(self) -> None:
         text = SCRIPT.read_text()

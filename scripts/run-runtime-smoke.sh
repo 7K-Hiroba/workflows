@@ -38,7 +38,6 @@ EXTENSION=$(jq -r '.components[] | select(.kind == "extension") | .path' "$ROOT/
 mkdir -p "$ROOT/diagnostics" "$ROOT/evidence"
 WORK=$(mktemp -d)
 CLUSTER="hiroba-smoke-${GITHUB_RUN_ID:-local}-$$"
-CLUSTER_CREATED=false
 WORKFLOW_NAME=""
 SUITE_DIR="$ROOT/tests/smoke"
 finish() {
@@ -47,6 +46,7 @@ finish() {
     {
       kubectl get all,workflows,events -A -o wide || true
       kubectl get events -A --sort-by=.lastTimestamp || true
+      kubectl logs -A -l "app.kubernetes.io/name=$APP" --all-containers=true --tail=200 || true
       if [[ -n "$WORKFLOW_NAME" ]]; then argo get "$WORKFLOW_NAME" -n default || true; argo logs "$WORKFLOW_NAME" -n default || true; fi
       kind export logs "$WORK/kind-logs" --name "$CLUSTER" || true
     } > "$ROOT/diagnostics/runtime-smoke.txt" 2>&1
@@ -57,7 +57,8 @@ finish() {
   jq -n --arg lane runtime-smoke --arg status "$([[ $rc -eq 0 ]] && echo passed || echo failed)" \
     --arg app "$APP" --arg mode "$MODE" --arg profile "$PROFILE" --arg sourceSha "$SOURCE_SHA" \
     '{schema:"inari.lane-result.v1",lane:$lane,status:$status,app:$app,mode:$mode,profile:$profile,sourceSha:$sourceSha}' > "$ROOT/evidence/runtime-smoke.json"
-  if [[ "$CLUSTER_CREATED" == true ]]; then kind delete cluster --name "$CLUSTER" || true; fi
+  # The unique cluster may exist even when creation or readiness fails partway through.
+  kind delete cluster --name "$CLUSTER" || true
   rm -rf "$WORK"
   rm -f "$ROOT/evidence-runtime-plan.json"
   exit "$rc"
@@ -67,7 +68,6 @@ trap finish EXIT
 KIND_IMAGE='kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32'
 ARGO_COMMIT='43021573c5a35cbafae009043c132dfcef43a112'
 kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --wait 120s
-CLUSTER_CREATED=true
 if [[ "$MODE" == local ]]; then
   docker build -t "$APP:ci" "$ROOT/$EXTENSION"
   kind load docker-image "$APP:ci" --name "$CLUSTER"

@@ -162,7 +162,7 @@ jobs:
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         if: needs.compat.outputs.status != ''
-        with: {name: compatibility-evidence, path: evidence}
+        with: {name: compatibility-evidence, path: .}
       - id: collect
         if: always()
         name: Normalize and validate required release evidence

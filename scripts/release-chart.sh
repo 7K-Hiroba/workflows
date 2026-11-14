@@ -58,7 +58,7 @@ PACKAGE="$WORK/new/$CHART-$VERSION.tgz"
 REPOSITORY="$REPOSITORY_BASE/$CHART"
 crane_login() {
   [[ -n "${GHCR_ACTOR:-}" && -n "${GHCR_TOKEN:-}" ]] || { echo "GHCR_ACTOR and GHCR_TOKEN are required for crane authentication" >&2; return 1; }
-  if ! crane login ghcr.io -u "$GHCR_ACTOR" -p "$GHCR_TOKEN" >/dev/null 2>&1; then
+  if ! crane auth login ghcr.io -u "$GHCR_ACTOR" -p "$GHCR_TOKEN" >/dev/null 2>&1; then
     echo "crane login failed for ghcr.io" >&2
     return 1
   fi

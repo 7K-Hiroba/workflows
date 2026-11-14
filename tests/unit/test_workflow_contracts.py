@@ -191,20 +191,85 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("channels", release["jobs"]["edge-release"]["needs"])
         self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["edge-release"]["if"])
 
-    def test_publish_rehearsal_callers_cover_nested_job_permissions(self) -> None:
-        rehearsal = yaml.safe_load((WORKFLOWS / "publish-rehearsal.yml").read_text())
-        for caller_name, workflow_name in (("full", "release.yml"), ("reuse-chart", "release-chart.yml")):
-            with self.subTest(caller=caller_name):
-                called = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
-                required = dict(called.get("permissions", {}))
-                for job in called["jobs"].values():
-                    for scope, access in job.get("permissions", {}).items():
-                        if access == "write" or scope not in required:
-                            required[scope] = access
-                caller_permissions = rehearsal["jobs"][caller_name]["permissions"]
-                for scope, access in required.items():
-                    self.assertEqual(caller_permissions.get(scope), access, f"{caller_name} must grant nested {scope}: {access}")
-        self.assertEqual(rehearsal["jobs"]["reuse-chart"]["permissions"]["contents"], "read")
+    def test_publish_rehearsal_permission_chain_is_complete_and_scoped(self) -> None:
+        approved = {"contents": "write", "actions": "read", "packages": "write", "id-token": "write", "attestations": "write"}
+        access_level = {"none": 0, "read": 1, "write": 2}
+        workflows = {path.name: yaml.safe_load(path.read_text()) for path in WORKFLOWS.glob("*.yml")}
+        required_cache = {}
+        failures = []
+
+        def merge_required(required, candidate):
+            for scope, access in candidate.items():
+                if access_level[access] > access_level[required.get(scope, "none")]:
+                    required[scope] = access
+
+        def required_permissions(workflow_name):
+            if workflow_name in required_cache:
+                return required_cache[workflow_name]
+            workflow = workflows[workflow_name]
+            required = dict(workflow.get("permissions", {}))
+            for job in workflow["jobs"].values():
+                merge_required(required, job.get("permissions", {}))
+                uses = str(job.get("uses", ""))
+                if uses.startswith("$/"):
+                    merge_required(required, required_permissions(uses.rsplit("/", 1)[-1]))
+            required_cache[workflow_name] = required
+            return required
+
+        def check_supported(owner, permissions):
+            for scope, access in permissions.items():
+                if scope not in approved or access_level[access] > access_level[approved[scope]]:
+                    failures.append(f"{owner} grants unsupported {scope}: {access}")
+
+        checked_edges = set()
+        visited = set()
+
+        def audit(workflow_name):
+            if workflow_name in visited:
+                return
+            visited.add(workflow_name)
+            workflow = workflows[workflow_name]
+            check_supported(workflow_name, workflow.get("permissions", {}))
+            for job_name, job in workflow["jobs"].items():
+                owner = f"{workflow_name}:{job_name}"
+                allowed = job.get("permissions", workflow.get("permissions", {}))
+                check_supported(owner, allowed)
+                uses = str(job.get("uses", ""))
+                if not uses.startswith("$/"):
+                    continue
+                called = uses.rsplit("/", 1)[-1]
+                checked_edges.add((workflow_name, job_name, called))
+                for scope, access in required_permissions(called).items():
+                    granted = allowed.get(scope, "none")
+                    if access_level[granted] < access_level[access]:
+                        failures.append(f"{owner} grants {scope}: {granted}; {called} requires {access}")
+                audit(called)
+
+        audit("publish-rehearsal.yml")
+        expected_edges = {
+            ("publish-rehearsal.yml", "full", "release.yml"),
+            ("publish-rehearsal.yml", "reuse-chart", "release-chart.yml"),
+            ("release.yml", "validate", "validate-packages.yml"),
+            ("release.yml", "packages", "test-packages.yml"),
+            ("release.yml", "go", "ci-go-extension.yml"),
+            ("release.yml", "ui", "ci-ui-extension.yml"),
+            ("release.yml", "chart", "ci-chart.yml"),
+            ("release.yml", "observability", "test-observability.yml"),
+            ("release.yml", "compat", "compat-check.yml"),
+            ("release.yml", "runtime", "test-runtime-smoke.yml"),
+            ("release.yml", "publish-packages", "release-oci.yml"),
+            ("release.yml", "publish-templates", "release-oci.yml"),
+            ("release.yml", "publish-charts", "release-chart.yml"),
+            ("release.yml", "publish-extension", "release-extension.yml"),
+            ("release.yml", "publish-smoke", "release-smoke-suite.yml"),
+            ("release.yml", "indexes", "release-oci.yml"),
+            ("release-chart.yml", "test", "ci-chart.yml"),
+            ("release-smoke-suite.yml", "test", "test-runtime-smoke.yml"),
+        }
+        self.assertEqual(checked_edges, expected_edges)
+        self.assertEqual(failures, [])
+        self.assertEqual(workflows["release.yml"]["permissions"], approved)
+        self.assertEqual(workflows["publish-rehearsal.yml"]["jobs"]["reuse-chart"]["permissions"]["contents"], "read")
 
     def test_release_mutations_are_serialized_per_consumer_without_cancellation(self) -> None:
         paths = [

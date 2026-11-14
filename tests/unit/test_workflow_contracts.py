@@ -191,6 +191,21 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("channels", release["jobs"]["edge-release"]["needs"])
         self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["edge-release"]["if"])
 
+    def test_publish_rehearsal_callers_cover_nested_job_permissions(self) -> None:
+        rehearsal = yaml.safe_load((WORKFLOWS / "publish-rehearsal.yml").read_text())
+        for caller_name, workflow_name in (("full", "release.yml"), ("reuse-chart", "release-chart.yml")):
+            with self.subTest(caller=caller_name):
+                called = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
+                required = dict(called.get("permissions", {}))
+                for job in called["jobs"].values():
+                    for scope, access in job.get("permissions", {}).items():
+                        if access == "write" or scope not in required:
+                            required[scope] = access
+                caller_permissions = rehearsal["jobs"][caller_name]["permissions"]
+                for scope, access in required.items():
+                    self.assertEqual(caller_permissions.get(scope), access, f"{caller_name} must grant nested {scope}: {access}")
+        self.assertEqual(rehearsal["jobs"]["reuse-chart"]["permissions"]["contents"], "read")
+
     def test_release_mutations_are_serialized_per_consumer_without_cancellation(self) -> None:
         paths = [
             ROOT / "scaffold/.github/workflows/release.yml.template",

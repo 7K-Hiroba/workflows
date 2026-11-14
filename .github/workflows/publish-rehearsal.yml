@@ -17,7 +17,7 @@ jobs:
       rehearsal: true
       registry-prefix: ghcr.io/7k-hiroba/workflows/ci
       environment: ci-publish
-    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
   reuse-chart:
     if: inputs.mode == 'repair-chart' && inputs.source_sha == github.sha
     uses: $/.github/workflows/release-chart.yml

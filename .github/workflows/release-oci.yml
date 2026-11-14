@@ -124,7 +124,7 @@ jobs:
           SOURCE_SHA: "${{ matrix.artifact.sourceSha }}"
           WORKFLOW_SHA: "${{ job.workflow_sha }}"
           REQUIRED_LANES: "${{ inputs.required-lanes }}"
-          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-oci\\.yml@${{ job.workflow_sha }}$"
+          EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-oci\\.yml@${{ github.ref }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ matrix.artifact.releaseTag }}"
           VERIFICATION_RECEIPT: "evidence/receipt-${{ matrix.artifact.key }}.json"

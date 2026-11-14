@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/release-chart.sh"
 DIGEST = "sha256:" + "e" * 64
@@ -25,7 +27,23 @@ class ReleaseChartTests(unittest.TestCase):
         self.state = self.root / "state"
         self.package = self.root / "package.tgz"
         crane = self.bin / "crane"
-        crane.write_text("#!/usr/bin/env bash\nif [[ -f \"$STATE\" ]]; then cat \"$STATE\"; else exit 1; fi\n")
+        crane.write_text("""#!/usr/bin/env bash
+set -e
+case "$1" in
+  login)
+    echo crane login ghcr.io -u "$4" -p '[masked]' >> "$CALL_LOG"
+    echo "fake credential output: $6"
+    ;;
+  digest)
+    echo crane digest "$2" >> "$CALL_LOG"
+    if ! tail -n 2 "$CALL_LOG" | head -n 1 | grep -q '^crane login ghcr.io '; then
+      echo "unauthenticated crane digest" >&2
+      exit 1
+    fi
+    if [[ -f "$STATE" ]]; then cat "$STATE"; else exit 1; fi
+    ;;
+esac
+""")
         helm = self.bin / "helm"
         helm.write_text("""#!/usr/bin/env bash
 set -e
@@ -65,7 +83,20 @@ fi
         helm.chmod(0o755)
         oras.chmod(0o755)
         self.package.write_text("deterministic chart package")
-        self.env = {**os.environ, "PATH": str(self.bin) + ":" + os.environ["PATH"], "CALL_LOG": str(self.log), "STATE": str(self.state), "FAKE_DIGEST": DIGEST, "PACKAGE_SOURCE": str(self.package), "TAMPER": "", "CHART_CAPTURE": "", "CHART_VERSION_STATE": str(self.root / "chart-version"), "HIROBA_PYTHON": str(ROOT / ".venv/bin/python")}
+        self.env = {
+            **os.environ,
+            "PATH": str(self.bin) + ":" + os.environ["PATH"],
+            "CALL_LOG": str(self.log),
+            "STATE": str(self.state),
+            "FAKE_DIGEST": DIGEST,
+            "PACKAGE_SOURCE": str(self.package),
+            "TAMPER": "",
+            "CHART_CAPTURE": "",
+            "CHART_VERSION_STATE": str(self.root / "chart-version"),
+            "HIROBA_PYTHON": str(ROOT / ".venv/bin/python"),
+            "GHCR_ACTOR": "octocat",
+            "GHCR_TOKEN": "secret-token",
+        }
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -84,6 +115,22 @@ fi
         calls = self.log.read_text()
         self.assertIn("helm push", calls)
         self.assertIn(f"ghcr.io/7k-hiroba/app/charts/example@{DIGEST}", calls)
+
+    def test_crane_login_precedes_every_digest_without_token_output(self) -> None:
+        result = self.run_chart()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("secret-token", result.stdout + result.stderr)
+        calls = self.log.read_text()
+        self.assertNotIn("secret-token", calls)
+        crane_calls = [line for line in calls.splitlines() if line.startswith("crane ")]
+        login = "crane login ghcr.io -u octocat -p [masked]"
+        digest = "crane digest ghcr.io/7k-hiroba/app/charts/example:0.1.0"
+        self.assertEqual(crane_calls, [login, digest, login, digest, login, digest])
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/release-chart.yml").read_text())
+        publish = next(step for step in workflow["jobs"]["publish"]["steps"] if step.get("id") == "publish")
+        self.assertEqual(publish["env"]["GHCR_ACTOR"], "${{ github.actor }}")
+        self.assertEqual(publish["env"]["GHCR_TOKEN"], "${{ secrets.GITHUB_TOKEN }}")
 
     def test_new_chart_tampered_exact_digest_pull_fails(self) -> None:
         self.env["TAMPER"] = "yes"

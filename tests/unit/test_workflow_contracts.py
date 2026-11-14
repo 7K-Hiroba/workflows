@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -158,6 +159,11 @@ class WorkflowContractTests(unittest.TestCase):
         downloads = [step for step in release["jobs"]["finalize"]["steps"] if str(step.get("uses", "")).startswith("actions/download-artifact@")]
         patterns = [step["with"]["pattern"] for step in downloads]
         self.assertTrue(any(fnmatch.fnmatch("artifact-extension-ui", pattern) for pattern in patterns))
+
+    def test_shell_entrypoints_used_directly_by_workflows_are_executable(self) -> None:
+        for name in ("lint-rendered-workflows.sh", "release-backend.sh"):
+            with self.subTest(name=name):
+                self.assertTrue(os.access(ROOT / "scripts" / name, os.X_OK), name)
 
     def test_repository_workflows_pass_pin_policy(self) -> None:
         result = subprocess.run(["python3", str(ROOT / "scripts/check-workflow-pins.py"), "--root", str(ROOT)], text=True, capture_output=True, check=False)

@@ -202,7 +202,7 @@ jobs:
         run: python3 .hiroba/workflows/scripts/render-extension-release.py --extension "consumer/${{ inputs.root }}/extension.yaml" --backend evidence/backend/artifact-extension.json --ui evidence/artifact-extension-ui.json --ui-manifest "consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json" --output evidence/extension.release.yaml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: extension-release-metadata
+          name: artifact-extension-ui
           path: |
             evidence/artifact-extension-ui.json
             evidence/extension.release.yaml

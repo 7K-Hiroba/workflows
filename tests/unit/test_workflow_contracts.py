@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import subprocess
 import unittest
 from pathlib import Path
@@ -90,6 +91,16 @@ class WorkflowContractTests(unittest.TestCase):
         packages = (WORKFLOWS / "test-packages.yml").read_text()
         self.assertIn('path: "consumer/${{ inputs.root }}/diagnostics"', packages)
         self.assertNotIn("path: consumer/diagnostics", packages)
+
+    def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
+        extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
+        uploads = [step for step in extension["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@")]
+        names = [step["with"]["name"] for step in uploads]
+        self.assertIn("artifact-extension-ui", names)
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        downloads = [step for step in release["jobs"]["finalize"]["steps"] if str(step.get("uses", "")).startswith("actions/download-artifact@")]
+        patterns = [step["with"]["pattern"] for step in downloads]
+        self.assertTrue(any(fnmatch.fnmatch("artifact-extension-ui", pattern) for pattern in patterns))
 
     def test_repository_workflows_pass_pin_policy(self) -> None:
         result = subprocess.run(["python3", str(ROOT / "scripts/check-workflow-pins.py"), "--root", str(ROOT)], text=True, capture_output=True, check=False)

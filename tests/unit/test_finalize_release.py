@@ -58,6 +58,19 @@ class FinalizeReleaseTests(unittest.TestCase):
         self.assertIn("gh release create app-v0.1.0", calls)
         self.assertNotIn("release upload", calls)
 
+    def test_finalizes_extension_and_ui_with_matching_artifact_names(self) -> None:
+        self.plan.write_text(json.dumps({"components": [
+            {"kind": "extension", "name": "extension", "path": "extension", "version": "0.1.0"},
+            {"kind": "ui", "name": "ui", "path": "ui", "version": "0.1.0"},
+        ]}))
+        for name in ("artifact-extension.json", "artifact-extension-ui.json"):
+            (self.evidence / name).write_text(json.dumps({"sourceSha": self.source, "signature": {"verified": True}, "provenance": {"verified": True}, "testEvidence": {"status": "passed"}}))
+        result = self.run_finalize()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.log.read_text()
+        self.assertIn("gh release create extension-v0.1.0", calls)
+        self.assertIn("gh release create ui-v0.1.0", calls)
+
     def test_missing_or_unverified_evidence_stops_before_tag(self) -> None:
         (self.evidence / "artifact-catalog-app.json").write_text(json.dumps({"sourceSha": self.source, "signature": {"verified": False}, "provenance": {"verified": True}, "testEvidence": {"status": "passed"}}))
         result = self.run_finalize()

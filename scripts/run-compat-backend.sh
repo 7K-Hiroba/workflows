@@ -74,7 +74,7 @@ PY
   if [[ "$ENTRY_STATUS" == passed ]]; then
     COPY="$WORK/entry-$INDEX"
     cp -R "$ROOT/extension" "$COPY"
-    if ! (cd "$COPY" && go get "github.com/7K-Inari/inari-plugin-sdk@$SDK_VERSION" && go mod tidy) < /dev/null > "$ROOT/evidence/compat-$INDEX-module.log" 2>&1; then
+    if ! (cd "$COPY" && go get "github.com/7K-Inari/inari-plugin-sdk@$SDK_SHA" && go mod tidy) < /dev/null > "$ROOT/evidence/compat-$INDEX-module.log" 2>&1; then
       ENTRY_STATUS=failed
     elif ! grep -R 'inari-plugin-sdk/testkit' --include='*.go' "$COPY" >/dev/null || \
       ! grep -R '\.Info(' --include='*.go' "$COPY" >/dev/null || \

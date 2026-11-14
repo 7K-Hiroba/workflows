@@ -32,6 +32,9 @@ class CompatEvidenceTests(unittest.TestCase):
         self.assertEqual([entry["pluginSdk"] for entry in data["entries"]], ["v1.2.1-ffb897b", "v1.2.0"])
         self.assertEqual(len({entry["pluginSdkSha"] for entry in data["entries"]}), 2)
         self.assertTrue(all(entry["testkit"] == "Info/Capabilities/Invoke/Health" for entry in data["entries"]))
+        driver = (ROOT / "scripts/run-compat-backend.sh").read_text()
+        self.assertIn('inari-plugin-sdk@$SDK_SHA', driver)
+        self.assertNotIn('inari-plugin-sdk@$SDK_VERSION', driver)
 
     def test_backend_rejects_undeclared_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

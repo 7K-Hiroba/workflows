@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -28,6 +29,9 @@ class CompatEvidenceTests(unittest.TestCase):
         self.assertEqual(data["status"], "passed")
         self.assertEqual(len(data["entries"]), 2)
         self.assertTrue(all(entry["status"] == "passed" for entry in data["entries"]))
+        self.assertEqual([entry["pluginSdk"] for entry in data["entries"]], ["v1.2.1-ffb897b", "v1.2.0"])
+        self.assertEqual(len({entry["pluginSdkSha"] for entry in data["entries"]}), 2)
+        self.assertTrue(all(entry["testkit"] == "Info/Capabilities/Invoke/Health" for entry in data["entries"]))
 
     def test_backend_rejects_undeclared_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,6 +42,18 @@ class CompatEvidenceTests(unittest.TestCase):
             result = subprocess.run(["bash", str(ROOT / "scripts/run-compat-backend.sh"), "--root", str(root), "--mode", "pr"], text=True, capture_output=True, check=False, env={**os.environ, "HIROBA_PYTHON": str(ROOT / ".venv/bin/python"), "SOURCE_SHA": SHA})
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("inari.plugin.v1", result.stdout + result.stderr)
+
+    def test_backend_rejects_sdk_tag_sha_mismatch_before_contract_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "scaffold"
+            shutil.copytree(ROOT / "scaffold", root, ignore=shutil.ignore_patterns("node_modules", "dist", "evidence", "diagnostics"))
+            matrix = root / "ci/compatibility-matrix.json"
+            data = json.loads(matrix.read_text())
+            data["entries"][0]["pluginSdkSha"] = "0" * 40
+            matrix.write_text(json.dumps(data))
+            result = subprocess.run(["bash", str(ROOT / "scripts/run-compat-backend.sh"), "--root", str(root), "--mode", "pr"], text=True, capture_output=True, check=False, env={**os.environ, "HIROBA_PYTHON": str(ROOT / ".venv/bin/python"), "SOURCE_SHA": SHA})
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("SDK tag/SHA mismatch", result.stdout + result.stderr)
 
     def test_browser_report_requires_every_slot_and_walks_nested_suites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

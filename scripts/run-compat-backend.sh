@@ -18,13 +18,29 @@ if [[ "$MODE" != nightly && "$COUNT" -lt 2 ]]; then
   echo "reviewed compat requires current stable and previous stable entries" >&2
   exit 2
 fi
+# Resolve every nightly edge locator before any test executes.
+if [[ "$MODE" == nightly ]]; then
+  SERVER_EDGE=$(gh api repos/7K-Inari/inari-server/commits/main --jq '.sha')
+  UI_EDGE=$(gh api repos/7K-Inari/inari-ui/commits/main --jq '.sha')
+  SDK_EDGE=$(gh api repos/7K-Inari/inari-plugin-sdk/commits/main --jq '.sha')
+  export SERVER_EDGE UI_EDGE SDK_EDGE
+fi
 mkdir -p "$ROOT/evidence"
 RESULTS=$(mktemp)
-trap 'rm -f "$RESULTS"' EXIT
+ENTRIES=$(mktemp)
+WORK=$(mktemp -d)
+trap 'rm -f "$RESULTS" "$ENTRIES"; rm -rf "$WORK"' EXIT
+jq -c '.entries[]' "$MATRIX" > "$ENTRIES"
+if [[ "$MODE" == nightly ]]; then
+  jq -c -n --arg server "$SERVER_EDGE" --arg ui "$UI_EDGE" --arg sdk "$SDK_EDGE" \
+    '{server:$server,ui:$ui,uiHostSha:$ui,pluginSdk:$sdk,pluginSdkSha:$sdk,pluginContracts:["inari.plugin.v1"],uiHostApis:["inari.ui.v1"]}' >> "$ENTRIES"
+fi
 STATUS=passed
 INDEX=0
-while read -r ENTRY; do
+while read -r ENTRY <&3; do
   export ENTRY
+  ENTRY_STATUS=passed
+  TESTKIT=""
   if ! "$PYTHON" - <<'PY'
 import json, os, sys, yaml
 entry = json.loads(os.environ["ENTRY"])
@@ -39,23 +55,46 @@ if missing:
     sys.exit(1)
 PY
   then
-    STATUS=failed
+    ENTRY_STATUS=failed
   fi
-  export INARI_COMPAT_INDEX="$INDEX"
-  if [[ "$STATUS" == passed ]]; then
-    if ! (cd extension && go test -json ./...) > "$ROOT/evidence/compat-$INDEX.json"; then STATUS=failed; fi
+  SDK_VERSION=$(jq -r '.pluginSdk // empty' <<< "$ENTRY")
+  SDK_SHA=$(jq -r '.pluginSdkSha // empty' <<< "$ENTRY")
+  if [[ "$ENTRY_STATUS" == passed ]]; then
+    if [[ "$SDK_VERSION" == "$SDK_SHA" && "$SDK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+      RESOLVED_SDK=$SDK_SHA
+    else
+      RESOLVED_SDK=$(git ls-remote https://github.com/7K-Inari/inari-plugin-sdk.git "refs/tags/$SDK_VERSION" "refs/tags/$SDK_VERSION^{}" | awk 'END {print $1}')
+    fi
+    if [[ -z "$RESOLVED_SDK" || "$RESOLVED_SDK" != "$SDK_SHA" ]]; then
+      echo "SDK tag/SHA mismatch for $SDK_VERSION: $RESOLVED_SDK != $SDK_SHA" >&2
+      ENTRY_STATUS=failed
+    fi
   fi
-  jq -c --argjson entry "$ENTRY" --arg status "$STATUS" '{server:$entry.server,ui:$entry.ui,uiHostSha:($entry.uiHostSha // null),status:$status}' <<< "$ENTRY" >> "$RESULTS"
+  if [[ "$ENTRY_STATUS" == passed ]]; then
+    COPY="$WORK/entry-$INDEX"
+    cp -R "$ROOT/extension" "$COPY"
+    if ! (cd "$COPY" && go get "github.com/7K-Inari/inari-plugin-sdk@$SDK_VERSION" && go mod tidy) < /dev/null > "$ROOT/evidence/compat-$INDEX-module.log" 2>&1; then
+      ENTRY_STATUS=failed
+    elif ! grep -R 'inari-plugin-sdk/testkit' --include='*.go' "$COPY" >/dev/null || \
+      ! grep -R '\.Info(' --include='*.go' "$COPY" >/dev/null || \
+      ! grep -R '\.Capabilities(' --include='*.go' "$COPY" >/dev/null || \
+      ! grep -R '\.Invoke(' --include='*.go' "$COPY" >/dev/null || \
+      ! grep -R '\.Health(' --include='*.go' "$COPY" >/dev/null; then
+      echo "extension tests must execute testkit Info/Capabilities/Invoke/Health" >&2
+      ENTRY_STATUS=failed
+    elif ! (cd "$COPY" && go test -count=1 -json ./...) < /dev/null > "$ROOT/evidence/compat-$INDEX.json"; then
+      ENTRY_STATUS=failed
+    else
+      TESTKIT="Info/Capabilities/Invoke/Health"
+    fi
+  fi
+  jq -c -n --argjson entry "$ENTRY" --arg status "$ENTRY_STATUS" --arg testkit "$TESTKIT" \
+    '{server:$entry.server,ui:$entry.ui,uiHostSha:($entry.uiHostSha // null),pluginSdk:$entry.pluginSdk,pluginSdkSha:$entry.pluginSdkSha,status:$status,testkit:$testkit}' >> "$RESULTS"
+  [[ "$ENTRY_STATUS" == passed ]] || STATUS=failed
   INDEX=$((INDEX + 1))
-  [[ "$STATUS" == passed ]] || break
-done < <(jq -c '.entries[]' "$MATRIX")
+done 3< "$ENTRIES"
 SOURCE_SHA=${SOURCE_SHA:-$(git -C "$ROOT" rev-parse HEAD)}
 export SOURCE_SHA MODE STATUS RESULTS MATRIX
-if [[ "$MODE" == nightly ]]; then
-  SERVER_EDGE=$(gh api repos/7K-Inari/inari-server/commits/main --jq '.sha')
-  UI_EDGE=$(gh api repos/7K-Inari/inari-ui/commits/main --jq '.sha')
-  export SERVER_EDGE UI_EDGE
-fi
 "$PYTHON" - <<'PY'
 import json, os
 from datetime import datetime, timezone
@@ -69,7 +108,7 @@ report = {
     "entries": entries,
 }
 if os.environ["MODE"] == "nightly":
-    report["resolvedEdge"] = {"serverSha": os.environ["SERVER_EDGE"], "uiSha": os.environ["UI_EDGE"]}
+    report["resolvedEdge"] = {"serverSha": os.environ["SERVER_EDGE"], "uiSha": os.environ["UI_EDGE"], "pluginSdkSha": os.environ["SDK_EDGE"]}
 with open("evidence/compat-report.json", "w") as handle:
     json.dump(report, handle, indent=2, sort_keys=True)
     handle.write("\n")

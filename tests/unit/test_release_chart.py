@@ -33,7 +33,10 @@ echo helm \"$@\" >> \"$CALL_LOG\"
 case \"$1\" in
   package)
     mkdir -p \"$4\"
-    cp \"$PACKAGE_SOURCE\" \"$4/example-0.1.0.tgz\"
+    version=$($HIROBA_PYTHON -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["version"])' \"$2/Chart.yaml\")
+    if [[ -n \"$CHART_CAPTURE\" ]]; then cp \"$2/Chart.yaml\" \"$CHART_CAPTURE\"; fi
+    printf '%s' \"$version\" > \"$CHART_VERSION_STATE\"
+    cp \"$PACKAGE_SOURCE\" \"$4/example-$version.tgz\"
     ;;
   push)
     printf '%s' \"$FAKE_DIGEST\" > \"$STATE\"
@@ -54,14 +57,15 @@ if [[ \"$1\" == pull ]]; then
   dest=\"\"
   while [[ $# -gt 0 ]]; do if [[ \"$1\" == --output ]]; then dest=$2; shift 2; else shift; fi; done
   mkdir -p \"$dest\"
-  if [[ -n \"$TAMPER\" ]]; then echo tampered > \"$dest/example-0.1.0.tgz\"; else cp \"$PACKAGE_SOURCE\" \"$dest/example-0.1.0.tgz\"; fi
+  version=$(cat \"$CHART_VERSION_STATE\")
+  if [[ -n \"$TAMPER\" ]]; then echo tampered > \"$dest/example-$version.tgz\"; else cp \"$PACKAGE_SOURCE\" \"$dest/example-$version.tgz\"; fi
 fi
 """)
         crane.chmod(0o755)
         helm.chmod(0o755)
         oras.chmod(0o755)
         self.package.write_text("deterministic chart package")
-        self.env = {**os.environ, "PATH": str(self.bin) + ":" + os.environ["PATH"], "CALL_LOG": str(self.log), "STATE": str(self.state), "FAKE_DIGEST": DIGEST, "PACKAGE_SOURCE": str(self.package), "TAMPER": "", "HIROBA_PYTHON": str(ROOT / ".venv/bin/python")}
+        self.env = {**os.environ, "PATH": str(self.bin) + ":" + os.environ["PATH"], "CALL_LOG": str(self.log), "STATE": str(self.state), "FAKE_DIGEST": DIGEST, "PACKAGE_SOURCE": str(self.package), "TAMPER": "", "CHART_CAPTURE": "", "CHART_VERSION_STATE": str(self.root / "chart-version"), "HIROBA_PYTHON": str(ROOT / ".venv/bin/python")}
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -118,6 +122,24 @@ fi
         result = self.run_chart()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f"helm package {configured}", self.log.read_text())
+
+    def test_edge_packages_prerelease_in_temporary_chart_without_source_mutation(self) -> None:
+        source_chart = self.chart / "Chart.yaml"
+        original = source_chart.read_bytes()
+        capture = self.root / "packaged-Chart.yaml"
+        self.env["CHART_CAPTURE"] = str(capture)
+        result = subprocess.run([
+            "bash", str(SCRIPT), "--root", str(self.root), "--chart", "example", "--version", "0.2.0-0123456",
+            "--repository-base", "ghcr.io/7k-hiroba/app/charts", "--source-sha", "f" * 40,
+            "--output", str(self.root / "artifact.json"), "--channel", "edge",
+        ], env=self.env, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(source_chart.read_bytes(), original)
+        self.assertIn("version: 0.2.0-0123456", capture.read_text())
+        artifact = json.loads((self.root / "artifact.json").read_text())
+        self.assertEqual(artifact["tag"], "0.2.0-0123456")
+        self.assertEqual(artifact["releaseTag"], "example-v0.2.0-0123456")
+        self.assertIn("example-0.2.0-0123456.tgz", self.log.read_text())
 
     def test_repair_requires_existing_tag_at_current_source(self) -> None:
         result = self.run_chart(repair=True)

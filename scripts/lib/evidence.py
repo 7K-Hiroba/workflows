@@ -57,9 +57,9 @@ def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str)
             raise ValueError(f"duplicate lane evidence: {name}")
         if lane.get("status") != "passed":
             raise ValueError(f"lane {name} did not pass")
+        if not isinstance(lane.get("sourceSha"), str) or lane["sourceSha"].lower() != source_sha.lower():
+            raise ValueError(f"{name} evidence sourceSha does not match artifact source")
         if name == "compat":
-            if lane.get("sourceSha") != source_sha:
-                raise ValueError("compat evidence sourceSha does not match artifact source")
             completed = parse_time(str(lane.get("completedAt", "")))
             now = datetime.now(timezone.utc)
             if completed > now + timedelta(minutes=5) or completed < now - timedelta(days=7):
@@ -106,22 +106,35 @@ def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
     }
 
 
+def predicates_from_document(document: Any) -> list[dict[str, Any]]:
+    """Extract every predicate from cosign's single-or-list verification document."""
+    documents = document if isinstance(document, list) else [document]
+    if not documents:
+        raise ValueError("expected at least one attestation")
+    predicates: list[dict[str, Any]] = []
+    for item in documents:
+        if not isinstance(item, dict):
+            raise ValueError("attestation must be a JSON object")
+        if isinstance(item.get("predicate"), dict):
+            predicates.append(item["predicate"])
+            continue
+        if isinstance(item.get("payload"), str):
+            decoded = json.loads(base64.b64decode(item["payload"]))
+            if isinstance(decoded.get("predicate"), dict):
+                predicates.append(decoded["predicate"])
+                continue
+        if item.get("schema") == "inari.test-evidence.v1":
+            predicates.append(item)
+            continue
+        raise ValueError("no test-evidence predicate found")
+    return predicates
+
+
 def predicate_from_document(document: Any) -> dict[str, Any]:
-    if isinstance(document, list):
-        if len(document) != 1:
-            raise ValueError("expected exactly one attestation")
-        document = document[0]
-    if not isinstance(document, dict):
-        raise ValueError("attestation must be a JSON object")
-    if isinstance(document.get("predicate"), dict):
-        return document["predicate"]
-    if isinstance(document.get("payload"), str):
-        decoded = json.loads(base64.b64decode(document["payload"]))
-        if isinstance(decoded.get("predicate"), dict):
-            return decoded["predicate"]
-    if document.get("schema") == "inari.test-evidence.v1":
-        return document
-    raise ValueError("no test-evidence predicate found")
+    predicates = predicates_from_document(document)
+    if len(predicates) != 1:
+        raise ValueError("expected exactly one local predicate")
+    return predicates[0]
 
 
 def verify(
@@ -176,9 +189,9 @@ def verify(
             raise ValueError(f"lane {name} did not pass")
         if name in required_lanes and lane.get("required") is not True:
             raise ValueError(f"lane {name} is not marked required")
+        if not isinstance(lane.get("sourceSha"), str) or lane["sourceSha"].lower() != source_sha.lower():
+            raise ValueError(f"{name} lane sourceSha mismatch")
         if name == "compat":
-            if lane.get("sourceSha", "").lower() != source_sha.lower():
-                raise ValueError("compat lane sourceSha mismatch")
             completed = parse_time(lane.get("completedAt", ""))
             if completed > current + timedelta(minutes=5) or completed < current - timedelta(days=7):
                 raise ValueError("compat evidence is stale or future-dated")

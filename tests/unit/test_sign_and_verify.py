@@ -31,7 +31,7 @@ class SignAndVerifyTests(unittest.TestCase):
         gh.chmod(0o755)
         self.evidence = self.root / "evidence"
         self.evidence.mkdir()
-        (self.evidence / "validate.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "passed"}))
+        (self.evidence / "validate.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "passed", "sourceSha": SOURCE}))
         self.predicate_doc = self.root / "predicate.json"
         self.env = {
             **os.environ,
@@ -72,7 +72,7 @@ class SignAndVerifyTests(unittest.TestCase):
         self.assertEqual(predicate["artifact"]["digest"], DIGEST)
 
     def test_invalid_evidence_stops_before_cosign(self) -> None:
-        (self.evidence / "validate.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "failed"}))
+        (self.evidence / "validate.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "failed", "sourceSha": SOURCE}))
         result = subprocess.run(["bash", str(ROOT / "scripts/sign-and-attest.sh")], env=self.env, text=True, capture_output=True, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.log.exists())

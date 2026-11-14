@@ -74,4 +74,5 @@ for test_file in "$ROOT"/observability/tests/rules/*.test.yaml; do promtool test
   --rules "$ROOT/observability/rules/app.yaml" \
   --output "$WORK/central.test.yaml"
 promtool test rules "$WORK/central.test.yaml"
-jq -n --arg fixture "$FIXTURE" '{schema:"inari.lane-result.v1",lane:"offline-observability",status:"passed",fixture:$fixture,liveReadiness:"not-proven-offline"}' > "$ROOT/evidence/offline-observability.json"
+SOURCE_SHA=$(git -C "$ROOT" rev-parse HEAD)
+jq -n --arg fixture "$FIXTURE" --arg sourceSha "$SOURCE_SHA" '{schema:"inari.lane-result.v1",lane:"offline-observability",status:"passed",sourceSha:$sourceSha,fixture:$fixture,liveReadiness:"not-proven-offline"}' > "$ROOT/evidence/offline-observability.json"

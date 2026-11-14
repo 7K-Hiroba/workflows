@@ -21,8 +21,8 @@ class TrustedEvidenceTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.evidence = self.root / "evidence"
         self.evidence.mkdir()
-        (self.evidence / "validate.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "passed"}))
-        (self.evidence / "runtime.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "runtime", "status": "passed"}))
+        (self.evidence / "validate.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "passed", "sourceSha": SOURCE}))
+        (self.evidence / "runtime.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "runtime", "status": "passed", "sourceSha": SOURCE}))
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         (self.evidence / "compat-report.json").write_text(json.dumps({"schema": "inari.compat-report.v1", "status": "passed", "sourceSha": SOURCE, "completedAt": now, "entries": [{"status": "passed"}]}))
         self.output = self.root / "predicate.json"
@@ -56,9 +56,9 @@ class TrustedEvidenceTests(unittest.TestCase):
         self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
 
     def test_rejects_failed_or_missing_required_lane(self) -> None:
-        (self.evidence / "runtime.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "runtime", "status": "failed"}))
+        (self.evidence / "runtime.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "runtime", "status": "failed", "sourceSha": SOURCE}))
         self.assertNotEqual(self.run_build().returncode, 0)
-        (self.evidence / "runtime.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "runtime", "status": "passed"}))
+        (self.evidence / "runtime.json").write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "runtime", "status": "passed", "sourceSha": SOURCE}))
         (self.evidence / "validate.json").unlink()
         self.assertNotEqual(self.run_build().returncode, 0)
 
@@ -111,6 +111,41 @@ class TrustedEvidenceTests(unittest.TestCase):
         self.assertEqual(self.run_build().returncode, 0)
         verified = self.verify_output("--source-sha", "d" * 40)
         self.assertNotEqual(verified.returncode, 0)
+
+    def test_rejects_wrong_or_missing_generic_lane_source(self) -> None:
+        path = self.evidence / "validate.json"
+        path.write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "passed", "sourceSha": "d" * 40}))
+        self.assertNotEqual(self.run_build().returncode, 0)
+        path.write_text(json.dumps({"schema": "inari.lane-result.v1", "lane": "validate", "status": "passed"}))
+        self.assertNotEqual(self.run_build().returncode, 0)
+
+    def test_verifier_rejects_generic_lane_source_conflict(self) -> None:
+        self.assertEqual(self.run_build().returncode, 0)
+        predicate = json.loads(self.output.read_text())
+        validate = next(lane for lane in predicate["lanes"] if lane["lane"] == "validate")
+        validate["sourceSha"] = "d" * 40
+        import hashlib
+        predicate["evidenceDigest"] = hashlib.sha256(json.dumps(predicate["lanes"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        self.output.write_text(json.dumps(predicate))
+        self.assertNotEqual(self.verify_output().returncode, 0)
+
+    def test_second_identical_rerun_attestation_is_idempotent(self) -> None:
+        self.assertEqual(self.run_build().returncode, 0)
+        predicate = json.loads(self.output.read_text())
+        self.output.write_text(json.dumps([{"predicate": predicate}, {"predicate": predicate}]))
+        self.assertEqual(self.verify_output().returncode, 0)
+
+    def test_chart_repair_checks_every_distinct_attempt_and_rejects_conflict(self) -> None:
+        chart_args = ("--workflow-path", ".github/workflows/release-chart.yml")
+        self.assertEqual(self.run_build(*chart_args).returncode, 0)
+        first = json.loads(self.output.read_text())
+        second = json.loads(json.dumps(first))
+        second["producer"]["runAttempt"] = "2"
+        self.output.write_text(json.dumps([{"predicate": first}, {"predicate": second}]))
+        self.assertEqual(self.verify_output(*chart_args).returncode, 0)
+        second["sourceSha"] = "d" * 40
+        self.output.write_text(json.dumps([{"predicate": first}, {"predicate": second}]))
+        self.assertNotEqual(self.verify_output(*chart_args).returncode, 0)
 
 
 if __name__ == "__main__":

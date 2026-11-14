@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.evidence import load_json, predicate_from_document, verify  # noqa: E402
+from lib.evidence import load_json, predicates_from_document, verify  # noqa: E402
 
 
 def main() -> int:
@@ -26,24 +27,30 @@ def main() -> int:
     parser.add_argument("--required-lane", action="append", required=True)
     args = parser.parse_args()
     try:
-        predicate = predicate_from_document(load_json(args.predicate))
-        verify(
-            predicate,
-            source_repository=args.source_repository,
-            source_sha=args.source_sha.lower(),
-            workflow_repository=args.workflow_repository,
-            workflow_path=args.workflow_path,
-            workflow_sha=args.workflow_sha.lower(),
-            artifact_repository=args.artifact_repository,
-            artifact_digest=args.artifact_digest.lower(),
-            media_type=args.media_type,
-            release_tag=args.release_tag,
-            required_lanes=set(args.required_lane),
-        )
+        predicates = predicates_from_document(load_json(args.predicate))
+        # Exact duplicates are idempotent. Every distinct predicate must satisfy the
+        # same binding and freshness policy; a conflicting signed member fails closed.
+        unique: dict[str, dict] = {}
+        for predicate in predicates:
+            unique[json.dumps(predicate, sort_keys=True, separators=(",", ":"))] = predicate
+        for predicate in unique.values():
+            verify(
+                predicate,
+                source_repository=args.source_repository,
+                source_sha=args.source_sha.lower(),
+                workflow_repository=args.workflow_repository,
+                workflow_path=args.workflow_path,
+                workflow_sha=args.workflow_sha.lower(),
+                artifact_repository=args.artifact_repository,
+                artifact_digest=args.artifact_digest.lower(),
+                media_type=args.media_type,
+                release_tag=args.release_tag,
+                required_lanes=set(args.required_lane),
+            )
     except (OSError, ValueError, TypeError, KeyError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
-    print("test evidence predicate is fully bound, passing, and fresh")
+    print(f"verified {len(unique)} distinct fully bound, passing, fresh test evidence predicate(s)")
     return 0
 
 

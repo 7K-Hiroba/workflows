@@ -15,6 +15,7 @@ done
 PACKAGE_DIR="$ROOT/packages/$PACKAGE"
 [[ -f "$PACKAGE_DIR/tests/run.sh" ]] || { echo "missing tests/run.sh for $PACKAGE" >&2; exit 2; }
 mkdir -p "$ROOT/evidence" "$ROOT/diagnostics"
+SOURCE_SHA=$(git -C "$ROOT" rev-parse HEAD)
 finish() {
   rc=$?
   if [[ $rc -ne 0 ]]; then
@@ -26,8 +27,8 @@ finish() {
       kubectl logs -n kro-system deploy/kro --tail=200 || true
     } > "$ROOT/diagnostics/$PACKAGE.txt" 2>&1
   fi
-  jq -n --arg lane "package-$TYPE-$PACKAGE" --arg status "$([[ $rc -eq 0 ]] && echo passed || echo failed)" \
-    '{schema:"inari.lane-result.v1",lane:$lane,status:$status}' > "$ROOT/evidence/package-$PACKAGE.json"
+  jq -n --arg lane "package-$TYPE-$PACKAGE" --arg status "$([[ $rc -eq 0 ]] && echo passed || echo failed)" --arg sourceSha "$SOURCE_SHA" \
+    '{schema:"inari.lane-result.v1",lane:$lane,status:$status,sourceSha:$sourceSha}' > "$ROOT/evidence/package-$PACKAGE.json"
   exit "$rc"
 }
 trap finish EXIT

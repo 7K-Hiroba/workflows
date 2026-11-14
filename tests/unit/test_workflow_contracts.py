@@ -157,6 +157,13 @@ class WorkflowContractTests(unittest.TestCase):
         data = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
         self.assertEqual(data["jobs"]["test"]["runs-on"], "ubuntu-24.04")
 
+    def test_extension_ui_setup_node_uses_default_no_cache_behavior(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
+        steps = [step for step in workflow["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/setup-node@")]
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0]["with"]["node-version"], 24)
+        self.assertNotIn("cache", steps[0]["with"])
+
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
         self.assertIn("scripts/chart-test-config.py", chart)

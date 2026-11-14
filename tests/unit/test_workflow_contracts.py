@@ -78,6 +78,10 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertNotIn("helm repo add", text)
                 self.assertNotIn("index.yaml", text)
 
+    def test_browser_compat_uses_playwright_supported_runner(self) -> None:
+        data = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
+        self.assertEqual(data["jobs"]["test"]["runs-on"], "ubuntu-24.04")
+
     def test_chart_install_and_package_diagnostics_use_valid_paths_and_flags(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
         self.assertIn('--helm-extra-set-args "--set=image.repository=workflows-scaffold', chart)

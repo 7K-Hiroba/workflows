@@ -32,6 +32,7 @@ jobs:
         run: |
           .hiroba/workflows/scripts/render-scaffold.sh --source .hiroba/workflows/scaffold --out "${{ runner.temp }}/rendered" --sha "${{ github.sha }}"
           python3 .hiroba/workflows/scripts/check-workflow-pins.py --root "${{ runner.temp }}/rendered" --require-rendered
+          .hiroba/workflows/scripts/lint-rendered-workflows.sh --root "${{ runner.temp }}/rendered"
           python3 .hiroba/workflows/scripts/validate-repository.py --root "${{ runner.temp }}/rendered" --registry .hiroba/workflows/tests/fixtures/app-registry.yaml
           python3 .hiroba/workflows/scripts/build-indexes.py --root "${{ runner.temp }}/rendered" --check
           python3 .hiroba/workflows/scripts/sync-release-please-config.py --root "${{ runner.temp }}/rendered" --check

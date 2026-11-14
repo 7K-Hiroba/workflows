@@ -5,4 +5,3 @@ jobs:
   test:
     uses: 7K-Hiroba/workflows/.github/workflows/test-observability.yml@__WORKFLOWS_V1_SHA__ # v1.0.0
     with: {root: .}
-    cache-mode: read

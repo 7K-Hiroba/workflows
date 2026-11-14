@@ -5,4 +5,3 @@ jobs:
   compat:
     uses: 7K-Hiroba/workflows/.github/workflows/compat-check.yml@__WORKFLOWS_V1_SHA__ # v1.0.0
     with: {root: ., mode: pr}
-    cache-mode: read

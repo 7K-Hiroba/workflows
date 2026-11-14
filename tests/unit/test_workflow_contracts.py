@@ -92,6 +92,18 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('path: "consumer/${{ inputs.root }}/diagnostics"', packages)
         self.assertNotIn("path: consumer/diagnostics", packages)
 
+    def test_stable_release_and_chart_repair_callers_forward_exact_inputs(self) -> None:
+        release = (ROOT / "scaffold/.github/workflows/release.yml.template").read_text()
+        self.assertIn('app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"', release)
+        self.assertIn('release-private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}"', release)
+        self.assertNotIn("secrets: inherit", release)
+        repair_text = (ROOT / "scaffold/.github/workflows/chart-repair.yml.template").read_text()
+        repair = yaml.safe_load(repair_text)
+        self.assertIn("resolve", repair["jobs"])
+        self.assertEqual(repair["jobs"]["repair"]["needs"], "resolve")
+        self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
+        self.assertIn('refs/tags/$TAG^{}', repair_text)
+
     def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
         extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         uploads = [step for step in extension["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@")]

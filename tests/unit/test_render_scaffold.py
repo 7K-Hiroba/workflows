@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "render-scaffold.sh"
+LINT = ROOT / "scripts" / "lint-rendered-workflows.sh"
 SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
@@ -26,6 +28,21 @@ class RenderScaffoldTests(unittest.TestCase):
             self.assertIn("# v1.0.0", rendered)
             self.assertNotIn("__WORKFLOWS_V1_SHA__", rendered)
             self.assertIn("__WORKFLOWS_V1_SHA__", workflow.read_text())
+
+    def test_actionlint_covers_every_rendered_consumer_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "out"
+            rendered = subprocess.run(["bash", str(SCRIPT), "--source", str(ROOT / "scaffold"), "--out", str(output), "--sha", SHA], text=True, capture_output=True, check=False)
+            self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
+            go_path = subprocess.check_output(["go", "env", "GOPATH"], text=True).strip()
+            env = {**os.environ, "PATH": str(Path(go_path) / "bin") + ":" + os.environ["PATH"]}
+            valid = subprocess.run(["bash", str(LINT), "--root", str(output)], env=env, text=True, capture_output=True, check=False)
+            self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+            target = output / ".github/workflows/test-packages.yml.template"
+            target.write_text(target.read_text() + "    cache-mode: read\n")
+            invalid = subprocess.run(["bash", str(LINT), "--root", str(output)], env=env, text=True, capture_output=True, check=False)
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertIn("cache-mode", invalid.stdout + invalid.stderr)
 
     def test_rejects_invalid_sha_and_existing_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

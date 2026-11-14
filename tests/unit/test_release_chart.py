@@ -46,8 +46,20 @@ case \"$1\" in
     ;;
 esac
 """)
+        oras = self.bin / "oras"
+        oras.write_text("""#!/usr/bin/env bash
+set -e
+echo oras \"$@\" >> \"$CALL_LOG\"
+if [[ \"$1\" == pull ]]; then
+  dest=\"\"
+  while [[ $# -gt 0 ]]; do if [[ \"$1\" == --output ]]; then dest=$2; shift 2; else shift; fi; done
+  mkdir -p \"$dest\"
+  if [[ -n \"$TAMPER\" ]]; then echo tampered > \"$dest/example-0.1.0.tgz\"; else cp \"$PACKAGE_SOURCE\" \"$dest/example-0.1.0.tgz\"; fi
+fi
+""")
         crane.chmod(0o755)
         helm.chmod(0o755)
+        oras.chmod(0o755)
         self.package.write_text("deterministic chart package")
         self.env = {**os.environ, "PATH": str(self.bin) + ":" + os.environ["PATH"], "CALL_LOG": str(self.log), "STATE": str(self.state), "FAKE_DIGEST": DIGEST, "PACKAGE_SOURCE": str(self.package), "TAMPER": "", "HIROBA_PYTHON": str(ROOT / ".venv/bin/python")}
 
@@ -65,7 +77,17 @@ esac
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         artifact = json.loads((self.root / "artifact.json").read_text())
         self.assertEqual(artifact["digest"], DIGEST)
+        calls = self.log.read_text()
+        self.assertIn("helm push", calls)
+        self.assertIn(f"ghcr.io/7k-hiroba/app/charts/example@{DIGEST}", calls)
+
+    def test_new_chart_tampered_exact_digest_pull_fails(self) -> None:
+        self.env["TAMPER"] = "yes"
+        result = self.run_chart()
+        self.assertNotEqual(result.returncode, 0)
         self.assertIn("helm push", self.log.read_text())
+        self.assertIn("oras pull", self.log.read_text())
+        self.assertFalse((self.root / "artifact.json").exists())
 
     def test_existing_identical_chart_is_reused(self) -> None:
         self.state.write_text(DIGEST)

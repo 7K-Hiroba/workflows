@@ -32,15 +32,7 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 DIGEST=$(crane digest "$REPOSITORY:$TAG" 2>/dev/null || true)
-if [[ -n "$DIGEST" ]]; then
-  mkdir -p "$WORK/existing"
-  oras pull --output "$WORK/existing" "$REPOSITORY@$DIGEST"
-  if [[ -n "$FILE" ]]; then
-    cmp "$SOURCE/$FILE" "$WORK/existing/$FILE" || { echo "existing artifact bytes differ for $REPOSITORY@$DIGEST" >&2; exit 1; }
-  else
-    diff -r "$SOURCE" "$WORK/existing" || { echo "existing artifact bytes differ for $REPOSITORY@$DIGEST" >&2; exit 1; }
-  fi
-else
+if [[ -z "$DIGEST" ]]; then
   if [[ -n "$FILE" ]]; then
     PUSH_OUTPUT=$(cd "$SOURCE" && oras push "$REPOSITORY:$TAG" --artifact-type "$MEDIA_TYPE" "$FILE:text/yaml")
   else
@@ -52,6 +44,13 @@ else
 fi
 RESOLVED=$(crane digest "$REPOSITORY:$TAG")
 [[ "$RESOLVED" == "$DIGEST" ]] || { echo "resolved digest mismatch: $RESOLVED != $DIGEST" >&2; exit 1; }
+mkdir -p "$WORK/exact"
+oras pull --output "$WORK/exact" "$REPOSITORY@$DIGEST"
+if [[ -n "$FILE" ]]; then
+  cmp "$SOURCE/$FILE" "$WORK/exact/$FILE" || { echo "packaged artifact bytes differ for $REPOSITORY@$DIGEST" >&2; exit 1; }
+else
+  diff -r "$SOURCE" "$WORK/exact" || { echo "packaged artifact bytes differ for $REPOSITORY@$DIGEST" >&2; exit 1; }
+fi
 mkdir -p "$(dirname "$OUTPUT")"
 jq -n --arg repository "$REPOSITORY" --arg digest "$DIGEST" --arg mediaType "$MEDIA_TYPE" \
   --arg sourceSha "$SOURCE_SHA" --arg tag "$TAG" --arg channel "$CHANNEL" \

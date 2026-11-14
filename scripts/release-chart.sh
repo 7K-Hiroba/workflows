@@ -44,16 +44,15 @@ PACKAGE="$WORK/new/$CHART-$VERSION.tgz"
 [[ -f "$PACKAGE" ]] || { echo "Helm package missing: $PACKAGE" >&2; exit 1; }
 REPOSITORY="$REPOSITORY_BASE/$CHART"
 DIGEST=$(crane digest "$REPOSITORY:$VERSION" 2>/dev/null || true)
-if [[ -n "$DIGEST" ]]; then
-  mkdir -p "$WORK/existing"
-  helm pull "oci://$REPOSITORY" --version "$VERSION" --destination "$WORK/existing"
-  cmp "$PACKAGE" "$WORK/existing/$CHART-$VERSION.tgz" || { echo "existing chart package differs for $REPOSITORY@$DIGEST" >&2; exit 1; }
-else
+if [[ -z "$DIGEST" ]]; then
   helm push "$PACKAGE" "oci://$REPOSITORY_BASE"
   DIGEST=$(crane digest "$REPOSITORY:$VERSION")
 fi
 RESOLVED=$(crane digest "$REPOSITORY:$VERSION")
 [[ "$RESOLVED" == "$DIGEST" ]] || { echo "chart digest mismatch after publish" >&2; exit 1; }
+mkdir -p "$WORK/exact"
+oras pull --output "$WORK/exact" "$REPOSITORY@$DIGEST"
+cmp "$PACKAGE" "$WORK/exact/$CHART-$VERSION.tgz" || { echo "packaged chart differs for $REPOSITORY@$DIGEST" >&2; exit 1; }
 mkdir -p "$(dirname "$OUTPUT")"
 jq -n --arg repository "$REPOSITORY" --arg digest "$DIGEST" --arg sourceSha "$SOURCE_SHA" --arg tag "$TAG" --arg channel "$CHANNEL" \
   '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:"application/vnd.cncf.helm.chart.v1",sourceSha:$sourceSha,tag:$tag,channel:$channel,signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"

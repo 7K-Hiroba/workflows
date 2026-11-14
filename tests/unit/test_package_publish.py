@@ -78,7 +78,16 @@ esac
         self.assertEqual(artifact["signature"]["verified"], False)
         calls = self.log.read_text()
         self.assertIn("oras push", calls)
+        self.assertIn("oras pull --output", calls)
+        self.assertIn(f"ghcr.io/7k-hiroba/app/catalog/pkg@{DIGEST}", calls)
         self.assertNotIn("oras tag", calls)
+
+    def test_new_artifact_tampered_pull_fails_before_verified_output(self) -> None:
+        self.env["TAMPER"] = "yes"
+        result = self.run_publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("oras push", self.log.read_text())
+        self.assertFalse((self.root / "artifact.json").exists())
 
     def test_existing_identical_artifact_does_not_push(self) -> None:
         self.state.write_text(DIGEST)

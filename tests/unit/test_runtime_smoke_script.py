@@ -34,6 +34,15 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/test-runtime-smoke.yml").read_text()
         self.assertIn('WORKFLOW_SHA: "${{ job.workflow_sha }}"', workflow)
 
+    def test_runtime_and_browser_evidence_are_source_bound(self) -> None:
+        runtime = SCRIPT.read_text()
+        self.assertIn('--arg sourceSha "$SOURCE_SHA"', runtime)
+        browser = (ROOT / "scripts/run-compat-browser.sh").read_text()
+        self.assertIn('SOURCE_SHA=${SOURCE_SHA:-$(git -C "$ROOT" rev-parse HEAD)}', browser)
+        self.assertIn('--arg sourceSha "$SOURCE_SHA"', browser)
+        workflow = (ROOT / ".github/workflows/compat-check.yml").read_text()
+        self.assertIn('${{ inputs.source-sha || github.sha }}', workflow)
+
     def test_driver_has_argo_lint_diagnostics_and_guaranteed_kind_cleanup(self) -> None:
         text = SCRIPT.read_text()
         for expected in ("argo lint", "argo get", "kind delete cluster", "trap ", "kubectl get events"):

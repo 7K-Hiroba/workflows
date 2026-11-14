@@ -29,7 +29,7 @@ def main() -> int:
             name, separator, result = item.partition("=")
             if not separator or not LANE.fullmatch(name) or result not in STATUS:
                 raise ValueError(f"invalid reusable lane result: {item!r}")
-            document = {"schema": "inari.lane-result.v1", "lane": name, "status": STATUS[result]}
+            document = {"schema": "inari.lane-result.v1", "lane": name, "status": STATUS[result], "sourceSha": args.source_sha.lower()}
             (args.evidence_dir / f"{name}.json").write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         required = set(args.required_lanes.split())
         if not required or any(not LANE.fullmatch(name) for name in required):

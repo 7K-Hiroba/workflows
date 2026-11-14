@@ -64,6 +64,8 @@ def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str)
             now = datetime.now(timezone.utc)
             if completed > now + timedelta(minutes=5) or completed < now - timedelta(days=7):
                 raise ValueError("compat evidence is future-dated or older than 7 days")
+        if name in {"browser", "runtime-smoke"} and lane.get("sourceSha") != source_sha:
+            raise ValueError(f"{name} evidence sourceSha does not match artifact source")
         lane["required"] = name in required_lanes
         lanes[name] = lane
     missing = sorted(required_lanes - set(lanes))
@@ -180,8 +182,8 @@ def verify(
             completed = parse_time(lane.get("completedAt", ""))
             if completed > current + timedelta(minutes=5) or completed < current - timedelta(days=7):
                 raise ValueError("compat evidence is stale or future-dated")
-        if name == "browser" and lane.get("sourceSha", "").lower() != source_sha.lower():
-            raise ValueError("browser lane sourceSha mismatch")
+        if name in {"browser", "runtime-smoke"} and lane.get("sourceSha", "").lower() != source_sha.lower():
+            raise ValueError(f"{name} lane sourceSha mismatch")
     missing = sorted(required_lanes - seen)
     if missing:
         raise ValueError(f"missing required predicate lanes: {missing}")

@@ -3,6 +3,7 @@ on:
   workflow_call:
     inputs:
       root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
@@ -12,7 +13,7 @@ jobs:
     outputs: {charts: "${{ steps.plan.outputs.charts }}"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: {path: consumer}
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
@@ -31,7 +32,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: {path: consumer, fetch-depth: 0}
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
       - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1

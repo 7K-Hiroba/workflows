@@ -3,6 +3,7 @@ on:
   workflow_call:
     inputs:
       root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
@@ -12,7 +13,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: {path: consumer}
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ job.workflow_repository }}

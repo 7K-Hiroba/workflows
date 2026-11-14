@@ -3,6 +3,7 @@ on:
   workflow_call:
     inputs:
       root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
       mode: {type: string, default: pr}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
@@ -13,7 +14,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: {path: consumer, fetch-depth: 0}
+        with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
@@ -24,7 +25,7 @@ jobs:
         with: {node-version: 24, cache: npm, cache-dependency-path: "consumer/${{ inputs.root }}/ui/package-lock.json"}
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
       - name: Run backend stable/previous or nightly matrix
-        env: {SOURCE_SHA: "${{ github.sha }}", GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        env: {SOURCE_SHA: "${{ inputs.source-sha || github.sha }}", GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
         run: .hiroba/workflows/scripts/run-compat-backend.sh --root "consumer/${{ inputs.root }}" --mode "${{ inputs.mode }}"
       - name: Build canonical UI remote
         working-directory: consumer/${{ inputs.root }}/ui
@@ -32,10 +33,10 @@ jobs:
           npm ci --include=dev --ignore-scripts
           npm run build
       - name: Mount every declared slot in a real stable/edge UI host
-        env: {GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+        env: {SOURCE_SHA: "${{ inputs.source-sha || github.sha }}", GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
         run: .hiroba/workflows/scripts/run-compat-browser.sh --root "consumer/${{ inputs.root }}" --mode "${{ inputs.mode }}"
       - name: Validate source-bound fresh compatibility evidence
-        run: python3 .hiroba/workflows/scripts/check-compat-report.py --report "consumer/${{ inputs.root }}/evidence/compat-report.json" --source-sha "${{ github.sha }}" --max-age-days 7
+        run: python3 .hiroba/workflows/scripts/check-compat-report.py --report "consumer/${{ inputs.root }}/evidence/compat-report.json" --source-sha "${{ inputs.source-sha || github.sha }}" --max-age-days 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

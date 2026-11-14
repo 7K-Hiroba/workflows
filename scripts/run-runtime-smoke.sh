@@ -27,6 +27,7 @@ fi
 [[ -d "$ROOT" ]] || { echo "--root must be a consumer directory" >&2; exit 2; }
 ROOT=$(cd "$ROOT" && pwd)
 LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
+SOURCE_SHA=$(git -C "$ROOT" rev-parse HEAD)
 python3 "$LIBRARY/scripts/validate-repository.py" --root "$ROOT"
 python3 "$LIBRARY/scripts/discover-components.py" --root "$ROOT" --all > "$ROOT/evidence-runtime-plan.json"
 APP=$(jq -r '.app' "$ROOT/evidence-runtime-plan.json")
@@ -54,8 +55,8 @@ finish() {
     argo get "$WORKFLOW_NAME" -n default -o json > "$ROOT/evidence/argo-workflow.json" 2>/dev/null || true
   fi
   jq -n --arg lane runtime-smoke --arg status "$([[ $rc -eq 0 ]] && echo passed || echo failed)" \
-    --arg app "$APP" --arg mode "$MODE" --arg profile "$PROFILE" \
-    '{schema:"inari.lane-result.v1",lane:$lane,status:$status,app:$app,mode:$mode,profile:$profile}' > "$ROOT/evidence/runtime-smoke.json"
+    --arg app "$APP" --arg mode "$MODE" --arg profile "$PROFILE" --arg sourceSha "$SOURCE_SHA" \
+    '{schema:"inari.lane-result.v1",lane:$lane,status:$status,app:$app,mode:$mode,profile:$profile,sourceSha:$sourceSha}' > "$ROOT/evidence/runtime-smoke.json"
   if [[ "$CLUSTER_CREATED" == true ]]; then kind delete cluster --name "$CLUSTER" || true; fi
   rm -rf "$WORK"
   rm -f "$ROOT/evidence-runtime-plan.json"

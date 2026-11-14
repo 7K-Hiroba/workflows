@@ -15,7 +15,7 @@ permissions: {contents: read}
 jobs:
   test:
     uses: $/.github/workflows/test-runtime-smoke.yml
-    with: {root: "${{ inputs.root }}", mode: local, profile: ci}
+    with: {root: "${{ inputs.root }}", mode: local, profile: ci, source-sha: "${{ inputs.source-sha }}"}
   publish:
     needs: [test]
     if: needs.test.outputs.status == 'success'
@@ -41,7 +41,7 @@ jobs:
       - name: Add runtime lane and validate suite safety
         run: |
           mkdir -p evidence
-          jq -n '{schema:"inari.lane-result.v1",lane:"runtime-smoke",status:"passed"}' > evidence/runtime-smoke.json
+          jq -n --arg sourceSha "${{ inputs.source-sha }}" '{schema:"inari.lane-result.v1",lane:"runtime-smoke",status:"passed",sourceSha:$sourceSha}' > evidence/runtime-smoke.json
           python3 .hiroba/workflows/scripts/validate-repository.py --root "consumer/${{ inputs.root }}"
       - id: config
         run: |

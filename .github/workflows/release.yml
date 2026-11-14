@@ -52,6 +52,7 @@ jobs:
             source_sha=$(git -C consumer rev-parse "refs/tags/$REPAIR_TAG^{commit}")
           fi
           git -C consumer fetch --tags origin
+          git -C consumer checkout --detach "$source_sha"
           args=(--root "consumer/${{ inputs.root }}" --source-sha "$source_sha")
           if [[ "${{ inputs.edge }}" == true ]]; then args+=(--edge); fi
           if [[ "${{ inputs.rehearsal }}" == true ]]; then args+=(--rehearsal); fi
@@ -95,42 +96,42 @@ jobs:
     if: needs.plan.outputs.should-publish == 'true'
     needs: [plan]
     uses: $/.github/workflows/validate-packages.yml
-    with: {root: "${{ inputs.root }}"}
+    with: {root: "${{ inputs.root }}", source-sha: "${{ needs.plan.outputs.source-sha }}"}
   packages:
     if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-packages == 'true'
     needs: [plan]
     uses: $/.github/workflows/test-packages.yml
-    with: {root: "${{ inputs.root }}", all: true}
+    with: {root: "${{ inputs.root }}", all: true, source-sha: "${{ needs.plan.outputs.source-sha }}"}
   go:
     if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-extension == 'true'
     needs: [plan]
     uses: $/.github/workflows/ci-go-extension.yml
-    with: {root: "${{ inputs.root }}"}
+    with: {root: "${{ inputs.root }}", source-sha: "${{ needs.plan.outputs.source-sha }}"}
   ui:
     if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-ui == 'true'
     needs: [plan]
     uses: $/.github/workflows/ci-ui-extension.yml
-    with: {root: "${{ inputs.root }}"}
+    with: {root: "${{ inputs.root }}", source-sha: "${{ needs.plan.outputs.source-sha }}"}
   chart:
     if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-chart == 'true'
     needs: [plan]
     uses: $/.github/workflows/ci-chart.yml
-    with: {root: "${{ inputs.root }}"}
+    with: {root: "${{ inputs.root }}", source-sha: "${{ needs.plan.outputs.source-sha }}"}
   observability:
     if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-observability == 'true'
     needs: [plan]
     uses: $/.github/workflows/test-observability.yml
-    with: {root: "${{ inputs.root }}"}
+    with: {root: "${{ inputs.root }}", source-sha: "${{ needs.plan.outputs.source-sha }}"}
   compat:
     if: needs.plan.outputs.should-publish == 'true' && (needs.plan.outputs.has-extension == 'true' || needs.plan.outputs.has-ui == 'true')
     needs: [plan]
     uses: $/.github/workflows/compat-check.yml
-    with: {root: "${{ inputs.root }}", mode: release}
+    with: {root: "${{ inputs.root }}", mode: release, source-sha: "${{ needs.plan.outputs.source-sha }}"}
   runtime:
     if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-smoke == 'true'
     needs: [plan]
     uses: $/.github/workflows/test-runtime-smoke.yml
-    with: {root: "${{ inputs.root }}", mode: local, profile: ci}
+    with: {root: "${{ inputs.root }}", mode: local, profile: ci, source-sha: "${{ needs.plan.outputs.source-sha }}"}
   evidence:
     if: always() && needs.plan.outputs.should-publish == 'true'
     needs: [plan, validate, packages, go, ui, chart, observability, compat, runtime]

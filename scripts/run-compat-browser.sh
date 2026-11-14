@@ -7,6 +7,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$MODE" == pr || "$MODE" == release || "$MODE" == nightly ]] || { echo "invalid compat mode" >&2; exit 2; }
 ROOT=$(cd "$ROOT" && pwd)
+SOURCE_SHA=${SOURCE_SHA:-$(git -C "$ROOT" rev-parse HEAD)}
 LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
 MATRIX="$ROOT/ci/compatibility-matrix.json"
 if [[ "$MODE" == nightly ]]; then
@@ -24,8 +25,8 @@ finish() {
   rc=$?
   [[ -n "$HOST_PID" ]] && kill "$HOST_PID" >/dev/null 2>&1 || true
   [[ -n "$REMOTE_PID" ]] && kill "$REMOTE_PID" >/dev/null 2>&1 || true
-  jq -n --arg status "$([[ $rc -eq 0 ]] && echo passed || echo failed)" --arg sha "$HOST_SHA" \
-    '{schema:"inari.browser-report.v1",status:$status,uiHostSha:$sha}' > "$ROOT/evidence/browser-report.json"
+  jq -n --arg status "$([[ $rc -eq 0 ]] && echo passed || echo failed)" --arg sha "$HOST_SHA" --arg sourceSha "$SOURCE_SHA" \
+    '{schema:"inari.browser-report.v1",status:$status,sourceSha:$sourceSha,uiHostSha:$sha}' > "$ROOT/evidence/browser-report.json"
   rm -rf "$WORK"
   exit "$rc"
 }

@@ -48,6 +48,28 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("status", outputs)
                 self.assertIn("result", data["jobs"])
 
+    def test_reusable_test_lanes_check_out_the_requested_exact_source(self) -> None:
+        names = ("validate-packages.yml", "test-packages.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml", "test-runtime-smoke.yml")
+        for name in names:
+            with self.subTest(name=name):
+                data = yaml.safe_load((WORKFLOWS / name).read_text())
+                inputs = data.get("on", data.get(True, {}))["workflow_call"]["inputs"]
+                self.assertIn("source-sha", inputs)
+                checkouts = []
+                for job in data["jobs"].values():
+                    for step in job.get("steps", []):
+                        if str(step.get("uses", "")).startswith("actions/checkout@") and step.get("with", {}).get("path") == "consumer":
+                            checkouts.append(step)
+                self.assertTrue(checkouts)
+                for checkout in checkouts:
+                    self.assertEqual(checkout["with"].get("ref"), "${{ inputs.source-sha }}")
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        for name in ("validate", "packages", "go", "ui", "chart", "observability", "compat", "runtime"):
+            self.assertEqual(release["jobs"][name]["with"]["source-sha"], "${{ needs.plan.outputs.source-sha }}")
+        for name in ("release-chart.yml", "release-smoke-suite.yml"):
+            data = yaml.safe_load((WORKFLOWS / name).read_text())
+            self.assertEqual(data["jobs"]["test"]["with"]["source-sha"], "${{ inputs.source-sha }}")
+
     def test_library_scripts_use_resolved_same_commit_checkout(self) -> None:
         for path in WORKFLOWS.glob("*.yml"):
             text = path.read_text()

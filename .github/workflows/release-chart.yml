@@ -19,7 +19,7 @@ permissions: {contents: read}
 jobs:
   test:
     uses: $/.github/workflows/ci-chart.yml
-    with: {root: "${{ inputs.root }}"}
+    with: {root: "${{ inputs.root }}", source-sha: "${{ inputs.source-sha }}"}
   publish:
     needs: [test]
     if: needs.test.outputs.status == 'success'
@@ -47,7 +47,7 @@ jobs:
       - name: Add exact-source chart test result
         run: |
           mkdir -p evidence
-          jq -n '{schema:"inari.lane-result.v1",lane:"chart",status:"passed"}' > evidence/chart.json
+          jq -n --arg sourceSha "${{ inputs.source-sha }}" '{schema:"inari.lane-result.v1",lane:"chart",status:"passed",sourceSha:$sourceSha}' > evidence/chart.json
       - name: Log in to GHCR
         env: {TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
         run: echo "$TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin

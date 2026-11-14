@@ -115,9 +115,13 @@ jobs:
       - name: Verify signature provenance and test evidence
         env:
           ARTIFACT_REF: "${{ matrix.artifact.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ matrix.artifact.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: "${{ matrix.artifact.mediaType }}"
           SOURCE_REPOSITORY: "${{ github.repository }}"
           SOURCE_SHA: "${{ matrix.artifact.sourceSha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
           EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-oci\\.yml@${{ job.workflow_sha }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ matrix.artifact.releaseTag }}"

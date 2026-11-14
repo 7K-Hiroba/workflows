@@ -31,7 +31,7 @@ jobs:
         run: .hiroba/workflows/scripts/install-ci-tools.sh kind argo crane
       - name: Run ephemeral runtime smoke
         env:
-          EXPECTED_PUBLISHER: "https://github.com/${{ job.workflow_repository }}/"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
         run: |
           .hiroba/workflows/scripts/run-runtime-smoke.sh \
             --root "consumer/${{ inputs.root }}" --mode "${{ inputs.mode }}" --profile "${{ inputs.profile }}" \

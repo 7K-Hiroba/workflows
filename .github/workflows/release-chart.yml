@@ -106,9 +106,13 @@ jobs:
       - name: Verify chart evidence
         env:
           ARTIFACT_REF: "${{ inputs.registry-prefix }}/${{ steps.publish.outputs.app }}/charts/${{ inputs.chart }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ inputs.registry-prefix }}/${{ steps.publish.outputs.app }}/charts/${{ inputs.chart }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.cncf.helm.chart.v1
           SOURCE_REPOSITORY: "${{ github.repository }}"
           SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
           EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-chart\\.yml@${{ job.workflow_sha }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ steps.publish.outputs.release-tag }}"

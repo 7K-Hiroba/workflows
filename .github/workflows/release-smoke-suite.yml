@@ -95,9 +95,13 @@ jobs:
       - name: Verify smoke-suite evidence
         env:
           ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.inari.smoke.suite.v1+yaml
           SOURCE_REPOSITORY: "${{ github.repository }}"
           SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
           EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-smoke-suite\\.yml@${{ job.workflow_sha }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"

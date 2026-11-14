@@ -6,7 +6,7 @@ MODE=local
 PROFILE=ci
 APP_REF=""
 SUITE_REF=""
-EXPECTED_PUBLISHER=${EXPECTED_PUBLISHER:-'https://github.com/7K-Hiroba/workflows/'}
+WORKFLOW_SHA=${WORKFLOW_SHA:-}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT=$2; shift 2 ;;
@@ -73,13 +73,32 @@ if [[ "$MODE" == local ]]; then
   helm upgrade --install "$APP" "$ROOT/$CHART" --namespace default \
     --values "$SUITE_DIR/values.yaml" --wait --timeout 5m
 else
+  [[ "$WORKFLOW_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "OCI mode requires the resolved workflow SHA" >&2; exit 2; }
+  [[ "${GITHUB_REPOSITORY:-}" =~ ^[^/]+/[^/]+$ ]] || { echo "OCI mode requires the source repository" >&2; exit 2; }
+  SOURCE_SHA=$(git -C "$ROOT" rev-parse HEAD)
+  CHART_NAME=$(jq -r --arg target "$TARGET" '.components[] | select(.kind == "chart" and .path == $target) | .name' "$ROOT/evidence-runtime-plan.json")
+  CHART_VERSION=$(jq -r --arg target "$TARGET" '.components[] | select(.kind == "chart" and .path == $target) | .version' "$ROOT/evidence-runtime-plan.json")
+  TARGET_ID=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["id"])' "$SUITE_DIR/suite.yaml")
+  TARGET_VERSION=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["version"])' "$SUITE_DIR/suite.yaml")
   for ref in "$APP_REF" "$SUITE_REF"; do
-    cosign verify "$ref" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-      --certificate-identity-regexp "$EXPECTED_PUBLISHER" >/dev/null
-    gh attestation verify "oci://$ref" --owner 7K-Hiroba >/dev/null
-    cosign verify-attestation "$ref" --type https://inari.dev/attestations/test-evidence/v1 \
-      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-      --certificate-identity-regexp "$EXPECTED_PUBLISHER" >/dev/null
+    repository=${ref%@*}
+    if [[ "$ref" == "$APP_REF" ]]; then
+      workflow_path=.github/workflows/release-chart.yml
+      expected_publisher="^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-chart\\.yml@${WORKFLOW_SHA}$"
+      media_type=application/vnd.cncf.helm.chart.v1
+      required="validate chart"
+      release_tag="$CHART_NAME-v$CHART_VERSION"
+    else
+      workflow_path=.github/workflows/release-smoke-suite.yml
+      expected_publisher="^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-smoke-suite\\.yml@${WORKFLOW_SHA}$"
+      media_type=application/vnd.inari.smoke.suite.v1+yaml
+      required="validate runtime-smoke"
+      release_tag="$TARGET_ID-v$TARGET_VERSION"
+    fi
+    ARTIFACT_REF="$ref" ARTIFACT_REPOSITORY="$repository" ARTIFACT_DIGEST="${ref#*@}" MEDIA_TYPE="$media_type" \
+      SOURCE_REPOSITORY="$GITHUB_REPOSITORY" SOURCE_SHA="$SOURCE_SHA" WORKFLOW_SHA="$WORKFLOW_SHA" WORKFLOW_PATH="$workflow_path" \
+      REQUIRED_LANES="$required" RELEASE_TAG="$release_tag" EXPECTED_PUBLISHER="$expected_publisher" \
+      "$LIBRARY/scripts/verify-release.sh"
   done
   mkdir -p "$WORK/suite"
   oras pull --plain-http=false --output "$WORK/suite" "$SUITE_REF"

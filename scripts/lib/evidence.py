@@ -26,7 +26,10 @@ def load_json(path: Path) -> Any:
 
 
 def parse_time(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("evidence timestamps must include a timezone")
+    return parsed.astimezone(timezone.utc)
 
 
 def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str) -> list[dict[str, Any]]:
@@ -119,28 +122,72 @@ def predicate_from_document(document: Any) -> dict[str, Any]:
     raise ValueError("no test-evidence predicate found")
 
 
-def verify(predicate: dict[str, Any], source_sha: str, workflow_path: str, artifact_digest: str, release_tag: str) -> None:
+def verify(
+    predicate: dict[str, Any],
+    *,
+    source_repository: str,
+    source_sha: str,
+    workflow_repository: str,
+    workflow_path: str,
+    workflow_sha: str,
+    artifact_repository: str,
+    artifact_digest: str,
+    media_type: str,
+    release_tag: str,
+    required_lanes: set[str],
+    now: datetime | None = None,
+) -> None:
+    """Verify every security-relevant predicate binding, not only its signature."""
+    current = now or datetime.now(timezone.utc)
     if predicate.get("schema") != "inari.test-evidence.v1":
         raise ValueError("unexpected predicate schema")
-    if predicate.get("sourceSha") != source_sha:
-        raise ValueError("predicate sourceSha mismatch")
-    if predicate.get("producer", {}).get("workflowPath") != workflow_path:
-        raise ValueError("predicate producer workflow mismatch")
-    if predicate.get("artifact", {}).get("digest") != artifact_digest:
-        raise ValueError("predicate artifact digest mismatch")
+    if not SHA_RE.fullmatch(source_sha) or not SHA_RE.fullmatch(workflow_sha) or not DIGEST_RE.fullmatch(artifact_digest):
+        raise ValueError("source/workflow SHAs and artifact digest must be full immutable values")
+    if not required_lanes:
+        raise ValueError("at least one required lane must be supplied")
+    if predicate.get("sourceRepository", "").lower() != source_repository.lower() or predicate.get("sourceSha", "").lower() != source_sha.lower():
+        raise ValueError("predicate source repository/SHA mismatch")
+    producer = predicate.get("producer", {})
+    if not isinstance(producer, dict):
+        raise ValueError("predicate producer is missing")
+    if producer.get("workflowRepository", "").lower() != workflow_repository.lower() or producer.get("workflowPath") != workflow_path or producer.get("workflowSha", "").lower() != workflow_sha.lower():
+        raise ValueError("predicate producer repository/path/SHA mismatch")
+    if not str(producer.get("runId", "")) or not str(producer.get("runAttempt", "")):
+        raise ValueError("predicate producer run identity is missing")
+    artifact = predicate.get("artifact", {})
+    if not isinstance(artifact, dict) or artifact.get("repository", "").lower() != artifact_repository.lower() or artifact.get("digest", "").lower() != artifact_digest.lower() or artifact.get("mediaType") != media_type:
+        raise ValueError("predicate artifact repository/digest/media type mismatch")
     if predicate.get("releaseTag") != release_tag:
         raise ValueError("predicate release tag mismatch")
     lanes = predicate.get("lanes")
     if not isinstance(lanes, list) or not lanes:
         raise ValueError("predicate has no test lanes")
+    seen: set[str] = set()
     for lane in lanes:
+        if not isinstance(lane, dict) or not isinstance(lane.get("lane"), str):
+            raise ValueError("predicate contains an invalid lane")
+        name = lane["lane"]
+        if name in seen:
+            raise ValueError(f"duplicate predicate lane: {name}")
+        seen.add(name)
         if lane.get("status") != "passed":
-            raise ValueError(f"lane {lane.get('lane')} did not pass")
-        if lane.get("lane") == "compat":
+            raise ValueError(f"lane {name} did not pass")
+        if name in required_lanes and lane.get("required") is not True:
+            raise ValueError(f"lane {name} is not marked required")
+        if name == "compat":
+            if lane.get("sourceSha", "").lower() != source_sha.lower():
+                raise ValueError("compat lane sourceSha mismatch")
             completed = parse_time(lane.get("completedAt", ""))
-            now = datetime.now(timezone.utc)
-            if completed > now + timedelta(minutes=5) or completed < now - timedelta(days=7):
+            if completed > current + timedelta(minutes=5) or completed < current - timedelta(days=7):
                 raise ValueError("compat evidence is stale or future-dated")
+        if name == "browser" and lane.get("sourceSha", "").lower() != source_sha.lower():
+            raise ValueError("browser lane sourceSha mismatch")
+    missing = sorted(required_lanes - seen)
+    if missing:
+        raise ValueError(f"missing required predicate lanes: {missing}")
+    finished = parse_time(str(predicate.get("finishedAt", "")))
+    if finished > current + timedelta(minutes=5) or finished < current - timedelta(hours=24):
+        raise ValueError("test evidence is stale or future-dated")
     expected_digest = hashlib.sha256(json.dumps(lanes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if predicate.get("evidenceDigest") != expected_digest:
         raise ValueError("evidenceDigest does not match predicate lanes")

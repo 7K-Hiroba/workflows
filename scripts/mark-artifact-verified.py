@@ -27,7 +27,19 @@ def main() -> int:
         for key, expected in (("artifactRef", expected_ref), ("digest", artifact["digest"]), ("sourceSha", artifact["sourceSha"])):
             if receipt.get(key) != expected:
                 raise ValueError(f"verification receipt {key} mismatch")
-        verify(predicate, artifact["sourceSha"], receipt["workflowPath"], artifact["digest"], receipt["releaseTag"])
+        verify(
+            predicate,
+            source_repository=receipt["sourceRepository"],
+            source_sha=artifact["sourceSha"],
+            workflow_repository="7K-Hiroba/workflows",
+            workflow_path=receipt["workflowPath"],
+            workflow_sha=receipt["workflowSha"],
+            artifact_repository=artifact["repository"],
+            artifact_digest=artifact["digest"],
+            media_type=artifact["mediaType"],
+            release_tag=receipt["releaseTag"],
+            required_lanes=set(receipt["requiredLanes"]),
+        )
         artifact["signature"] = {"verified": True, "type": "cosign-keyless", "publisher": receipt["workflowPath"]}
         artifact["provenance"] = {"verified": True, "predicateType": "https://slsa.dev/provenance/v1"}
         artifact["testEvidence"] = {

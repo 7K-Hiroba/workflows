@@ -24,6 +24,16 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("digest", (result.stdout + result.stderr).lower())
 
+    def test_oci_mode_uses_common_fully_bound_release_verifier(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('"$LIBRARY/scripts/verify-release.sh"', text)
+        self.assertIn('REQUIRED_LANES="$required"', text)
+        self.assertIn('WORKFLOW_SHA="$WORKFLOW_SHA"', text)
+        self.assertIn('ARTIFACT_REPOSITORY="$repository"', text)
+        self.assertNotIn("cosign verify-attestation", text)
+        workflow = (ROOT / ".github/workflows/test-runtime-smoke.yml").read_text()
+        self.assertIn('WORKFLOW_SHA: "${{ job.workflow_sha }}"', workflow)
+
     def test_driver_has_argo_lint_diagnostics_and_guaranteed_kind_cleanup(self) -> None:
         text = SCRIPT.read_text()
         for expected in ("argo lint", "argo get", "kind delete cluster", "trap ", "kubectl get events"):

@@ -94,9 +94,13 @@ jobs:
       - name: Verify backend evidence
         env:
           ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.oci.image.manifest.v1+json
           SOURCE_REPOSITORY: "${{ github.repository }}"
           SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
           EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-extension\\.yml@${{ job.workflow_sha }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"
@@ -184,9 +188,13 @@ jobs:
       - name: Verify UI evidence
         env:
           ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
+          ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"
+          MEDIA_TYPE: application/vnd.inari.extension.ui.v1
           SOURCE_REPOSITORY: "${{ github.repository }}"
           SOURCE_SHA: "${{ inputs.source-sha }}"
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          REQUIRED_LANES: "${{ inputs.required-lanes }}"
           EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-extension\\.yml@${{ job.workflow_sha }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ steps.config.outputs.release-tag }}"

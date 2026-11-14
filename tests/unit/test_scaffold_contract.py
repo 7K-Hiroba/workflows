@@ -56,14 +56,15 @@ class ScaffoldContractTests(unittest.TestCase):
 
     def test_compat_matrix_tracks_current_and_previous_stable_ui(self) -> None:
         matrix = json.loads((SCAFFOLD / "ci/compatibility-matrix.json").read_text())
-        self.assertEqual([entry["ui"] for entry in matrix["entries"]], ["2.1.0", "2.0.0"])
-        self.assertEqual(matrix["entries"][0]["uiHostSha"], "726d674a90ac7ae961c8a90b1d89549775272e3e")
+        self.assertEqual([entry["ui"] for entry in matrix["entries"]], ["2.1.1", "2.0.0"])
+        self.assertEqual(matrix["entries"][0]["uiHostSha"], "e2562aff1e23fb61cba41d378147a2f508b505d3")
 
     def test_browser_compat_uses_offline_host_fixture(self) -> None:
         browser = (SCAFFOLD / "ui/tests/browser.spec.ts").read_text()
         self.assertIn("baseURL}/acme/extensions", browser)
         self.assertIn("getByRole('link', { name: 'Clusters'", browser)
         self.assertIn("getByText('ready'", browser)
+        self.assertIn("test('slot cluster-tab:health'", browser)
         driver = (ROOT / "scripts/run-compat-browser.sh").read_text()
         self.assertIn("NODE_ENV=development VITE_MOCK_API=true", driver)
         self.assertIn("--oidc-fixture", driver)

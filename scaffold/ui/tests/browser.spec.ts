@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('slot cluster-tab:health mounts in the stable host', async ({ page }) => {
+test('slot cluster-tab:health', async ({ page }) => {
   const baseURL = process.env.INARI_UI_URL;
   const remoteEntry = process.env.INARI_REMOTE_ENTRY;
   test.skip(!baseURL || !remoteEntry, 'requires the pinned stable UI host and OCI-built remote supplied by compat-check');

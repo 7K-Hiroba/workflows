@@ -3,8 +3,8 @@
   "entries": [
     {
       "server": "0.7.0-f0bdbad",
-      "ui": "2.1.0",
-      "uiHostSha": "726d674a90ac7ae961c8a90b1d89549775272e3e",
+      "ui": "2.1.1",
+      "uiHostSha": "e2562aff1e23fb61cba41d378147a2f508b505d3",
       "pluginContracts": ["inari.plugin.v1"],
       "uiHostApis": ["inari.ui.v1"]
     },

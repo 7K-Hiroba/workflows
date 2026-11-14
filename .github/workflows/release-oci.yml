@@ -131,13 +131,6 @@ jobs:
         run: .hiroba/workflows/scripts/verify-release.sh
       - name: Record receipt-backed verification
         run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact "evidence/artifact-${{ matrix.artifact.key }}.json" --receipt "evidence/receipt-${{ matrix.artifact.key }}.json" --predicate "evidence/test-${{ matrix.artifact.key }}.json"
-      - name: Move channel only after verification
-        run: |
-          channel="${{ matrix.artifact.channel }}"
-          if [[ -n "$channel" ]]; then
-            oras tag "${{ matrix.artifact.repository }}@${{ steps.publish.outputs.digest }}" "$channel"
-            crane digest "${{ matrix.artifact.repository }}:$channel" | grep -Fx "${{ steps.publish.outputs.digest }}"
-          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: artifact-${{ matrix.artifact.key }}

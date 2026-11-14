@@ -153,6 +153,19 @@ class WorkflowContractTests(unittest.TestCase):
         smoke_text = (WORKFLOWS / "release-smoke-suite.yml").read_text()
         self.assertIn('version="${{ inputs.target-version }}"', smoke_text)
 
+    def test_channel_coordinator_gates_all_artifacts_and_indexes(self) -> None:
+        publisher = (WORKFLOWS / "release-oci.yml").read_text()
+        self.assertNotIn("oras tag", publisher)
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        channels = release["jobs"]["channels"]
+        for needed in ("publish-packages", "publish-templates", "publish-charts", "publish-extension", "publish-smoke", "indexes"):
+            self.assertIn(needed, channels["needs"])
+        self.assertIn("needs.indexes.outputs.status == 'success'", channels["if"])
+        self.assertIn("channels", release["jobs"]["finalize"]["needs"])
+        self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["finalize"]["if"])
+        self.assertIn("channels", release["jobs"]["edge-release"]["needs"])
+        self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["edge-release"]["if"])
+
     def test_library_release_please_uses_static_manifest_mode(self) -> None:
         library = yaml.safe_load((WORKFLOWS / "library-release-please.yml").read_text())
         self.assertIs(library["jobs"]["propose"]["with"]["library-mode"], True)

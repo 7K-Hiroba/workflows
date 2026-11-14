@@ -138,7 +138,16 @@ jobs:
     timeout-minutes: 15
     outputs: {status: "${{ steps.result.outputs.status }}"}
     steps:
-      - name: Record required lane results
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ needs.plan.outputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: needs.compat.outputs.status != ''
+        with: {name: compatibility-evidence, path: evidence}
+      - id: collect
+        if: always()
+        name: Normalize and validate required release evidence
         env:
           VALIDATE: "${{ needs.validate.outputs.status }}"
           PACKAGES: "${{ needs.packages.outputs.status }}"
@@ -146,7 +155,6 @@ jobs:
           UI: "${{ needs.ui.outputs.status }}"
           CHART: "${{ needs.chart.outputs.status }}"
           OBSERVABILITY: "${{ needs.observability.outputs.status }}"
-          COMPAT: "${{ needs.compat.outputs.status }}"
           RUNTIME: "${{ needs.runtime.outputs.status }}"
           HAS_PACKAGES: "${{ needs.plan.outputs.has-packages }}"
           HAS_EXTENSION: "${{ needs.plan.outputs.has-extension }}"
@@ -156,27 +164,23 @@ jobs:
           HAS_SMOKE: "${{ needs.plan.outputs.has-smoke }}"
         run: |
           set -euo pipefail
-          mkdir -p evidence
-          write_lane() { jq -n --arg lane "$1" --arg status "$2" '{schema:"inari.lane-result.v1",lane:$lane,status:$status}' > "evidence/$1.json"; }
-          write_lane validate "${VALIDATE:-failed}"
-          [[ "$HAS_PACKAGES" == true ]] && write_lane package "${PACKAGES:-failed}"
-          [[ "$HAS_EXTENSION" == true ]] && write_lane go "${GO:-failed}"
-          [[ "$HAS_UI" == true ]] && write_lane ui "${UI:-failed}"
-          [[ "$HAS_CHART" == true ]] && write_lane chart "${CHART:-failed}"
-          [[ "$HAS_OBSERVABILITY" == true ]] && write_lane observability "${OBSERVABILITY:-failed}"
-          if [[ -n "$COMPAT" ]]; then write_lane compat "$COMPAT"; fi
-          [[ "$HAS_SMOKE" == true ]] && write_lane runtime-smoke "${RUNTIME:-failed}"
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        if: needs.compat.outputs.status != ''
-        with: {name: compatibility-evidence, path: evidence}
+          args=(--evidence-dir evidence --source-sha "${{ needs.plan.outputs.source-sha }}" --required-lanes "${{ needs.plan.outputs.required-lanes }}" --lane "validate=${VALIDATE:-failure}")
+          [[ "$HAS_PACKAGES" != true ]] || args+=(--lane "package=${PACKAGES:-failure}")
+          [[ "$HAS_EXTENSION" != true ]] || args+=(--lane "go=${GO:-failure}")
+          [[ "$HAS_UI" != true ]] || args+=(--lane "ui=${UI:-failure}")
+          [[ "$HAS_CHART" != true ]] || args+=(--lane "chart=${CHART:-failure}")
+          [[ "$HAS_OBSERVABILITY" != true ]] || args+=(--lane "observability=${OBSERVABILITY:-failure}")
+          [[ "$HAS_SMOKE" != true ]] || args+=(--lane "runtime-smoke=${RUNTIME:-failure}")
+          python3 .hiroba/workflows/scripts/collect-release-evidence.py "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with: {name: release-test-evidence, path: evidence, retention-days: 30}
+        if: always()
+        with: {name: release-test-evidence, path: evidence, retention-days: 30, if-no-files-found: ignore}
       - id: result
+        if: always()
+        env: {COLLECT: "${{ steps.collect.outcome }}"}
         run: |
           status=success
-          for file in evidence/*.json; do
-            if jq -e 'select(.schema == "inari.lane-result.v1" and .status != "passed")' "$file" >/dev/null; then status=failure; fi
-          done
+          [[ "$COLLECT" == success ]] || status=failure
           echo "status=$status" >> "$GITHUB_OUTPUT"
           [[ "$status" == success ]] || exit 1
   publish-packages:

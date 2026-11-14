@@ -29,15 +29,10 @@ def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
-    for value in (args.source_sha, args.workflow_sha):
-        if not SHA_RE.fullmatch(value):
-            raise ValueError("source and workflow SHAs must be full 40-character values")
-    if not DIGEST_RE.fullmatch(args.artifact_digest):
-        raise ValueError("artifact digest must be a full sha256 OCI digest")
-    if args.workflow_path not in PRODUCERS:
-        raise ValueError(f"unexpected test-evidence producer: {args.workflow_path}")
-    required = set(args.required_lane or [])
+def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str) -> list[dict[str, Any]]:
+    """Load one passing, source-bound representation of each required lane."""
+    if not SHA_RE.fullmatch(source_sha):
+        raise ValueError("source SHA must be a full 40-character value")
     lanes: dict[str, dict[str, Any]] = {}
     for path in sorted(evidence_dir.glob("*.json")):
         try:
@@ -51,7 +46,7 @@ def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
         elif data.get("schema") == "inari.compat-report.v1":
             lane = {"lane": "compat", "status": data.get("status"), "sourceSha": data.get("sourceSha"), "completedAt": data.get("completedAt"), "resolvedEdge": data.get("resolvedEdge")}
         elif data.get("schema") == "inari.browser-report.v1":
-            lane = {"lane": "browser", "status": data.get("status"), "uiHostSha": data.get("uiHostSha")}
+            lane = {"lane": "browser", "status": data.get("status"), "sourceSha": data.get("sourceSha"), "uiHostSha": data.get("uiHostSha")}
         else:
             continue
         name = lane["lane"]
@@ -60,18 +55,29 @@ def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
         if lane.get("status") != "passed":
             raise ValueError(f"lane {name} did not pass")
         if name == "compat":
-            if lane.get("sourceSha") != args.source_sha:
+            if lane.get("sourceSha") != source_sha:
                 raise ValueError("compat evidence sourceSha does not match artifact source")
             completed = parse_time(str(lane.get("completedAt", "")))
             now = datetime.now(timezone.utc)
             if completed > now + timedelta(minutes=5) or completed < now - timedelta(days=7):
                 raise ValueError("compat evidence is future-dated or older than 7 days")
-        lane["required"] = name in required
+        lane["required"] = name in required_lanes
         lanes[name] = lane
-    missing = sorted(required - set(lanes))
+    missing = sorted(required_lanes - set(lanes))
     if missing:
         raise ValueError(f"missing required lane evidence: {missing}")
-    ordered = [lanes[name] for name in sorted(lanes)]
+    return [lanes[name] for name in sorted(lanes)]
+
+
+def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
+    for value in (args.source_sha, args.workflow_sha):
+        if not SHA_RE.fullmatch(value):
+            raise ValueError("source and workflow SHAs must be full 40-character values")
+    if not DIGEST_RE.fullmatch(args.artifact_digest):
+        raise ValueError("artifact digest must be a full sha256 OCI digest")
+    if args.workflow_path not in PRODUCERS:
+        raise ValueError(f"unexpected test-evidence producer: {args.workflow_path}")
+    ordered = collect_lanes(evidence_dir, set(args.required_lane or []), args.source_sha)
     evidence_digest = hashlib.sha256(json.dumps(ordered, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {
         "schema": "inari.test-evidence.v1",

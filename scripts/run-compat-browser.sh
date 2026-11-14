@@ -35,10 +35,10 @@ git -C "$WORK/host" checkout "$HOST_SHA"
 npm ci --include=dev --ignore-scripts --prefix "$WORK/host"
 (
   cd "$WORK/host"
-  VITE_MOCK_API=true npm run dev -- --host 127.0.0.1 --port 5173 > "$ROOT/diagnostics/ui-host.log" 2>&1
+  NODE_ENV=development VITE_MOCK_API=true npm run dev -- --host 127.0.0.1 --port 5173 > "$ROOT/diagnostics/ui-host.log" 2>&1
 ) &
 HOST_PID=$!
-python3 "$LIBRARY/scripts/serve-ui-remote.py" --directory "$ROOT/ui/dist" --port 8080 > "$ROOT/diagnostics/ui-remote.log" 2>&1 &
+python3 "$LIBRARY/scripts/serve-ui-remote.py" --directory "$ROOT/ui/dist" --port 8080 --oidc-fixture > "$ROOT/diagnostics/ui-remote.log" 2>&1 &
 REMOTE_PID=$!
 python3 - <<'PY'
 import time, urllib.request
@@ -58,7 +58,7 @@ cd "$ROOT/ui"
 npx playwright install chromium
 set +e
 INARI_UI_URL=http://127.0.0.1:5173 INARI_REMOTE_ENTRY=http://127.0.0.1:8080/remoteEntry.js \
-  npm run test:browser -- --reporter=json --output="$ROOT/evidence/playwright-artifacts" > "$ROOT/evidence/playwright-report.json"
+  ./node_modules/.bin/playwright test --reporter=json --output="$ROOT/evidence/playwright-artifacts" > "$ROOT/evidence/playwright-report.json"
 RESULT=$?
 set -e
 [[ $RESULT -eq 0 ]] || exit "$RESULT"

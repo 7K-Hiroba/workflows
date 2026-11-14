@@ -3,15 +3,15 @@
   "entries": [
     {
       "server": "0.7.0-f0bdbad",
-      "ui": "2.0.0",
-      "uiHostSha": "dc4000cc1df60c8c65d25f28aca89f1878a111d9",
+      "ui": "2.1.0",
+      "uiHostSha": "726d674a90ac7ae961c8a90b1d89549775272e3e",
       "pluginContracts": ["inari.plugin.v1"],
       "uiHostApis": ["inari.ui.v1"]
     },
     {
       "server": "0.6.0",
-      "ui": "1.6.2",
-      "uiHostSha": "409f19d7f369bbf576ac3c9f4d7b0114621c439d",
+      "ui": "2.0.0",
+      "uiHostSha": "dc4000cc1df60c8c65d25f28aca89f1878a111d9",
       "pluginContracts": ["inari.plugin.v1"],
       "uiHostApis": ["inari.ui.v1"]
     }

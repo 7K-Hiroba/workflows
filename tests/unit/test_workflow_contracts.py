@@ -119,6 +119,30 @@ class WorkflowContractTests(unittest.TestCase):
                     for different_ref in ("refs/heads/main-next", "refs/heads/feature", "refs/tags/main", "a" * 40):
                         self.assertIsNone(re.fullmatch(pattern, identity.replace("refs/heads/main", different_ref)))
 
+    def test_every_release_verification_step_receives_github_token(self) -> None:
+        expected = {
+            ("release-oci.yml", "publish"),
+            ("release-extension.yml", "backend"),
+            ("release-extension.yml", "ui"),
+            ("release-chart.yml", "publish"),
+            ("release-smoke-suite.yml", "publish"),
+        }
+        verify_steps = {}
+        for path in WORKFLOWS.glob("release-*.yml"):
+            workflow = yaml.safe_load(path.read_text())
+            for job_name, job in workflow["jobs"].items():
+                for step in job.get("steps", []):
+                    if step.get("run") == ".hiroba/workflows/scripts/verify-release.sh":
+                        verify_steps[(path.name, job_name)] = step
+        self.assertEqual(set(verify_steps), expected)
+        for identity, step in verify_steps.items():
+            with self.subTest(workflow=identity[0], job=identity[1]):
+                env = step["env"]
+                self.assertEqual(env.get("GH_TOKEN"), "${{ github.token }}")
+                for field in ("SOURCE_SHA", "WORKFLOW_SHA", "ARTIFACT_DIGEST", "REQUIRED_LANES", "VERIFICATION_RECEIPT"):
+                    self.assertTrue(env.get(field), field)
+                self.assertIn("${{ github.ref }}", env["EXPECTED_PUBLISHER"])
+
     def test_forbidden_dependencies_and_distribution_are_absent(self) -> None:
         for path in WORKFLOWS.glob("*.yml"):
             text = path.read_text()

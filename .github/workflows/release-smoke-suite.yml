@@ -104,6 +104,7 @@ jobs:
         with: {subject-name: "${{ steps.config.outputs.repository }}", subject-digest: "${{ steps.publish.outputs.digest }}", push-to-registry: true}
       - name: Verify smoke-suite evidence
         env:
+          GH_TOKEN: "${{ github.token }}"
           ARTIFACT_REF: "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           ARTIFACT_REPOSITORY: "${{ steps.config.outputs.repository }}"
           ARTIFACT_DIGEST: "${{ steps.publish.outputs.digest }}"

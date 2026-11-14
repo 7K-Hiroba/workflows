@@ -49,7 +49,10 @@ EXISTING=$(crane digest "$REPOSITORY:$TAG" 2>/dev/null || true)
 if [[ -n "$EXISTING" ]]; then
   [[ "$EXISTING" == "$CANDIDATE_DIGEST" ]] || { echo "existing backend image digest differs for $REPOSITORY:$TAG" >&2; exit 1; }
 else
-  crane push "$CANDIDATE_ARCHIVE" "$REPOSITORY:$TAG"
+  CANDIDATE_LAYOUT="$WORK/candidate-oci"
+  mkdir -p "$CANDIDATE_LAYOUT"
+  tar -xf "$CANDIDATE_ARCHIVE" -C "$CANDIDATE_LAYOUT"
+  crane push "$CANDIDATE_LAYOUT" "$REPOSITORY:$TAG"
 fi
 RESOLVED=$(crane digest "$REPOSITORY:$TAG")
 [[ "$RESOLVED" == "$CANDIDATE_DIGEST" ]] || { echo "resolved backend digest differs from candidate" >&2; exit 1; }

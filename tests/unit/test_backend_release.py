@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -11,7 +12,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/release-backend.sh"
-DIGEST = "sha256:" + "c" * 64
+CONFIG = json.dumps({"architecture": "amd64", "os": "linux", "rootfs": {"type": "layers", "diff_ids": []}}, sort_keys=True, separators=(",", ":")).encode()
+CONFIG_DIGEST = hashlib.sha256(CONFIG).hexdigest()
+MANIFEST = json.dumps({
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": "sha256:" + CONFIG_DIGEST, "size": len(CONFIG)},
+    "layers": [],
+}, sort_keys=True, separators=(",", ":")).encode()
+DIGEST = "sha256:" + hashlib.sha256(MANIFEST).hexdigest()
 OTHER = "sha256:" + "d" * 64
 
 
@@ -22,11 +31,18 @@ class BackendReleaseTests(unittest.TestCase):
         self.context = self.root / "context"
         self.context.mkdir()
         self.candidate = self.root / "candidate.tar"
-        index = json.dumps({"schemaVersion": 2, "manifests": [{"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": DIGEST}]}).encode()
+        files = {
+            "oci-layout": json.dumps({"imageLayoutVersion": "1.0.0"}).encode(),
+            "index.json": json.dumps({"schemaVersion": 2, "manifests": [{"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": DIGEST, "size": len(MANIFEST)}]}).encode(),
+            "blobs/sha256/" + DIGEST.removeprefix("sha256:"): MANIFEST,
+            "blobs/sha256/" + CONFIG_DIGEST: CONFIG,
+        }
         with tarfile.open(self.candidate, "w") as archive:
-            info = tarfile.TarInfo("index.json")
-            info.size = len(index)
-            archive.addfile(info, io.BytesIO(index))
+            for name, data in files.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        self.pushed = self.root / "pushed-layout"
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.log = self.root / "calls.log"
@@ -34,10 +50,45 @@ class BackendReleaseTests(unittest.TestCase):
         docker = self.bin / "docker"
         docker.write_text("#!/usr/bin/env bash\nset -e\necho docker \"$@\" >> \"$CALL_LOG\"\nout=\"\"\nwhile [[ $# -gt 0 ]]; do if [[ \"$1\" == --output ]]; then out=${2#type=oci,dest=}; shift 2; else shift; fi; done\ncp \"$CANDIDATE\" \"$out\"\n")
         crane = self.bin / "crane"
-        crane.write_text("#!/usr/bin/env bash\nset -e\necho crane \"$@\" >> \"$CALL_LOG\"\ncase \"$1\" in\n  digest) if [[ -f \"$STATE\" ]]; then cat \"$STATE\"; else exit 1; fi ;;\n  push) printf '%s' \"$EXPECTED_DIGEST\" > \"$STATE\" ;;\nesac\n")
+        crane.write_text("""#!/usr/bin/env bash
+set -e
+echo crane "$@" >> "$CALL_LOG"
+case "$1" in
+  digest)
+    if [[ -f "$STATE" ]]; then cat "$STATE"; else exit 1; fi
+    ;;
+  push)
+    layout=$2
+    [[ -d "$layout" ]] || { echo "crane push source is not an OCI layout directory: $layout" >&2; exit 1; }
+    python3 - "$layout" <<'PY'
+import hashlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+layout = json.loads((root / "oci-layout").read_text())
+assert layout["imageLayoutVersion"] == "1.0.0"
+index = json.loads((root / "index.json").read_text())
+assert index["schemaVersion"] == 2
+for descriptor in index["manifests"]:
+    digest = descriptor["digest"]
+    blob = root / "blobs" / digest.replace(":", "/", 1)
+    assert hashlib.sha256(blob.read_bytes()).hexdigest() == digest.split(":", 1)[1]
+PY
+    rm -rf "$PUSH_CAPTURE"
+    cp -R "$layout" "$PUSH_CAPTURE"
+    printf '%s' "$EXPECTED_DIGEST" > "$STATE"
+    ;;
+esac
+""")
         docker.chmod(0o755)
         crane.chmod(0o755)
-        self.env = {**os.environ, "PATH": str(self.bin) + ":" + os.environ["PATH"], "CALL_LOG": str(self.log), "STATE": str(self.state), "CANDIDATE": str(self.candidate), "EXPECTED_DIGEST": DIGEST}
+        self.env = {
+            **os.environ,
+            "PATH": str(self.bin) + ":" + os.environ["PATH"],
+            "CALL_LOG": str(self.log),
+            "STATE": str(self.state),
+            "CANDIDATE": str(self.candidate),
+            "EXPECTED_DIGEST": DIGEST,
+            "PUSH_CAPTURE": str(self.pushed),
+        }
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -62,6 +113,20 @@ class BackendReleaseTests(unittest.TestCase):
         artifact = json.loads((self.root / "artifact.json").read_text())
         self.assertEqual(artifact["digest"], DIGEST)
         self.assertEqual(artifact["mediaType"], "application/vnd.oci.image.manifest.v1+json")
+
+    def test_pushes_extracted_oci_layout_directory_not_tarball(self) -> None:
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        push = next(line for line in self.log.read_text().splitlines() if line.startswith("crane push "))
+        pushed_path = push.split(" ", 3)[2]
+        self.assertTrue(pushed_path.endswith("/candidate-oci"), pushed_path)
+        self.assertFalse(pushed_path.endswith(".tar"), pushed_path)
+        self.assertEqual(json.loads((self.pushed / "oci-layout").read_text())["imageLayoutVersion"], "1.0.0")
+        index = json.loads((self.pushed / "index.json").read_text())
+        self.assertEqual(index["manifests"][0]["digest"], DIGEST)
+        manifest = self.pushed / "blobs/sha256" / DIGEST.removeprefix("sha256:")
+        self.assertEqual(hashlib.sha256(manifest.read_bytes()).hexdigest(), DIGEST.removeprefix("sha256:"))
+        self.assertTrue((self.pushed / "blobs/sha256" / CONFIG_DIGEST).is_file())
 
     def test_matching_existing_digest_is_reused_after_candidate_build(self) -> None:
         self.state.write_text(DIGEST)

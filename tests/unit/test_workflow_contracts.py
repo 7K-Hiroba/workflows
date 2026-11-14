@@ -105,10 +105,12 @@ class WorkflowContractTests(unittest.TestCase):
         data = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
         self.assertEqual(data["jobs"]["test"]["runs-on"], "ubuntu-24.04")
 
-    def test_chart_install_and_package_diagnostics_use_valid_paths_and_flags(self) -> None:
+    def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
-        self.assertIn('--helm-extra-set-args "--set=image.repository=workflows-scaffold', chart)
-        self.assertNotIn('--helm-extra-set-args "image.repository=', chart)
+        self.assertIn("scripts/chart-test-config.py", chart)
+        self.assertNotIn("workflows-scaffold", chart)
+        self.assertNotIn("prometheusrule-crd.yaml", chart)
+        self.assertNotIn("--helm-extra-set-args", chart)
 
         packages = (WORKFLOWS / "test-packages.yml").read_text()
         self.assertIn('path: "consumer/${{ inputs.root }}/diagnostics"', packages)

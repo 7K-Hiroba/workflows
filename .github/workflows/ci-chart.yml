@@ -43,22 +43,36 @@ jobs:
         with: {go-version: "1.26.3", cache: false}
       - name: Install chart-testing at an immutable release
         run: go install github.com/helm/chart-testing/v3/ct@v3.14.0
-      - name: Build and load fixture image
+      - id: config
+        name: Validate consumer chart test declaration
+        run: |
+          python3 .hiroba/workflows/scripts/chart-test-config.py --root "consumer/${{ inputs.root }}" --chart "${{ matrix.chart.path }}" > chart-test.json
+          echo "has-image=$(jq -r '.image != null' chart-test.json)" >> "$GITHUB_OUTPUT"
+      - name: Build and load declared test image
+        if: steps.config.outputs.has-image == 'true'
         run: |
           set -euo pipefail
-          docker build -t workflows-scaffold:ci "consumer/${{ inputs.root }}/extension"
+          repository=$(jq -r .image.repository chart-test.json)
+          tag=$(jq -r .image.tag chart-test.json)
+          context=$(jq -r .image.context chart-test.json)
+          docker build -t "$repository:$tag" "consumer/${{ inputs.root }}/$context"
           cluster=$(kind get clusters | head -n 1)
-          kind load docker-image workflows-scaffold:ci --name "$cluster"
-      - name: Install chart test CRD dependencies
-        run: kubectl apply -f "consumer/${{ inputs.root }}/packages/observability-pack/tests/deps/prometheusrule-crd.yaml"
+          kind load docker-image "$repository:$tag" --name "$cluster"
+      - name: Install declared chart test dependencies
+        run: |
+          set -euo pipefail
+          while read -r dependency; do
+            [[ -n "$dependency" ]] || continue
+            kubectl apply -f "consumer/${{ inputs.root }}/$dependency"
+          done < <(jq -r '.dependencies[]' chart-test.json)
       - name: Chart-testing lint
         run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
       - name: Chart-testing kind install
         run: |
+          timeout=$(jq -r .install.timeout chart-test.json)
           ct install --config "consumer/${{ inputs.root }}/ci/ct.yaml" \
             --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}" \
-            --helm-extra-args "--timeout 5m" \
-            --helm-extra-set-args "--set=image.repository=workflows-scaffold --set=image.tag=ci --set=image.pullPolicy=Never --set=observability.enabled=true --set=observability.rules.enabled=true"
+            --helm-extra-args "--timeout $timeout"
       - name: Collect chart diagnostics
         if: failure()
         run: |

@@ -1,0 +1,9 @@
+schema: inari.chart-test.v1
+image:
+  context: extension
+  repository: workflows-scaffold
+  tag: ci
+dependencies:
+  - packages/observability-pack/tests/deps/prometheusrule-crd.yaml
+install:
+  timeout: 5m

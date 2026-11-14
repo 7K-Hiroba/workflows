@@ -4,6 +4,7 @@ on:
     inputs:
       root: {type: string, default: .}
       app-id: {type: string, required: true}
+      library-mode: {type: boolean, default: false}
     secrets:
       release-private-key: {required: true}
     outputs:
@@ -36,7 +37,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Synchronize components through a PR when drift exists
-        if: steps.gate.outputs.skip != 'true'
+        if: steps.gate.outputs.skip != 'true' && inputs.library-mode == false
         id: sync
         env: {GH_TOKEN: "${{ steps.app.outputs.token }}", ROOT: "${{ inputs.root }}"}
         run: |

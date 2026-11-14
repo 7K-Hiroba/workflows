@@ -153,6 +153,16 @@ class WorkflowContractTests(unittest.TestCase):
         smoke_text = (WORKFLOWS / "release-smoke-suite.yml").read_text()
         self.assertIn('version="${{ inputs.target-version }}"', smoke_text)
 
+    def test_library_release_please_uses_static_manifest_mode(self) -> None:
+        library = yaml.safe_load((WORKFLOWS / "library-release-please.yml").read_text())
+        self.assertIs(library["jobs"]["propose"]["with"]["library-mode"], True)
+        reusable = yaml.safe_load((WORKFLOWS / "release-please.yml").read_text())
+        inputs = reusable.get("on", reusable.get(True, {}))["workflow_call"]["inputs"]
+        self.assertEqual(inputs["library-mode"], {"type": "boolean", "default": False})
+        sync = next(step for step in reusable["jobs"]["propose"]["steps"] if step.get("id") == "sync")
+        self.assertIn("inputs.library-mode == false", sync["if"])
+        self.assertFalse((ROOT / ".hiroba.yaml").exists())
+
     def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
         extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         uploads = [step for step in extension["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@")]

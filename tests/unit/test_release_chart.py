@@ -109,6 +109,15 @@ fi
         self.assertEqual(artifact["channel"], "edge")
         self.assertEqual(artifact["tag"], "example-v0.1.0")
 
+    def test_uses_configured_charts_root(self) -> None:
+        configured = self.root / "helm/example"
+        configured.parent.mkdir()
+        self.chart.rename(configured)
+        (self.root / ".hiroba.yaml").write_text("components:\n  chartsRoot: helm\n")
+        result = self.run_chart()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"helm package {configured}", self.log.read_text())
+
     def test_repair_requires_existing_tag_at_current_source(self) -> None:
         result = self.run_chart(repair=True)
         self.assertNotEqual(result.returncode, 0)

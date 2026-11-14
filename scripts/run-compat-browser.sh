@@ -2,8 +2,9 @@
 set -euo pipefail
 ROOT=""
 MODE="pr"
+UI_PATH=ui
 while [[ $# -gt 0 ]]; do
-  case "$1" in --root) ROOT=$2; shift 2 ;; --mode) MODE=$2; shift 2 ;; *) echo "unknown argument $1" >&2; exit 2 ;; esac
+  case "$1" in --root) ROOT=$2; shift 2 ;; --mode) MODE=$2; shift 2 ;; --ui-path) UI_PATH=$2; shift 2 ;; *) echo "unknown argument $1" >&2; exit 2 ;; esac
 done
 [[ "$MODE" == pr || "$MODE" == release || "$MODE" == nightly ]] || { echo "invalid compat mode" >&2; exit 2; }
 ROOT=$(cd "$ROOT" && pwd)
@@ -14,13 +15,15 @@ MATRIX="$ROOT/ci/compatibility-matrix.json"
 if [[ -f "$ROOT/.hiroba.yaml" ]]; then
   MATRIX="$ROOT/$($PYTHON -c 'import sys,yaml; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; data=yaml.safe_load(open(sys.argv[1])); print(relative_path(Path(sys.argv[3]), data["compatibility"]["matrix"], "compatibility.matrix"))' "$ROOT/.hiroba.yaml" "$LIBRARY/scripts" "$ROOT")"
 fi
+UI_PATH=$($PYTHON -c 'import sys; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; print(relative_path(Path(sys.argv[3]), sys.argv[1], "components.ui.path"))' "$UI_PATH" "$LIBRARY/scripts" "$ROOT")
+UI_DIR="$ROOT/$UI_PATH"
 if [[ "$MODE" == nightly ]]; then
   HOST_SHA=$(gh api repos/7K-Inari/inari-ui/commits/main --jq '.sha')
 else
   HOST_SHA=$(jq -r '.entries[0].uiHostSha // empty' "$MATRIX")
 fi
 [[ "$HOST_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "stable UI host must resolve to a full commit SHA" >&2; exit 2; }
-[[ -f "$ROOT/ui/dist/remoteEntry.js" ]] || { echo "canonical UI build did not produce dist/remoteEntry.js" >&2; exit 2; }
+[[ -f "$UI_DIR/dist/remoteEntry.js" ]] || { echo "canonical UI build did not produce dist/remoteEntry.js" >&2; exit 2; }
 mkdir -p "$ROOT/evidence" "$ROOT/diagnostics"
 WORK=$(mktemp -d)
 HOST_PID=""
@@ -43,7 +46,7 @@ npm ci --include=dev --ignore-scripts --prefix "$WORK/host"
   NODE_ENV=development VITE_MOCK_API=true npm run dev -- --host 127.0.0.1 --port 5173 > "$ROOT/diagnostics/ui-host.log" 2>&1
 ) &
 HOST_PID=$!
-python3 "$LIBRARY/scripts/serve-ui-remote.py" --directory "$ROOT/ui/dist" --port 8080 --oidc-fixture > "$ROOT/diagnostics/ui-remote.log" 2>&1 &
+python3 "$LIBRARY/scripts/serve-ui-remote.py" --directory "$UI_DIR/dist" --port 8080 --oidc-fixture > "$ROOT/diagnostics/ui-remote.log" 2>&1 &
 REMOTE_PID=$!
 python3 - <<'PY'
 import time, urllib.request
@@ -59,7 +62,7 @@ for url in ("http://127.0.0.1:5173", "http://127.0.0.1:8080/remoteEntry.js"):
     else:
         raise SystemExit(f"browser dependency did not become ready: {url}")
 PY
-cd "$ROOT/ui"
+cd "$UI_DIR"
 npx playwright install chromium
 set +e
 INARI_UI_URL=http://127.0.0.1:5173 INARI_REMOTE_ENTRY=http://127.0.0.1:8080/remoteEntry.js \

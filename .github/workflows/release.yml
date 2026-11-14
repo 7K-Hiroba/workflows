@@ -35,7 +35,9 @@ jobs:
       has-observability: "${{ steps.plan.outputs.has-observability }}"
       required-lanes: "${{ steps.plan.outputs.required-lanes }}"
       extension-version: "${{ steps.plan.outputs.extension-version }}"
+      extension-path: "${{ steps.plan.outputs.extension-path }}"
       ui-version: "${{ steps.plan.outputs.ui-version }}"
+      ui-path: "${{ steps.plan.outputs.ui-path }}"
       smoke-version: "${{ steps.plan.outputs.smoke-version }}"
       source-sha: "${{ steps.plan.outputs.source-sha }}"
       app: "${{ steps.plan.outputs.app }}"
@@ -100,7 +102,9 @@ jobs:
             echo "has-observability=$(jq -r .hasObservability plan.json)"
             echo "required-lanes=$(jq -r '.requiredLanes | join(" ")' plan.json)"
             echo "extension-version=$(jq -r 'first(.publishComponents[] | select(.kind == "extension") | .version) // ""' plan.json)"
+            echo "extension-path=$(jq -r 'first(.publishComponents[] | select(.kind == "extension") | .path) // ""' plan.json)"
             echo "ui-version=$(jq -r 'first(.publishComponents[] | select(.kind == "ui") | .version) // ""' plan.json)"
+            echo "ui-path=$(jq -r 'first(.publishComponents[] | select(.kind == "ui") | .path) // ""' plan.json)"
             echo "smoke-version=$(jq -r 'first(.publishComponents[] | select(.kind == "smoke") | .version) // ""' plan.json)"
             echo "source-sha=$source_sha"
             echo "app=$(jq -r .app plan.json)"
@@ -258,7 +262,9 @@ jobs:
       rehearsal: ${{ inputs.rehearsal }}
       edge: ${{ inputs.edge }}
       backend-version: ${{ needs.plan.outputs.extension-version }}
+      backend-path: ${{ needs.plan.outputs.extension-path }}
       ui-version: ${{ needs.plan.outputs.ui-version }}
+      ui-path: ${{ needs.plan.outputs.ui-path }}
   publish-smoke:
     if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-smoke == 'true'
     needs: [plan, evidence]

@@ -47,10 +47,12 @@ jobs:
           python3 .hiroba/workflows/scripts/validate-repository.py --root "consumer/${{ inputs.root }}"
       - id: config
         run: |
+          set -euo pipefail
           app=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["app"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
-          target=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["id"])' "consumer/${{ inputs.root }}/tests/smoke/suite.yaml")
-          version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["version"])' "consumer/${{ inputs.root }}/tests/smoke/suite.yaml")
+          suite_path=$(python3 -c 'import sys,yaml; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; data=yaml.safe_load(open(sys.argv[1])); print(relative_path(Path(sys.argv[3]), data["smoke"]["path"], "smoke.path"))' "consumer/${{ inputs.root }}/.hiroba.yaml" "$GITHUB_WORKSPACE/.hiroba/workflows/scripts" "consumer/${{ inputs.root }}")
+          target=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["id"])' "consumer/${{ inputs.root }}/$suite_path/suite.yaml")
+          version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["version"])' "consumer/${{ inputs.root }}/$suite_path/suite.yaml")
           release_tag="${target}-v${version}"
           if [[ -n "${{ inputs.target-version }}" ]]; then version="${{ inputs.target-version }}"; release_tag="${target}-v${version}"; fi
           channel=""
@@ -63,6 +65,7 @@ jobs:
             echo "target=$target"
             echo "version=$version"
             echo "channel=$channel"
+            echo "suite-path=$suite_path"
             echo "repository=${{ inputs.registry-prefix }}/$app/smoke/$target"
           } >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
@@ -72,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           output=evidence/artifact-smoke-${{ steps.config.outputs.target }}.json
-          .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/tests/smoke" \
+          .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/${{ steps.config.outputs.suite-path }}" \
             --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
             --artifact-type application/vnd.inari.smoke.suite.v1+yaml --channel "${{ steps.config.outputs.channel }}" \
             --source-sha "${{ inputs.source-sha }}" --output "$output"
@@ -119,7 +122,7 @@ jobs:
         run: |
           mkdir -p evidence/packaged-smoke
           oras pull --output evidence/packaged-smoke "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
-          diff -r "consumer/${{ inputs.root }}/tests/smoke" evidence/packaged-smoke
+          diff -r "consumer/${{ inputs.root }}/${{ steps.config.outputs.suite-path }}" evidence/packaged-smoke
       - name: Move smoke edge channel only after verification and byte comparison
         if: inputs.edge
         run: |

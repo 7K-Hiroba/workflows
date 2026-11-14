@@ -26,7 +26,12 @@ done
 [[ "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "source SHA must be full 40 characters" >&2; exit 2; }
 [[ -z "$CHANNEL" || "$CHANNEL" == edge ]] || { echo "chart channel may only be edge" >&2; exit 2; }
 [[ "$REPAIR" != true || -z "$CHANNEL" ]] || { echo "chart repair cannot move a channel" >&2; exit 2; }
-CHART_DIR="$ROOT/charts/$CHART"
+CHARTS_ROOT=charts
+if [[ -f "$ROOT/.hiroba.yaml" ]]; then
+  LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
+  CHARTS_ROOT=$(${HIROBA_PYTHON:-python3} -c 'import sys,yaml; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; data=yaml.safe_load(open(sys.argv[1])); print(relative_path(Path(sys.argv[3]), data["components"].get("chartsRoot", "charts"), "components.chartsRoot"))' "$ROOT/.hiroba.yaml" "$LIBRARY/scripts" "$ROOT")
+fi
+CHART_DIR="$ROOT/$CHARTS_ROOT/$CHART"
 CHART_YAML="$CHART_DIR/Chart.yaml"
 [[ -f "$CHART_YAML" ]] || { echo "missing $CHART_YAML" >&2; exit 2; }
 ${HIROBA_PYTHON:-python3} -c 'import sys,yaml; data=yaml.safe_load(open(sys.argv[1])); assert data["name"] == sys.argv[2]; assert str(data["version"]) == sys.argv[3]' "$CHART_YAML" "$CHART" "$VERSION"

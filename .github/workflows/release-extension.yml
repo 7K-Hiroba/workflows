@@ -12,6 +12,8 @@ on:
       edge: {type: boolean, default: false}
       backend-version: {type: string, default: ""}
       ui-version: {type: string, default: ""}
+      backend-path: {type: string, default: ""}
+      ui-path: {type: string, default: ""}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
@@ -41,6 +43,9 @@ jobs:
         run: |
           app=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["app"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          backend_path="${{ inputs.backend-path }}"
+          if [[ -z "$backend_path" ]]; then backend_path=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["extension"]["path"])' "consumer/${{ inputs.root }}/.hiroba.yaml"); fi
+          backend_path=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; print(relative_path(Path(sys.argv[3]), sys.argv[1], "components.extension.path"))' "$backend_path" "$GITHUB_WORKSPACE/.hiroba/workflows/scripts" "consumer/${{ inputs.root }}")
           version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["extension"]["version"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           release_tag="extension-v$version"
           if [[ -n "${{ inputs.backend-version }}" ]]; then version="${{ inputs.backend-version }}"; release_tag="extension-v$version"; fi
@@ -53,6 +58,7 @@ jobs:
             echo "tier=$tier"
             echo "version=$version"
             echo "channel=$channel"
+            echo "backend-path=$backend_path"
             echo "repository=${{ inputs.registry-prefix }}/$app/extension"
           } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -63,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           output=evidence/artifact-extension.json
-          .hiroba/workflows/scripts/release-backend.sh --context "consumer/${{ inputs.root }}/extension" \
+          .hiroba/workflows/scripts/release-backend.sh --context "consumer/${{ inputs.root }}/${{ steps.config.outputs.backend-path }}" \
             --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
             --channel "${{ steps.config.outputs.channel }}" --source-sha "${{ inputs.source-sha }}" --output "$output"
           echo "digest=$(jq -r .digest "$output")" >> "$GITHUB_OUTPUT"
@@ -127,7 +133,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with: {python-version: "3.11"}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with: {node-version: 24, cache: npm, cache-dependency-path: "consumer/${{ inputs.root }}/ui/package-lock.json"}
+        with: {node-version: 24, cache: false}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with: {go-version: "1.26.3", cache: false}
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
@@ -140,6 +146,9 @@ jobs:
         run: |
           app=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["app"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           tier=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["trustTier"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
+          ui_path="${{ inputs.ui-path }}"
+          if [[ -z "$ui_path" ]]; then ui_path=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["ui"]["path"])' "consumer/${{ inputs.root }}/.hiroba.yaml"); fi
+          ui_path=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; print(relative_path(Path(sys.argv[3]), sys.argv[1], "components.ui.path"))' "$ui_path" "$GITHUB_WORKSPACE/.hiroba/workflows/scripts" "consumer/${{ inputs.root }}")
           version=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["components"]["ui"]["version"])' "consumer/${{ inputs.root }}/.hiroba.yaml")
           release_tag="ui-v$version"
           if [[ -n "${{ inputs.ui-version }}" ]]; then version="${{ inputs.ui-version }}"; release_tag="ui-v$version"; fi
@@ -152,10 +161,11 @@ jobs:
             echo "tier=$tier"
             echo "version=$version"
             echo "channel=$channel"
+            echo "ui-path=$ui_path"
             echo "repository=${{ inputs.registry-prefix }}/$app/extension-ui"
           } >> "$GITHUB_OUTPUT"
       - name: Build and validate UI remote
-        working-directory: consumer/${{ inputs.root }}/ui
+        working-directory: consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}
         run: |
           npm ci --include=dev --ignore-scripts
           npm run build
@@ -167,7 +177,7 @@ jobs:
         run: |
           set -euo pipefail
           output=evidence/artifact-extension-ui.json
-          .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/ui/dist" \
+          .hiroba/workflows/scripts/package-and-publish.sh --source "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/dist" \
             --repository "${{ steps.config.outputs.repository }}" --tag "${{ steps.config.outputs.version }}" \
             --artifact-type application/vnd.inari.extension.ui.v1 --channel "${{ steps.config.outputs.channel }}" \
             --source-sha "${{ inputs.source-sha }}" --output "$output"
@@ -214,7 +224,7 @@ jobs:
         run: |
           mkdir -p evidence/oci-ui
           oras pull --output evidence/oci-ui "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
-          python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/ui/dist" --oci-dir evidence/oci-ui --manifest "consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json"
+          python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/dist" --oci-dir evidence/oci-ui --manifest "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/ui-bundle-manifest.json"
       - name: Move UI edge channel only after verification and byte comparison
         if: inputs.edge
         run: |
@@ -223,7 +233,7 @@ jobs:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with: {name: artifact-extension, path: evidence/backend}
       - name: Render exact extension registration metadata
-        run: python3 .hiroba/workflows/scripts/render-extension-release.py --extension "consumer/${{ inputs.root }}/extension.yaml" --backend evidence/backend/artifact-extension.json --ui evidence/artifact-extension-ui.json --ui-manifest "consumer/${{ inputs.root }}/ui/ui-bundle-manifest.json" --output evidence/extension.release.yaml
+        run: python3 .hiroba/workflows/scripts/render-extension-release.py --extension "consumer/${{ inputs.root }}/extension.yaml" --backend evidence/backend/artifact-extension.json --ui evidence/artifact-extension-ui.json --ui-manifest "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/ui-bundle-manifest.json" --output evidence/extension.release.yaml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: artifact-extension-ui

@@ -153,6 +153,31 @@ class WorkflowContractTests(unittest.TestCase):
         smoke_text = (WORKFLOWS / "release-smoke-suite.yml").read_text()
         self.assertIn('version="${{ inputs.target-version }}"', smoke_text)
 
+    def test_non_default_component_paths_flow_through_execution_and_release(self) -> None:
+        for name, output in (("ci-go-extension.yml", "extension-path"), ("ci-ui-extension.yml", "ui-path"), ("compat-check.yml", "extension-path")):
+            workflow = yaml.safe_load((WORKFLOWS / name).read_text())
+            self.assertIn(output, workflow["jobs"]["plan"]["outputs"])
+            self.assertIn("plan", workflow["jobs"]["test"]["needs"])
+        compat = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
+        self.assertIn("ui-path", compat["jobs"]["plan"]["outputs"])
+        self.assertIn('"$ROOT/$EXTENSION_PATH"', (ROOT / "scripts/run-compat-backend.sh").read_text())
+        self.assertIn('UI_DIR="$ROOT/$UI_PATH"', (ROOT / "scripts/run-compat-browser.sh").read_text())
+        extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
+        inputs = extension.get("on", extension.get(True, {}))["workflow_call"]["inputs"]
+        self.assertIn("backend-path", inputs)
+        self.assertIn("ui-path", inputs)
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        self.assertEqual(release["jobs"]["publish-extension"]["with"]["backend-path"], "${{ needs.plan.outputs.extension-path }}")
+        self.assertEqual(release["jobs"]["publish-extension"]["with"]["ui-path"], "${{ needs.plan.outputs.ui-path }}")
+        packages = (WORKFLOWS / "test-packages.yml").read_text()
+        for name in ("kro", "policy", "app"):
+            self.assertIn(name, packages)
+            self.assertIn('--package-path "${{ matrix.package.path }}"', packages)
+        runtime = (ROOT / "scripts/run-runtime-smoke.sh").read_text()
+        self.assertIn('select(.kind == "smoke") | .path', runtime)
+        smoke = (WORKFLOWS / "release-smoke-suite.yml").read_text()
+        self.assertIn("steps.config.outputs.suite-path", smoke)
+
     def test_channel_coordinator_gates_all_artifacts_and_indexes(self) -> None:
         publisher = (WORKFLOWS / "release-oci.yml").read_text()
         self.assertNotIn("oras tag", publisher)

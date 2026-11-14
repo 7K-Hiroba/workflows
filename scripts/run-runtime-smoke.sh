@@ -31,15 +31,16 @@ SOURCE_SHA=$(git -C "$ROOT" rev-parse HEAD)
 python3 "$LIBRARY/scripts/validate-repository.py" --root "$ROOT"
 python3 "$LIBRARY/scripts/discover-components.py" --root "$ROOT" --all > "$ROOT/evidence-runtime-plan.json"
 APP=$(jq -r '.app' "$ROOT/evidence-runtime-plan.json")
-TARGET=$(jq -r '.components[] | select(.kind == "smoke") | .targetComponent' "$ROOT/evidence-runtime-plan.json")
+TARGET=$(jq -r 'first(.components[] | select(.kind == "smoke") | .targetComponent) // empty' "$ROOT/evidence-runtime-plan.json")
+SMOKE_PATH=$(jq -r 'first(.components[] | select(.kind == "smoke") | .path) // empty' "$ROOT/evidence-runtime-plan.json")
 CHART=$(jq -r --arg target "$TARGET" '.components[] | select(.kind == "chart" and .path == $target) | .path' "$ROOT/evidence-runtime-plan.json")
 EXTENSION=$(jq -r '.components[] | select(.kind == "extension") | .path' "$ROOT/evidence-runtime-plan.json")
-[[ -n "$APP" && -n "$CHART" && -n "$EXTENSION" ]] || { echo "runtime smoke requires extension, chart, and smoke components" >&2; exit 2; }
+[[ -n "$APP" && -n "$CHART" && -n "$EXTENSION" && -n "$SMOKE_PATH" ]] || { echo "runtime smoke requires extension, chart, and smoke components" >&2; exit 2; }
 mkdir -p "$ROOT/diagnostics" "$ROOT/evidence"
 WORK=$(mktemp -d)
 CLUSTER="hiroba-smoke-${GITHUB_RUN_ID:-local}-$$"
 WORKFLOW_NAME=""
-SUITE_DIR="$ROOT/tests/smoke"
+SUITE_DIR="$ROOT/$SMOKE_PATH"
 finish() {
   rc=$?
   if [[ $rc -ne 0 ]]; then

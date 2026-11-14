@@ -54,6 +54,42 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(len(components), 1)
         self.assertEqual(components[0]["name"], "app")
 
+    def test_discovery_honors_non_default_component_layout(self) -> None:
+        for old, new in (("extension", "backend"), ("ui", "frontend"), ("charts", "helm"), ("packages", "catalog-packages"), ("templates", "scaffolds")):
+            target = self.root / new
+            target.parent.mkdir(parents=True, exist_ok=True)
+            (self.root / old).rename(target)
+        smoke_target = self.root / "verification/smoke"
+        smoke_target.parent.mkdir()
+        (self.root / "tests/smoke").rename(smoke_target)
+        config_path = self.root / ".hiroba.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["components"].update({
+            "extension": {"path": "backend", "version": "0.1.0"},
+            "ui": {"path": "frontend", "version": "0.1.0"},
+            "chartsRoot": "helm",
+            "packagesRoot": "catalog-packages",
+            "templatesRoot": "scaffolds",
+        })
+        config["observability"]["chart"] = "helm/workflows-scaffold"
+        config["observability"]["package"] = "catalog-packages/observability-pack"
+        config["smoke"] = {"path": "verification/smoke", "targetComponent": "helm/workflows-scaffold"}
+        config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+        suite_path = smoke_target / "suite.yaml"
+        suite = yaml.safe_load(suite_path.read_text())
+        suite["target"]["component"] = "helm/workflows-scaffold"
+        suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+        result = self.run_script("discover-components.py", "--all")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        components = json.loads(result.stdout)["components"]
+        paths = {item["kind"]: item["path"] for item in components if item["kind"] in {"extension", "ui", "chart", "template", "smoke"}}
+        self.assertEqual(paths["extension"], "backend")
+        self.assertEqual(paths["ui"], "frontend")
+        self.assertEqual(paths["chart"], "helm/workflows-scaffold")
+        self.assertEqual(paths["template"], "scaffolds/service")
+        self.assertEqual(paths["smoke"], "verification/smoke")
+        self.assertIn("catalog-packages/app", {item["path"] for item in components if item["kind"] == "package"})
+
     def test_source_indexes_are_deterministic_and_check_is_no_write(self) -> None:
         first = self.run_script("build-indexes.py")
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)

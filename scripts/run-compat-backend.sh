@@ -2,8 +2,9 @@
 set -euo pipefail
 ROOT=""
 MODE="pr"
+EXTENSION_PATH=extension
 while [[ $# -gt 0 ]]; do
-  case "$1" in --root) ROOT=$2; shift 2 ;; --mode) MODE=$2; shift 2 ;; *) echo "unknown argument $1" >&2; exit 2 ;; esac
+  case "$1" in --root) ROOT=$2; shift 2 ;; --mode) MODE=$2; shift 2 ;; --extension-path) EXTENSION_PATH=$2; shift 2 ;; *) echo "unknown argument $1" >&2; exit 2 ;; esac
 done
 [[ "$MODE" == pr || "$MODE" == release || "$MODE" == nightly ]] || { echo "invalid compat mode" >&2; exit 2; }
 ROOT=$(cd "$ROOT" && pwd)
@@ -14,6 +15,7 @@ MATRIX="$ROOT/ci/compatibility-matrix.json"
 if [[ -f "$ROOT/.hiroba.yaml" ]]; then
   MATRIX="$ROOT/$($PYTHON -c 'import sys,yaml; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; data=yaml.safe_load(open(sys.argv[1])); print(relative_path(Path(sys.argv[3]), data["compatibility"]["matrix"], "compatibility.matrix"))' "$ROOT/.hiroba.yaml" "$LIBRARY/scripts" "$ROOT")"
 fi
+EXTENSION_PATH=$($PYTHON -c 'import sys; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; print(relative_path(Path(sys.argv[3]), sys.argv[1], "components.extension.path"))' "$EXTENSION_PATH" "$LIBRARY/scripts" "$ROOT")
 COUNT=$(jq '.entries | length' "$MATRIX")
 if [[ "$MODE" != nightly && "$COUNT" -lt 2 ]]; then
   echo "reviewed compat requires current stable and previous stable entries" >&2
@@ -73,7 +75,7 @@ PY
   fi
   if [[ "$ENTRY_STATUS" == passed ]]; then
     COPY="$WORK/entry-$INDEX"
-    cp -R "$ROOT/extension" "$COPY"
+    cp -R "$ROOT/$EXTENSION_PATH" "$COPY"
     if ! (cd "$COPY" && go get "github.com/7K-Inari/inari-plugin-sdk@$SDK_SHA" && go mod tidy) < /dev/null > "$ROOT/evidence/compat-$INDEX-module.log" 2>&1; then
       ENTRY_STATUS=failed
     elif ! grep -R 'inari-plugin-sdk/testkit' --include='*.go' "$COPY" >/dev/null || \

@@ -377,6 +377,7 @@ class WorkflowContractTests(unittest.TestCase):
         signed = next(step for step in release["steps"] if step.get("name") == "Create and verify signed version tag")
         self.assertEqual(signed["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
         self.assertIn("gh release create", signed["run"])
+        self.assertIn("(\n  cd consumer\n  gh release create", signed["run"])
         self.assertIn('git -C consumer config user.name "hiroba-release[bot]"', signed["run"])
         self.assertIn('git -C consumer config user.email "hiroba-release[bot]@users.noreply.github.com"', signed["run"])
         self.assertIn('"$SOURCE_SHA"', signed["run"])

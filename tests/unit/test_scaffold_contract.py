@@ -63,6 +63,7 @@ class ScaffoldContractTests(unittest.TestCase):
         self.assertIn("httpGet: {path: /, port: http}", deployment)
         self.assertNotIn("path: /healthz", deployment)
         self.assertIn("readOnlyRootFilesystem: true", deployment)
+        self.assertIn("runAsUser: 101", deployment)
         for mount in ("/var/cache/nginx", "/var/run", "/tmp"):
             self.assertIn(mount, deployment)
         self.assertIn("emptyDir", deployment)

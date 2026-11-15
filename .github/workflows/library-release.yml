@@ -56,7 +56,10 @@ jobs:
               --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$tag"
           )
           git -C consumer push origin "$tag"
-          gh release create "$tag" --title "Hiroba workflows $tag" --notes "Reviewed, QA-verified immutable workflow release. Consumers pin to $(git -C consumer rev-parse "$tag^{commit}")."
+          (
+            cd consumer
+            gh release create "$tag" --title "Hiroba workflows $tag" --notes "Reviewed, QA-verified immutable workflow release. Consumers pin to $(git rev-parse "$tag^{commit}")."
+          )
       - name: Optionally move signed documentation-only major alias
         if: inputs.update_major
         env: {VERSION: "${{ inputs.version }}"}

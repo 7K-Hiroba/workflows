@@ -377,6 +377,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("gh release create", signed["run"])
         major = next(step for step in release["steps"] if step.get("name") == "Optionally move signed documentation-only major alias")
         self.assertEqual(major["if"], "inputs.update_major")
+        setup_go = next(step for step in release["steps"] if str(step.get("uses", "")).startswith("actions/setup-go@"))
+        self.assertEqual(setup_go["with"]["go-version"], "1.27.0")
         self.assertIn("go install github.com/sigstore/gitsign@v0.18.0", text)
 
         patterns = re.findall(r'--certificate-identity-regexp "([^"]+)"', text)

@@ -29,6 +29,24 @@ def smoke_release_target(component: dict, all_components: list[dict]) -> dict | 
     return next((item for item in all_components if item["path"] == target_path), None)
 
 
+def duplicate_final_tags(components: list[dict]) -> list[str]:
+    by_tag: dict[str, list[dict]] = {}
+    for component in components:
+        by_tag.setdefault(tag_for(component), []).append(component)
+    duplicates = []
+    for tag, group in by_tag.items():
+        if len(group) < 2:
+            continue
+        # An artifact-bound smoke suite deliberately shares its target's Release.
+        if len(group) == 2:
+            smoke = next((item for item in group if item["kind"] == "smoke" and item.get("fixtureOnly") is not True), None)
+            other = next((item for item in group if item is not smoke), None)
+            if smoke is not None and other is not None and smoke.get("targetComponent") == other.get("path"):
+                continue
+        duplicates.append(tag)
+    return sorted(duplicates)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
@@ -100,6 +118,11 @@ def main() -> int:
         publish_components = list(all_components)
     else:
         publish_components = []
+    for selection in (components, publish_components):
+        duplicates = duplicate_final_tags(selection)
+        if duplicates:
+            print(f"::error::duplicate final release tags: {', '.join(duplicates)}", file=sys.stderr)
+            return 1
     kinds = {component["kind"] for component in publish_components}
     has_observability = bool(plan.get("observability")) if "observability" in plan else bool((root / "observability/observability.yaml").is_file())
     required = ["validate"]

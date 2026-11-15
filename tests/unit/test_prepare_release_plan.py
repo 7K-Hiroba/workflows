@@ -100,6 +100,23 @@ class PrepareReleasePlanTests(unittest.TestCase):
         self.assertEqual(repair.returncode, 0, repair.stdout + repair.stderr)
         self.assertEqual([item["kind"] for item in json.loads(repair.stdout)["components"]], ["smoke"])
 
+    def test_standalone_fixture_rejects_duplicate_final_tag(self) -> None:
+        self.enable_standalone_smoke()
+        package = self.root / "packages/workflows-scaffold-smoke"
+        (package / "tests").mkdir(parents=True)
+        (package / "package.yaml").write_text("version: 0.1.0\nchannel: incubating\ntype: policy-pack\ndescription: collision\ncategory: test\n")
+        (package / "policies.yaml").write_text("apiVersion: admissionregistration.k8s.io/v1\nkind: ValidatingAdmissionPolicy\n")
+        (package / "README.md").write_text("# collision\n")
+        (package / "tests/run.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "packages/workflows-scaffold-smoke"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "tag collision"], check=True, capture_output=True)
+        self.sha = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True).strip()
+        for args in ((), ("--repair-tag", "workflows-scaffold-smoke-v0.1.0")):
+            with self.subTest(args=args):
+                result = self.run_plan(*args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("duplicate", (result.stdout + result.stderr).lower())
+
     def test_standalone_fixture_change_requires_own_version_bump(self) -> None:
         self.enable_standalone_smoke()
         subprocess.run(["git", "-C", str(self.root), "tag", "workflows-scaffold-smoke-v0.1.0", self.sha], check=True)

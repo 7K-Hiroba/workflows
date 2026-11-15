@@ -6,4 +6,4 @@ Reusable workflows check out caller source into `consumer/` and the workflow rep
 
 A release plans untagged finalization components separately from the full publish/evidence set. Existing artifacts are pulled/reused without overwrite. All current publishable artifacts are verified so index entries never depend on missing evidence. Channels move only after verification. Protected tags/Releases are last.
 
-Stable, edge, repair, and rehearsal are distinct. Rehearsal uses `ghcr.io/7k-hiroba/workflows/ci/`, CI/source-SHA tags, no stable channels, and no git tags/Releases. Real stage/prod verification is outside this repository.
+Stable, edge, repair, and rehearsal are distinct. Rehearsal uses `ghcr.io/7k-hiroba/workflows/ci/`, CI/source-SHA tags, no stable channels, and no git tags/Releases. Each rehearsal dispatch selects one validated fixture root and runs one release graph, keeping all uploaded evidence and artifact records scoped to that run. Real stage/prod verification is outside this repository.

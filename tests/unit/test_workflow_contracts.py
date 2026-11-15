@@ -198,13 +198,18 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_full_matrix_rehearsal_lanes_are_gated_and_wired(self) -> None:
         rehearsal = yaml.safe_load((WORKFLOWS / "publish-rehearsal.yml").read_text())
-        for name in ("chartless-observability", "nonplugin-helm", "chartless-manifests", "artifact-manifests"):
-            job = rehearsal["jobs"][name]
-            self.assertIn("inputs.mode == 'full'", job["if"])
-            self.assertTrue(job["with"]["rehearsal"])
-            self.assertIn("tests/fixtures/", job["with"]["root"])
-        for job_name in ("chartless-observability", "nonplugin-helm", "chartless-manifests", "artifact-manifests"):
-            self.assertIn(job_name, rehearsal["jobs"]["result"]["needs"])
+        fixture = rehearsal.get("on", rehearsal.get(True))["workflow_dispatch"]["inputs"]["fixture"]
+        self.assertEqual(fixture["default"], "scaffold")
+        self.assertEqual(fixture["options"], ["scaffold", "chartless-observability", "nonplugin-helm", "chartless-manifests", "artifact-manifests"])
+        full = rehearsal["jobs"]["full"]
+        self.assertEqual(full["needs"], ["resolve"])
+        self.assertEqual(full["with"]["root"], "${{ needs.resolve.outputs.root }}")
+        self.assertTrue(full["with"]["rehearsal"])
+        resolve = rehearsal["jobs"]["resolve"]["steps"][0]["run"]
+        for root in ("scaffold", "tests/fixtures/chartless-observability", "tests/fixtures/non-plugin-runtime", "tests/fixtures/chartless-runtime", "tests/fixtures/artifact-bound-runtime"):
+            self.assertIn(root, resolve)
+        release_graphs = [name for name, job in rehearsal["jobs"].items() if job.get("uses", "").endswith("/release.yml")]
+        self.assertEqual(release_graphs, ["full"], "one dispatch must run exactly one release graph so artifact names remain run-scoped")
 
     def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()
@@ -338,10 +343,6 @@ class WorkflowContractTests(unittest.TestCase):
         audit("publish-rehearsal.yml")
         expected_edges = {
             ("publish-rehearsal.yml", "full", "release.yml"),
-            ("publish-rehearsal.yml", "chartless-observability", "release.yml"),
-            ("publish-rehearsal.yml", "nonplugin-helm", "release.yml"),
-            ("publish-rehearsal.yml", "chartless-manifests", "release.yml"),
-            ("publish-rehearsal.yml", "artifact-manifests", "release.yml"),
             ("publish-rehearsal.yml", "reuse-chart", "release-chart.yml"),
             ("release.yml", "validate", "validate-packages.yml"),
             ("release.yml", "packages", "test-packages.yml"),

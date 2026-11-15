@@ -4,39 +4,44 @@ on:
     inputs:
       source_sha: {required: true, type: string}
       mode: {required: true, type: choice, options: [full, repair-chart]}
+      fixture:
+        required: true
+        type: choice
+        default: scaffold
+        options: [scaffold, chartless-observability, nonplugin-helm, chartless-manifests, artifact-manifests]
       chart: {required: false, type: string}
       version: {required: false, type: string}
 permissions: {contents: read}
 concurrency: {group: "hiroba-library-release-${{ github.repository }}", cancel-in-progress: false}
 jobs:
+  resolve:
+    if: inputs.mode == 'full' && inputs.source_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs: {root: "${{ steps.fixture.outputs.root }}"}
+    steps:
+      - id: fixture
+        env: {FIXTURE: "${{ inputs.fixture }}"}
+        run: |
+          set -euo pipefail
+          case "$FIXTURE" in
+            scaffold) root=scaffold ;;
+            chartless-observability) root=tests/fixtures/chartless-observability ;;
+            nonplugin-helm) root=tests/fixtures/non-plugin-runtime ;;
+            chartless-manifests) root=tests/fixtures/chartless-runtime ;;
+            artifact-manifests) root=tests/fixtures/artifact-bound-runtime ;;
+            *) echo "unsupported fixture: $FIXTURE" >&2; exit 2 ;;
+          esac
+          printf 'root=%s\n' "$root" >> "$GITHUB_OUTPUT"
   full:
     if: inputs.mode == 'full' && inputs.source_sha == github.sha
+    needs: [resolve]
     uses: $/.github/workflows/release.yml
     with:
-      root: scaffold
+      root: "${{ needs.resolve.outputs.root }}"
       rehearsal: true
       registry-prefix: ghcr.io/7k-hiroba/workflows/ci
       environment: ci-publish
-    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
-  chartless-observability:
-    if: inputs.mode == 'full' && inputs.source_sha == github.sha
-    uses: $/.github/workflows/release.yml
-    with: {root: tests/fixtures/chartless-observability, rehearsal: true, registry-prefix: ghcr.io/7k-hiroba/workflows/ci, environment: ci-publish}
-    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
-  nonplugin-helm:
-    if: inputs.mode == 'full' && inputs.source_sha == github.sha
-    uses: $/.github/workflows/release.yml
-    with: {root: tests/fixtures/non-plugin-runtime, rehearsal: true, registry-prefix: ghcr.io/7k-hiroba/workflows/ci, environment: ci-publish}
-    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
-  chartless-manifests:
-    if: inputs.mode == 'full' && inputs.source_sha == github.sha
-    uses: $/.github/workflows/release.yml
-    with: {root: tests/fixtures/chartless-runtime, rehearsal: true, registry-prefix: ghcr.io/7k-hiroba/workflows/ci, environment: ci-publish}
-    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
-  artifact-manifests:
-    if: inputs.mode == 'full' && inputs.source_sha == github.sha
-    uses: $/.github/workflows/release.yml
-    with: {root: tests/fixtures/artifact-bound-runtime, rehearsal: true, registry-prefix: ghcr.io/7k-hiroba/workflows/ci, environment: ci-publish}
     permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
   reuse-chart:
     if: inputs.mode == 'repair-chart' && inputs.source_sha == github.sha
@@ -55,22 +60,17 @@ jobs:
     permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
   result:
     if: always()
-    needs: [full, chartless-observability, nonplugin-helm, chartless-manifests, artifact-manifests, reuse-chart]
+    needs: [resolve, full, reuse-chart]
     runs-on: ubuntu-latest
     steps:
       - env:
           MODE: "${{ inputs.mode }}"
+          RESOLVE: "${{ needs.resolve.result }}"
           FULL: "${{ needs.full.outputs.status }}"
-          CHARTLESS_OBS: "${{ needs.chartless-observability.outputs.status }}"
-          NONPLUGIN: "${{ needs.nonplugin-helm.outputs.status }}"
-          CHARTLESS: "${{ needs.chartless-manifests.outputs.status }}"
-          ARTIFACT: "${{ needs.artifact-manifests.outputs.status }}"
           REUSE: "${{ needs.reuse-chart.outputs.status }}"
         run: |
           if [[ "$MODE" == full ]]; then
-            for status in "$FULL" "$CHARTLESS_OBS" "$NONPLUGIN" "$CHARTLESS" "$ARTIFACT"; do
-              [[ "$status" == success ]] || exit 1
-            done
+            [[ "$RESOLVE" == success && "$FULL" == success ]] || exit 1
           else
             [[ "$REUSE" == success ]] || exit 1
           fi

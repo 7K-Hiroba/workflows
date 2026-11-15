@@ -357,6 +357,40 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("inputs.library-mode == false", sync["if"])
         self.assertFalse((ROOT / ".hiroba.yaml").exists())
 
+    def test_library_release_gitsign_uses_exact_ref_san(self) -> None:
+        text = (WORKFLOWS / "library-release.yml").read_text()
+        workflow = yaml.safe_load(text)
+        release = workflow["jobs"]["release"]
+        self.assertEqual(release["environment"], "release")
+        self.assertEqual(release["permissions"], {"contents": "write", "id-token": "write", "actions": "read"})
+        app = next(step for step in release["steps"] if str(step.get("uses", "")).startswith("actions/create-github-app-token@"))
+        self.assertEqual(app["with"]["app-id"], "${{ vars.HIROBA_RELEASE_APP_ID }}")
+        self.assertEqual(app["with"]["private-key"], "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}")
+        checkout = next(step for step in release["steps"] if step.get("with", {}).get("path") == "consumer")
+        self.assertEqual(checkout["with"]["token"], "${{ steps.app.outputs.token }}")
+        checks = next(step for step in release["steps"] if step.get("name") == "Verify approved main and required checks")
+        self.assertEqual(checks["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
+        for fragment in ("check-required-checks.py", "library-ci-result", "scaffold-ci-result", ".release-please-manifest.json", "CHANGELOG.md", "source-sha"):
+            self.assertIn(fragment, checks["run"])
+        signed = next(step for step in release["steps"] if step.get("name") == "Create and verify signed version tag")
+        self.assertEqual(signed["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
+        self.assertIn("gh release create", signed["run"])
+        major = next(step for step in release["steps"] if step.get("name") == "Optionally move signed documentation-only major alias")
+        self.assertEqual(major["if"], "inputs.update_major")
+        self.assertIn("go install github.com/sigstore/gitsign@v0.18.0", text)
+
+        patterns = re.findall(r'--certificate-identity-regexp "([^"]+)"', text)
+        self.assertEqual(len(patterns), 2)
+        identity = "https://github.com/7K-Hiroba/workflows/.github/workflows/library-release.yml@refs/heads/main"
+        for pattern in patterns:
+            self.assertIn("${{ github.ref }}", pattern)
+            self.assertNotIn("job.workflow_sha", pattern)
+            actual = pattern.replace("\\\\", "\\").replace("${{ github.ref }}", "refs/heads/main")
+            self.assertIsNotNone(re.fullmatch(actual, identity))
+            self.assertNotIn(".*", actual)
+            for different_ref in ("88f60a279b6676689e75388a080130d1902674f9", "refs/heads/main-next", "refs/heads/feature", "refs/tags/main"):
+                self.assertIsNone(re.fullmatch(actual, identity.replace("refs/heads/main", different_ref)))
+
     def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
         extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         uploads = [step for step in extension["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@")]

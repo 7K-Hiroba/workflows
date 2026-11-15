@@ -31,7 +31,7 @@ def artifact_key(component: dict[str, Any]) -> str:
         return "extension-ui"
     if kind == "extension":
         return "extension"
-    prefix = {"package": "catalog", "template": "template"}.get(kind, kind)
+    prefix = {"package": "catalog", "template": "templates"}.get(kind, kind)
     return f"{prefix}-{component['name']}"
 
 

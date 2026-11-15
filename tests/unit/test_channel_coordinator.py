@@ -39,7 +39,7 @@ class ChannelCoordinatorTests(unittest.TestCase):
         }))
         for key, repository, media, channel in (
             ("catalog-app", "ghcr.io/7k-hiroba/app/catalog/app", "application/vnd.inari.catalog.package.v1+yaml", "incubating"),
-            ("template-service", "ghcr.io/7k-hiroba/app/templates/service", "application/vnd.inari.template.v1", "stable"),
+            ("templates-service", "ghcr.io/7k-hiroba/app/templates/service", "application/vnd.inari.template.v1", "stable"),
             ("index-catalog", "ghcr.io/7k-hiroba/app/catalog/index", "application/vnd.inari.catalog.index.v1+yaml", "latest"),
             ("index-template", "ghcr.io/7k-hiroba/app/templates/index", "application/vnd.inari.template.index.v1+yaml", "latest"),
         ):
@@ -154,8 +154,21 @@ if [[ -f \"$STATE/$key\" ]]; then cat \"$STATE/$key\"; else echo \"$OLD_DIGEST\"
             data["tag"] = SOURCE
             data["testEvidence"]["releaseTag"] = f"ci-{SOURCE[:12]}"
             path.write_text(json.dumps(data))
+        self.assertEqual({path.name for path in self.evidence.glob("artifact-*.json")}, {
+            "artifact-catalog-app.json",
+            "artifact-templates-service.json",
+            "artifact-index-catalog.json",
+            "artifact-index-template.json",
+        })
         result = self.run_coordinator("rehearsal")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_singular_template_evidence_is_rejected_without_fallback(self) -> None:
+        (self.evidence / "artifact-templates-service.json").rename(self.evidence / "artifact-template-service.json")
+        result = self.run_coordinator()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("artifact-templates-service.json", result.stdout + result.stderr)
         self.assertFalse(self.log.exists())
 
 

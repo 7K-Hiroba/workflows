@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from lib.release_contract import contract, validate_artifact  # noqa: E402
+from lib.release_contract import artifact_key, contract, validate_artifact  # noqa: E402
 
 SOURCE = "a" * 40
 DIGEST = "sha256:" + "b" * 64
@@ -39,6 +39,11 @@ class ReleaseContractTests(unittest.TestCase):
                     "testEvidence": {"status": "passed", "releaseTag": signed_tag},
                 }
                 self.assertEqual(validate_artifact(artifact, component, "app", "ghcr.io/7k-hiroba", SOURCE, "normal"), expected)
+
+    def test_template_artifact_key_uses_canonical_plural(self) -> None:
+        component = {"kind": "template", "name": "service", "version": "1.2.3"}
+        self.assertEqual(artifact_key(component), "templates-service")
+        self.assertEqual(contract(component, "app", "ghcr.io/7k-hiroba", SOURCE, "normal")["key"], "templates-service")
 
     def test_index_and_rehearsal_contracts_use_source_and_ci_identities(self) -> None:
         for name in ("catalog", "template"):

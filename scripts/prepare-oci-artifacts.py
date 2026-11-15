@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.metadata import SHA_RE, discover  # noqa: E402
+from lib.release_contract import artifact_key  # noqa: E402
 
 PACKAGE_MEDIA = "application/vnd.inari.catalog.package.v1+yaml"
 TEMPLATE_MEDIA = "application/vnd.inari.template.v1"
@@ -53,7 +54,7 @@ def main() -> int:
         tag = args.source_sha.lower() if args.rehearsal else version
         release_tag = f"ci-{args.source_sha[:12]}" if args.rehearsal else f"{component['name']}-v{version}"
         descriptors.append({
-            "key": f"{directory}-{component['name']}",
+            "key": artifact_key(component),
             "name": component["name"],
             "kind": args.kind,
             "source": component["path"],

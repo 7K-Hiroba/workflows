@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,9 @@ from tests.unit.test_validate_repository import make_valid_repo
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON = ROOT / ".venv/bin/python"
 SHA = "a" * 40
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from lib.release_contract import artifact_key  # noqa: E402
 
 
 class PrepareOciTests(unittest.TestCase):
@@ -34,7 +38,10 @@ class PrepareOciTests(unittest.TestCase):
         self.assertEqual(descriptor["channel"], "incubating")
         template = self.run_prepare("--kind", "template", "--name", "service")
         self.assertEqual(template.returncode, 0, template.stdout + template.stderr)
-        self.assertEqual(json.loads(template.stdout)[0]["mediaType"], "application/vnd.inari.template.v1")
+        descriptor = json.loads(template.stdout)[0]
+        self.assertEqual(descriptor["mediaType"], "application/vnd.inari.template.v1")
+        self.assertEqual(descriptor["key"], "templates-service")
+        self.assertEqual(descriptor["key"], artifact_key({"kind": "template", "name": "service"}))
 
     def test_edge_uses_resolved_prerelease_version_and_release_tag(self) -> None:
         result = self.run_prepare("--kind", "package", "--name", "app", "--edge", "--version", "0.2.0-0123456")

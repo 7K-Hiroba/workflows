@@ -1,0 +1,14 @@
+groups:
+  - name: hiroba-chartless-obs
+    interval: 1m
+    rules:
+      - record: workflows_scaffold:up:sum
+        expr: sum(workflows_scaffold_up)
+      - alert: WorkflowsScaffoldDown
+        expr: workflows_scaffold_up == 0
+        for: 5m
+        labels:
+          severity: critical
+          app: hiroba-chartless-obs
+        annotations:
+          summary: Synthetic hiroba-chartless-obs target is down

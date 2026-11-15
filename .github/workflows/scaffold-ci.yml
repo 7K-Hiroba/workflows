@@ -26,10 +26,34 @@ jobs:
   runtime:
     uses: $/.github/workflows/test-runtime-smoke.yml
     with: {root: scaffold, mode: local, profile: ci}
+  chartless-observability-validate:
+    uses: $/.github/workflows/validate-packages.yml
+    with: {root: tests/fixtures/chartless-observability}
+  chartless-observability-packages:
+    uses: $/.github/workflows/test-packages.yml
+    with: {root: tests/fixtures/chartless-observability, all: true}
+  chartless-observability:
+    uses: $/.github/workflows/test-observability.yml
+    with: {root: tests/fixtures/chartless-observability}
+  nonplugin-validate:
+    uses: $/.github/workflows/validate-packages.yml
+    with: {root: tests/fixtures/non-plugin-runtime}
+  nonplugin-chart:
+    uses: $/.github/workflows/ci-chart.yml
+    with: {root: tests/fixtures/non-plugin-runtime}
+  nonplugin-runtime:
+    uses: $/.github/workflows/test-runtime-smoke.yml
+    with: {root: tests/fixtures/non-plugin-runtime, mode: local, profile: ci}
+  chartless-validate:
+    uses: $/.github/workflows/validate-packages.yml
+    with: {root: tests/fixtures/chartless-runtime}
+  chartless-runtime:
+    uses: $/.github/workflows/test-runtime-smoke.yml
+    with: {root: tests/fixtures/chartless-runtime, mode: local, profile: ci}
   result:
     name: scaffold-ci-result
     if: always()
-    needs: [validate, packages, go, ui, chart, observability, compat, runtime]
+    needs: [validate, packages, go, ui, chart, observability, compat, runtime, chartless-observability-validate, chartless-observability-packages, chartless-observability, nonplugin-validate, nonplugin-chart, nonplugin-runtime, chartless-validate, chartless-runtime]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -41,7 +65,15 @@ jobs:
           OBSERVABILITY: "${{ needs.observability.outputs.status }}"
           COMPAT: "${{ needs.compat.outputs.status }}"
           RUNTIME: "${{ needs.runtime.outputs.status }}"
+          CHARTLESS_OBS_VALIDATE: "${{ needs.chartless-observability-validate.outputs.status }}"
+          CHARTLESS_OBS_PACKAGES: "${{ needs.chartless-observability-packages.outputs.status }}"
+          CHARTLESS_OBS: "${{ needs.chartless-observability.outputs.status }}"
+          NONPLUGIN_VALIDATE: "${{ needs.nonplugin-validate.outputs.status }}"
+          NONPLUGIN_CHART: "${{ needs.nonplugin-chart.outputs.status }}"
+          NONPLUGIN_RUNTIME: "${{ needs.nonplugin-runtime.outputs.status }}"
+          CHARTLESS_VALIDATE: "${{ needs.chartless-validate.outputs.status }}"
+          CHARTLESS_RUNTIME: "${{ needs.chartless-runtime.outputs.status }}"
         run: |
-          for status in "$VALIDATE" "$PACKAGES" "$GO" "$UI" "$CHART" "$OBSERVABILITY" "$COMPAT" "$RUNTIME"; do
+          for status in "$VALIDATE" "$PACKAGES" "$GO" "$UI" "$CHART" "$OBSERVABILITY" "$COMPAT" "$RUNTIME" "$CHARTLESS_OBS_VALIDATE" "$CHARTLESS_OBS_PACKAGES" "$CHARTLESS_OBS" "$NONPLUGIN_VALIDATE" "$NONPLUGIN_CHART" "$NONPLUGIN_RUNTIME" "$CHARTLESS_VALIDATE" "$CHARTLESS_RUNTIME"; do
             [[ "$status" == success ]] || exit 1
           done

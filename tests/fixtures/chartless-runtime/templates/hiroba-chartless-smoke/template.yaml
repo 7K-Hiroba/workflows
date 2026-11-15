@@ -1,0 +1,5 @@
+name: hiroba-chartless-smoke
+version: 0.1.0
+channel: incubating
+description: Minimal component scaffold for hiroba-chartless-smoke
+kind: component

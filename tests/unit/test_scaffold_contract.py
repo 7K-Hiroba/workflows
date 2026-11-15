@@ -35,6 +35,30 @@ class ScaffoldContractTests(unittest.TestCase):
         kinds = {component["kind"] for component in plan["components"]}
         self.assertEqual(kinds, {"extension", "ui", "chart", "package", "template", "smoke"})
 
+    def test_full_matrix_fixtures_validate(self) -> None:
+        fixtures = {
+            "chartless-observability": {"package"},
+            "non-plugin-runtime": {"package", "chart", "smoke"},
+            "chartless-runtime": {"template", "smoke"},
+        }
+        for name, kinds in fixtures.items():
+            with self.subTest(name=name):
+                root = ROOT / "tests/fixtures" / name
+                result = self.run_script("validate-repository.py", "--root", str(root))
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                discovered = self.run_script("discover-components.py", "--root", str(root), "--all")
+                self.assertEqual(discovered.returncode, 0, discovered.stdout + discovered.stderr)
+                self.assertEqual({item["kind"] for item in json.loads(discovered.stdout)["components"]}, kinds)
+        chartless = yaml.safe_load((ROOT / "tests/fixtures/chartless-observability/.hiroba.yaml").read_text())
+        self.assertNotIn("chart", chartless["observability"])
+        self.assertFalse((ROOT / "tests/fixtures/chartless-observability/charts").exists())
+
+    def test_full_matrix_fixture_hosted_lanes_are_wired(self) -> None:
+        workflow = yaml.safe_load((ROOT / ".github/workflows/scaffold-ci.yml").read_text())
+        roots = {job.get("with", {}).get("root") for job in workflow["jobs"].values()}
+        for name in ("chartless-observability", "non-plugin-runtime", "chartless-runtime"):
+            self.assertIn(f"tests/fixtures/{name}", roots)
+
     def test_caller_templates_are_pin_safe(self) -> None:
         result = self.run_script("check-workflow-pins.py")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

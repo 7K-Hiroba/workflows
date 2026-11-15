@@ -1,0 +1,11 @@
+schema: inari.hiroba.app.v1
+app: hiroba-chartless-obs
+trustTier: experimental
+components:
+  chartsRoot: charts
+  packagesRoot: packages
+  templatesRoot: templates
+observability:
+  path: observability
+  package: packages/observability-pack
+  alloyConfig: observability/tests/alloy/config.river

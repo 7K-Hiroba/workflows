@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from tests.unit.test_validate_repository import make_valid_repo
+from tests.unit.test_validate_repository import make_valid_repo, use_fixture_only_smoke
 
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON = ROOT / ".venv" / "bin" / "python"
@@ -44,6 +44,31 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(smoke["targetComponent"], "charts/workflows-scaffold")
         names = [item["name"] for item in payload["components"]]
         self.assertEqual(names, sorted(names))
+
+    def test_discovers_standalone_fixture_only_smoke(self) -> None:
+        use_fixture_only_smoke(self.root)
+        result = self.run_script("discover-components.py", "--all")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        smoke = next(item for item in json.loads(result.stdout)["components"] if item["kind"] == "smoke")
+        self.assertEqual(smoke["name"], "workflows-scaffold-smoke")
+        self.assertEqual(smoke["targetAdapter"], "manifests")
+        self.assertTrue(smoke["fixtureOnly"])
+        self.assertEqual(smoke["executableProfiles"], ["ci"])
+        self.assertEqual(smoke["evidenceScope"], "fixture")
+        self.assertFalse(smoke["appEvidenceEligible"])
+        self.assertNotIn("targetComponent", smoke)
+
+    def test_standalone_fixture_smoke_has_independent_release_metadata(self) -> None:
+        use_fixture_only_smoke(self.root)
+        result = self.run_script("sync-release-please-config.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = json.loads((self.root / "release-please-config.json").read_text())
+        smoke = config["packages"]["tests/smoke"]
+        self.assertEqual(smoke["release-type"], "simple")
+        self.assertEqual(smoke["component"], "workflows-scaffold-smoke")
+        self.assertIn("suite.yaml", smoke["extra-files"])
+        manifest = json.loads((self.root / ".release-please-manifest.json").read_text())
+        self.assertEqual(manifest["tests/smoke"], "0.1.0")
 
     def test_discovery_can_filter_changed_files(self) -> None:
         changed = self.root / "changed.txt"

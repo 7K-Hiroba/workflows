@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.1](https://github.com/7K-Hiroba/workflows/compare/v0.1.0...v0.1.1) (2026-11-15)
+## [1.0.0](https://github.com/7K-Hiroba/workflows/releases/tag/v1.0.0) (2026-11-15)
 
 
 ### Features

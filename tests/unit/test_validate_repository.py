@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "validate-repository.py"
 PYTHON = ROOT / ".venv" / "bin" / "python"
@@ -201,22 +203,24 @@ spec:
 
 
 def use_fixture_only_smoke(root: Path) -> None:
-    config = root / ".hiroba.yaml"
-    config.write_text(config.read_text().replace("  targetComponent: charts/workflows-scaffold\n", ""))
-    suite = root / "tests/smoke/suite.yaml"
-    suite.write_text(suite.read_text().replace(
-        "target: {id: workflows-scaffold, version: 0.1.0, component: charts/workflows-scaffold}",
-        """target:
-  id: workflows-scaffold-smoke
-  version: 0.1.0
-  adapter:
-    kind: manifests
-    path: fixtures/app
-    fixtureOnly: true
-    readiness:
-      - {kind: Deployment, name: workflows-scaffold-fixture, namespace: default, condition: Available}
-executableProfiles: [ci]""",
-    ))
+    config_path = root / ".hiroba.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["smoke"].pop("targetComponent", None)
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    suite_path = root / "tests/smoke/suite.yaml"
+    suite = yaml.safe_load(suite_path.read_text())
+    suite["target"] = {
+        "id": "workflows-scaffold-smoke",
+        "version": "0.1.0",
+        "adapter": {
+            "kind": "manifests",
+            "path": "fixtures/app",
+            "fixtureOnly": True,
+            "readiness": [{"kind": "Deployment", "name": "workflows-scaffold-fixture", "namespace": "default", "condition": "Available"}],
+        },
+    }
+    suite["executableProfiles"] = ["ci"]
+    suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
     write(
         root,
         "tests/smoke/fixtures/app/deployment.yaml",
@@ -256,11 +260,30 @@ class ValidateRepositoryTests(unittest.TestCase):
         result = self.run_validation(use_fixture_only_smoke)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_artifact_bound_manifests_smoke_is_valid(self) -> None:
+        def artifact_bound(root: Path) -> None:
+            use_fixture_only_smoke(root)
+            config_path = root / ".hiroba.yaml"
+            config = yaml.safe_load(config_path.read_text())
+            config["smoke"]["targetComponent"] = "packages/observability-pack"
+            config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["component"] = "packages/observability-pack"
+            suite["target"]["adapter"]["fixtureOnly"] = False
+            suite["target"]["adapter"]["artifactPath"] = "rgd.yaml"
+            suite["executableProfiles"] = ["ci", "stage", "prod"]
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+        result = self.run_validation(artifact_bound)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_fixture_only_smoke_rejects_stage_or_prod_execution(self) -> None:
         def stage_eligible(root: Path) -> None:
             use_fixture_only_smoke(root)
-            suite = root / "tests/smoke/suite.yaml"
-            suite.write_text(suite.read_text().replace("executableProfiles: [ci]", "executableProfiles: [ci, stage]"))
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["executableProfiles"] = ["ci", "stage"]
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
         result = self.run_validation(stage_eligible)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("executableProfiles", result.stdout + result.stderr)
@@ -268,8 +291,10 @@ class ValidateRepositoryTests(unittest.TestCase):
     def test_fixture_only_smoke_rejects_an_artifact_component(self) -> None:
         def artifact_bound(root: Path) -> None:
             use_fixture_only_smoke(root)
-            suite = root / "tests/smoke/suite.yaml"
-            suite.write_text(suite.read_text().replace("  version: 0.1.0\n  adapter:", "  version: 0.1.0\n  component: charts/workflows-scaffold\n  adapter:"))
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["component"] = "charts/workflows-scaffold"
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
         result = self.run_validation(artifact_bound)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("fixture", (result.stdout + result.stderr).lower())

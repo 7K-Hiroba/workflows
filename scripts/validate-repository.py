@@ -287,6 +287,7 @@ class Validator:
         component = target.get("component")
         if component != settings.get("targetComponent"):
             self.error(suite_path, "target.component must match .hiroba.yaml smoke.targetComponent")
+        component_path = None
         if isinstance(component, str) and component:
             component_path = self.safe_path(self.root, component, suite_path)
             if component_path is not None and not component_path.is_dir():
@@ -299,16 +300,26 @@ class Validator:
                 self.error(suite_path, "helm smoke target requires target.component")
             if fixture_only:
                 self.error(suite_path, "helm smoke target cannot be fixtureOnly")
-            if "path" in adapter:
-                self.error(suite_path, "helm smoke adapter does not accept path")
+            if "path" in adapter or "artifactPath" in adapter:
+                self.error(suite_path, "helm smoke adapter does not accept manifests paths")
         elif adapter_kind == "manifests":
             fixture_path = self.safe_path(base_path, adapter.get("path", ""), suite_path)
             if fixture_path is not None and not fixture_path.is_dir():
                 self.error(suite_path, "manifests smoke adapter path must be an existing directory")
             if fixture_only and component:
                 self.error(suite_path, "fixtureOnly smoke target must not bind an application component")
+            if fixture_only and adapter.get("artifactPath"):
+                self.error(suite_path, "fixtureOnly smoke target must not declare adapter.artifactPath")
             if not fixture_only and not component:
                 self.error(suite_path, "artifact-bound manifests smoke target requires target.component")
+            if not fixture_only:
+                artifact_path = adapter.get("artifactPath", "")
+                if not artifact_path:
+                    self.error(suite_path, "artifact-bound manifests smoke target requires adapter.artifactPath")
+                elif component_path is not None:
+                    artifact = self.safe_path(component_path, artifact_path, suite_path)
+                    if artifact is not None and not artifact.exists():
+                        self.error(suite_path, "adapter.artifactPath must exist in the target package")
         else:
             self.error(suite_path, "smoke target adapter kind must be helm or manifests")
         if fixture_only and suite.get("executableProfiles") != ["ci"]:

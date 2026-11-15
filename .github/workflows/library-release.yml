@@ -52,7 +52,7 @@ jobs:
           git -C consumer tag -s -a "$tag" -m "Hiroba workflows $tag" "$SOURCE_SHA"
           (
             cd consumer
-            gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            gitsign verify-tag --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$tag"
           )
           git -C consumer push origin "$tag"
@@ -65,7 +65,7 @@ jobs:
           git -C consumer tag -s -f -a "$major" -m "Hiroba workflows $major documentation alias" "$SOURCE_SHA"
           (
             cd consumer
-            gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            gitsign verify-tag --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$major"
           )
           git -C consumer push -f origin "refs/tags/$major"

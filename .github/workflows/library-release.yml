@@ -44,6 +44,8 @@ jobs:
         run: |
           set -euo pipefail
           tag="v$VERSION"
+          git -C consumer config user.name "hiroba-release[bot]"
+          git -C consumer config user.email "hiroba-release[bot]@users.noreply.github.com"
           git -C consumer config gpg.format x509
           git -C consumer config gpg.x509.program gitsign
           git -C consumer config gitsign.tokenProvider github-actions

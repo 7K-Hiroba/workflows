@@ -117,7 +117,7 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
             self.assertIn("create cluster", calls)
             self.assertIn("delete cluster", calls)
             diagnostics = (root / "diagnostics/runtime-smoke.txt").read_text()
-            self.assertIn("logs -A", diagnostics)
+            self.assertIn("logs -n default", diagnostics)
             self.assertIn("export logs", calls)
 
     def test_driver_has_argo_lint_diagnostics_and_guaranteed_kind_cleanup(self) -> None:
@@ -140,6 +140,12 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertIn('"path":"/data/artifactRepository"', text)
         self.assertIn('"op":"remove"', text)
         self.assertIn("rollout restart deployment/workflow-controller --namespace argo", text)
+
+    def test_diagnostics_collect_workload_namespace_logs(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn("kubectl get pods -n default -o name", text)
+        self.assertIn('kubectl logs -n default "$pod"', text)
+        self.assertNotIn("kubectl logs -A", text)
 
     def test_default_executor_uses_canonical_task_result_rbac(self) -> None:
         text = SCRIPT.read_text()

@@ -53,6 +53,15 @@ class ScaffoldContractTests(unittest.TestCase):
         self.assertNotIn("chart", chartless["observability"])
         self.assertFalse((ROOT / "tests/fixtures/chartless-observability/charts").exists())
 
+    def test_non_plugin_chart_has_working_nginx_probes_and_writable_state(self) -> None:
+        deployment = (ROOT / "tests/fixtures/non-plugin-runtime/charts/hiroba-nonplugin-smoke/templates/deployment.yaml").read_text()
+        self.assertIn("httpGet: {path: /, port: http}", deployment)
+        self.assertNotIn("path: /healthz", deployment)
+        self.assertIn("readOnlyRootFilesystem: true", deployment)
+        for mount in ("/var/cache/nginx", "/var/run", "/tmp"):
+            self.assertIn(mount, deployment)
+        self.assertIn("emptyDir", deployment)
+
     def test_full_matrix_fixture_hosted_lanes_are_wired(self) -> None:
         workflow = yaml.safe_load((ROOT / ".github/workflows/scaffold-ci.yml").read_text())
         roots = {job.get("with", {}).get("root") for job in workflow["jobs"].values()}

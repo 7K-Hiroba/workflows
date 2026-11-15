@@ -75,7 +75,9 @@ finish() {
     {
       kubectl get all,workflows,events -A -o wide || true
       kubectl get events -A --sort-by=.lastTimestamp || true
-      kubectl logs -A -l "app.kubernetes.io/name=$APP" --all-containers=true --tail=200 || true
+      kubectl get pods -n default -o name | while read -r pod; do
+        kubectl logs -n default "$pod" --all-containers=true --tail=200 || true
+      done
       if [[ -n "$WORKFLOW_NAME" ]]; then argo get "$WORKFLOW_NAME" -n default || true; argo logs "$WORKFLOW_NAME" -n default || true; fi
       kind export logs "$WORK/kind-logs" --name "$CLUSTER" || true
     } > "$ROOT/diagnostics/runtime-smoke.txt" 2>&1

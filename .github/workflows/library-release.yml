@@ -47,7 +47,7 @@ jobs:
           git -C consumer config gpg.format x509
           git -C consumer config gpg.x509.program gitsign
           git -C consumer config gitsign.tokenProvider github-actions
-          git -C consumer tag -s -a "$tag" -m "Hiroba workflows $tag" "$source_sha"
+          git -C consumer tag -s -a "$tag" -m "Hiroba workflows $tag" "$SOURCE_SHA"
           gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$tag"
           git -C consumer push origin "$tag"
@@ -57,7 +57,7 @@ jobs:
         env: {VERSION: "${{ inputs.version }}"}
         run: |
           major="v${VERSION%%.*}"
-          git -C consumer tag -s -f -a "$major" -m "Hiroba workflows $major documentation alias" "$source_sha"
+          git -C consumer tag -s -f -a "$major" -m "Hiroba workflows $major documentation alias" "$SOURCE_SHA"
           gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$major"
           git -C consumer push -f origin "refs/tags/$major"

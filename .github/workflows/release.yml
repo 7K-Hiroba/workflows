@@ -73,8 +73,13 @@ jobs:
               [[ -n "$path" ]] || continue
               kind=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .kind' edge-plan.json)
               if [[ "$kind" == smoke ]]; then
-                target=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .targetComponent' edge-plan.json)
-                version=$(jq -r --arg target "$target" 'first(.publishComponents[] | select(.path == $target) | .version) // empty' edge-plan.json)
+                fixture_only=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .fixtureOnly' edge-plan.json)
+                if [[ "$fixture_only" == true ]]; then
+                  version=$(cd "consumer/${{ inputs.root }}" && "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/resolve-edge-version.sh" "$path")
+                else
+                  target=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .targetComponent' edge-plan.json)
+                  version=$(jq -r --arg target "$target" 'first(.publishComponents[] | select(.path == $target) | .version) // empty' edge-plan.json)
+                fi
               else
                 version=$(cd "consumer/${{ inputs.root }}" && "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/resolve-edge-version.sh" "$path")
               fi

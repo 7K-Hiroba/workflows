@@ -22,6 +22,13 @@ def tag_for(component: dict) -> str:
     return f"{component['name']}-v{component['version']}"
 
 
+def smoke_release_target(component: dict, all_components: list[dict]) -> dict | None:
+    if component.get("fixtureOnly") is True:
+        return component
+    target_path = component.get("targetComponent")
+    return next((item for item in all_components if item["path"] == target_path), None)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
@@ -53,8 +60,8 @@ def main() -> int:
                 components.append(component)
         for component in all_components:
             if component["kind"] == "smoke":
-                target = next(item for item in all_components if item["path"] == component["targetComponent"])
-                if tag_for(target) == args.repair_tag:
+                target = smoke_release_target(component, all_components)
+                if target is not None and tag_for(target) == args.repair_tag:
                     components.append(component)
     elif args.edge:
         components = list(all_components)
@@ -66,9 +73,9 @@ def main() -> int:
         for component in all_components:
             if component["kind"] != "smoke":
                 continue
-            target = next((item for item in all_components if item["path"] == component["targetComponent"]), None)
+            target = smoke_release_target(component, all_components)
             if target is None:
-                print(f"::error::smoke target component {component['targetComponent']} does not exist", file=sys.stderr)
+                print(f"::error::smoke target component {component.get('targetComponent')} does not exist", file=sys.stderr)
                 return 1
             target_tag = tag_for(target)
             if target_tag not in tags or target_tag in target_tags:
@@ -78,9 +85,12 @@ def main() -> int:
             for component in all_components:
                 if component["kind"] != "smoke":
                     continue
-                target = next(item for item in all_components if item["path"] == component["targetComponent"])
+                target = smoke_release_target(component, all_components)
+                if target is None:
+                    print("::error::smoke release target does not exist", file=sys.stderr)
+                    return 1
                 if any(path.startswith(component["path"] + "/") for path in changed) and tag_for(target) in tags and tag_for(target) not in target_tags:
-                    print("::error::smoke-only change requires a target component version bump", file=sys.stderr)
+                    print("::error::smoke-only change requires a target version bump", file=sys.stderr)
                     return 1
     if args.rehearsal:
         publish_components = list(all_components)

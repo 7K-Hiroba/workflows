@@ -188,6 +188,12 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
         self.assertIn('refs/tags/$TAG^{}', repair_text)
 
+    def test_edge_resolves_standalone_fixture_smoke_version(self) -> None:
+        release = (WORKFLOWS / "release.yml").read_text()
+        self.assertIn('fixture_only=$(jq -r', release)
+        self.assertIn('if [[ "$fixture_only" == true ]]; then', release)
+        self.assertIn('resolve-edge-version.sh" "$path"', release)
+
     def test_edge_threads_versions_and_channels_through_every_publisher(self) -> None:
         release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
         for job_name in ("publish-packages", "publish-templates"):

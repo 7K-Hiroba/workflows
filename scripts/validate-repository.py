@@ -212,8 +212,13 @@ class Validator:
         settings = config.get("observability")
         if not isinstance(settings, dict):
             return
-        for key in ("chart", "package", "alloyConfig"):
+        for key in ("package", "alloyConfig"):
             self.safe_path(self.root, settings.get(key, ""), self.root / ".hiroba.yaml")
+        chart_setting = settings.get("chart")
+        if chart_setting is not None:
+            chart = self.safe_path(self.root, chart_setting, self.root / ".hiroba.yaml")
+            if chart is not None and not (chart / "Chart.yaml").is_file():
+                self.error(self.root / ".hiroba.yaml", "observability.chart must reference a chart with Chart.yaml")
         base_path = self.safe_path(self.root, settings.get("path", ""), self.root / ".hiroba.yaml")
         if base_path is None:
             return

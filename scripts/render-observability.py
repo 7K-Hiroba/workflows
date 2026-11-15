@@ -164,17 +164,19 @@ def render(root: Path) -> dict[Path, str]:
             raise ValueError(f"rule asset must be a mapping: {path}")
         rules.append((entry, parsed))
 
-    chart = root / relative_path(root, settings["chart"], "observability.chart")
     pack = root / relative_path(root, settings["package"], "observability.package")
     outputs: dict[Path, str] = {}
-    if dashboards:
-        outputs[chart / "templates/observability/dashboards.yaml"] = "\n---\n".join(
-            chart_configmap(app, dashboard, content) for dashboard, content in dashboards
-        )
-    if rules:
-        combined = {"groups": [group for _, content in rules for group in content.get("groups", [])]}
-        outputs[chart / "templates/observability/rules.yaml"] = chart_rules(app, combined)
-    outputs[chart / "inari/observability.yaml"] = HEADER + dump_document(manifest)
+    chart_setting = settings.get("chart")
+    if chart_setting:
+        chart = root / relative_path(root, chart_setting, "observability.chart")
+        if dashboards:
+            outputs[chart / "templates/observability/dashboards.yaml"] = "\n---\n".join(
+                chart_configmap(app, dashboard, content) for dashboard, content in dashboards
+            )
+        if rules:
+            combined = {"groups": [group for _, content in rules for group in content.get("groups", [])]}
+            outputs[chart / "templates/observability/rules.yaml"] = chart_rules(app, combined)
+        outputs[chart / "inari/observability.yaml"] = HEADER + dump_document(manifest)
     outputs[pack / "rgd.yaml"] = render_pack(app, manifest, dashboards, rules)
     return outputs
 
@@ -192,7 +194,8 @@ def main() -> int:
         return 1
     errors: list[str] = []
     for path, content in outputs.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if not args.check:
+            path.parent.mkdir(parents=True, exist_ok=True)
         write_if_changed(path, content, args.check, errors)
     for error in errors:
         print(f"::error::{error}")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -216,6 +217,23 @@ class ValidateRepositoryTests(unittest.TestCase):
     def test_valid_repository_passes(self) -> None:
         result = self.run_validation()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_chartless_observability_passes_without_chart_config_or_outputs(self) -> None:
+        def chartless(root: Path) -> None:
+            config = root / ".hiroba.yaml"
+            text = config.read_text().replace("  chart: charts/workflows-scaffold\n", "")
+            text = text.replace("smoke:\n  path: tests/smoke\n  targetComponent: charts/workflows-scaffold\n", "")
+            config.write_text(text)
+            shutil.rmtree(root / "charts")
+        result = self.run_validation(chartless)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_observability_chart_reference_must_exist(self) -> None:
+        def missing_chart(root: Path) -> None:
+            shutil.rmtree(root / "charts/workflows-scaffold")
+        result = self.run_validation(missing_chart)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("chart", (result.stdout + result.stderr).lower())
 
     def test_rejects_invalid_package_metadata_and_unknown_type(self) -> None:
         def invalid(root: Path) -> None:

@@ -23,7 +23,7 @@
     "observability": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "chart", "package", "alloyConfig"],
+      "required": ["path", "package", "alloyConfig"],
       "properties": {
         "path": {"type": "string"},
         "chart": {"type": "string"},

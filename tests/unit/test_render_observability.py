@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -68,6 +69,30 @@ class RenderObservabilityTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("out of date", result.stdout + result.stderr)
         self.assertEqual(output.read_text(), "# stale user edit\n")
+
+    def test_chartless_generates_pack_without_chart_outputs(self) -> None:
+        config = self.root / ".hiroba.yaml"
+        config.write_text(config.read_text().replace("  chart: charts/workflows-scaffold\n", ""))
+        shutil.rmtree(self.root / "charts")
+
+        result = self.run_renderer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.root / "packages/observability-pack/rgd.yaml").is_file())
+        self.assertFalse((self.root / "charts").exists())
+
+    def test_chartless_check_does_not_create_missing_output_directories(self) -> None:
+        config = self.root / ".hiroba.yaml"
+        config.write_text(config.read_text().replace("  chart: charts/workflows-scaffold\n", ""))
+        shutil.rmtree(self.root / "charts")
+        shutil.rmtree(self.root / "packages/observability-pack")
+
+        result = self.run_renderer("--check")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("out of date", result.stdout + result.stderr)
+        self.assertFalse((self.root / "charts").exists())
+        self.assertFalse((self.root / "packages/observability-pack").exists())
 
     def test_missing_canonical_asset_fails(self) -> None:
         (self.root / "observability/dashboards/overview.json").unlink()

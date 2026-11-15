@@ -50,8 +50,11 @@ jobs:
           git -C consumer config gpg.x509.program gitsign
           git -C consumer config gitsign.tokenProvider github-actions
           git -C consumer tag -s -a "$tag" -m "Hiroba workflows $tag" "$SOURCE_SHA"
-          gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$tag"
+          (
+            cd consumer
+            gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$tag"
+          )
           git -C consumer push origin "$tag"
           gh release create "$tag" --title "Hiroba workflows $tag" --notes "Reviewed, QA-verified immutable workflow release. Consumers pin to $(git -C consumer rev-parse "$tag^{commit}")."
       - name: Optionally move signed documentation-only major alias
@@ -60,6 +63,9 @@ jobs:
         run: |
           major="v${VERSION%%.*}"
           git -C consumer tag -s -f -a "$major" -m "Hiroba workflows $major documentation alias" "$SOURCE_SHA"
-          gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$major"
+          (
+            cd consumer
+            gitsign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/library-release\\.yml@${{ github.ref }}$" "$major"
+          )
           git -C consumer push -f origin "refs/tags/$major"

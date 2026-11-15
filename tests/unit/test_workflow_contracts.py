@@ -389,7 +389,9 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(setup_go["with"]["go-version"], "1.27.0")
         self.assertIn("go install github.com/sigstore/gitsign@v0.18.0", text)
 
-        self.assertEqual(text.count("(\n            cd consumer\n            gitsign verify"), 2)
+        self.assertEqual(text.count("(\n            cd consumer\n            gitsign verify-tag"), 2)
+        self.assertEqual(text.count("gitsign verify-tag --certificate-oidc-issuer"), 2)
+        self.assertNotIn("gitsign verify --certificate-oidc-issuer", text)
         patterns = re.findall(r'--certificate-identity-regexp "([^"]+)"', text)
         self.assertEqual(len(patterns), 2)
         identity = "https://github.com/7K-Hiroba/workflows/.github/workflows/library-release.yml@refs/heads/main"

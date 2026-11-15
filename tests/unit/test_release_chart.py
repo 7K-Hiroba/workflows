@@ -25,13 +25,15 @@ OTHER_DIGEST = hashlib.sha256(OTHER_CONTENT).hexdigest()
 CONTENT_LAYER = {"mediaType": CONTENT_MEDIA, "digest": "sha256:" + CONTENT_DIGEST, "size": len(PACKAGE_CONTENT)}
 
 
-def chart_manifest(layers: list[dict[str, object]]) -> bytes:
-    return json.dumps({
+def chart_manifest(layers: list[dict[str, object]], media_type: str | None = None) -> bytes:
+    document = {
         "schemaVersion": 2,
-        "mediaType": MANIFEST_MEDIA,
         "config": {"mediaType": "application/vnd.cncf.helm.config.v1+json", "digest": "sha256:" + CONFIG_DIGEST, "size": len(CONFIG_CONTENT)},
         "layers": layers,
-    }, sort_keys=True, separators=(",", ":")).encode()
+    }
+    if media_type is not None:
+        document["mediaType"] = media_type
+    return json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
 
 
 MANIFEST = chart_manifest([CONTENT_LAYER])
@@ -140,14 +142,14 @@ fi
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def write_layout(self, mode: str = "default") -> None:
+    def write_layout(self, mode: str = "default", document_media_type: str | None = None) -> None:
         other_layer = {"mediaType": CONTENT_MEDIA, "digest": "sha256:" + OTHER_DIGEST, "size": len(OTHER_CONTENT)}
         layers = {
             "default": [CONTENT_LAYER],
             "missing": [dict(CONTENT_LAYER, mediaType="application/octet-stream")],
             "ambiguous": [CONTENT_LAYER, other_layer],
         }[mode]
-        self.manifest = chart_manifest(layers)
+        self.manifest = chart_manifest(layers, document_media_type)
         self.digest = "sha256:" + hashlib.sha256(self.manifest).hexdigest()
         if self.oci_source.exists():
             shutil.rmtree(self.oci_source)
@@ -189,6 +191,7 @@ fi
         result = self.run_chart()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("org.opencontainers.image.title", self.manifest.decode())
+        self.assertNotIn("mediaType", json.loads(self.manifest))
         calls = self.log.read_text()
         self.assertIn(f"oras copy ghcr.io/7k-hiroba/app/charts/example@{DIGEST} --to-oci-layout", calls)
         script = SCRIPT.read_text()
@@ -213,6 +216,13 @@ fi
         result = self.run_chart()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("digest", (result.stdout + result.stderr).lower())
+        self.assertFalse((self.root / "artifact.json").exists())
+
+    def test_rejects_present_wrong_manifest_media_type(self) -> None:
+        self.write_layout(document_media_type=INDEX_MEDIA)
+        result = self.run_chart()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid OCI index/manifest chain", result.stdout + result.stderr)
         self.assertFalse((self.root / "artifact.json").exists())
 
     def test_crane_login_precedes_every_digest_without_token_output(self) -> None:

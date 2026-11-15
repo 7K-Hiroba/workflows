@@ -370,8 +370,10 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(checkout["with"]["token"], "${{ steps.app.outputs.token }}")
         checks = next(step for step in release["steps"] if step.get("name") == "Verify approved main and required checks")
         self.assertEqual(checks["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
-        for fragment in ("check-required-checks.py", "library-ci-result", "scaffold-ci-result", ".release-please-manifest.json", "CHANGELOG.md", "source-sha"):
+        for fragment in ("check-required-checks.py", "library-ci-result", "scaffold-ci-result", ".release-please-manifest.json", "CHANGELOG.md", "SOURCE_SHA"):
             self.assertIn(fragment, checks["run"])
+        self.assertIn('echo "SOURCE_SHA=$sha" >> "$GITHUB_ENV"', checks["run"])
+        self.assertNotIn('echo "source-sha=$sha"', checks["run"])
         signed = next(step for step in release["steps"] if step.get("name") == "Create and verify signed version tag")
         self.assertEqual(signed["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
         self.assertIn("gh release create", signed["run"])

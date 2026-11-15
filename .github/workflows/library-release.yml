@@ -36,7 +36,7 @@ jobs:
             --required library-ci-result --required scaffold-ci-result
           jq -r '.["."]' consumer/.release-please-manifest.json | grep -Fx "$VERSION"
           grep -q "## \[$VERSION\]" consumer/CHANGELOG.md
-          echo "source-sha=$sha" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$sha" >> "$GITHUB_ENV"
       - name: Install pinned gitsign
         run: go install github.com/sigstore/gitsign@v0.18.0
       - name: Create and verify signed version tag

@@ -280,6 +280,7 @@ class ValidateRepositoryTests(unittest.TestCase):
             suite = yaml.safe_load(suite_path.read_text())
             suite["target"]["component"] = "packages/observability-pack"
             suite["target"]["adapter"]["fixtureOnly"] = False
+            suite["target"]["adapter"].pop("path")
             suite["target"]["adapter"]["artifactPath"] = "rgd.yaml"
             suite["executableProfiles"] = ["ci", "stage", "prod"]
             suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))

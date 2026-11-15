@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.metadata import SHA_RE, verified_artifact  # noqa: E402
 
-NAME = re.compile(r"^artifact-(catalog|template)-([a-z0-9][a-z0-9-]*)\.json$")
+NAME = re.compile(r"^artifact-(catalog|templates)-([a-z0-9][a-z0-9-]*)\.json$")
 MEDIA = {
     "catalog": "application/vnd.inari.catalog.package.v1+yaml",
     "template": "application/vnd.inari.template.v1",
@@ -34,7 +34,8 @@ def main() -> int:
             match = NAME.fullmatch(path.name)
             if not match:
                 continue
-            kind, name = match.groups()
+            directory, name = match.groups()
+            kind = "catalog" if directory == "catalog" else "template"
             key = f"{kind}/{name}"
             if key in artifacts:
                 raise ValueError(f"duplicate artifact evidence: {key}")

@@ -7,7 +7,7 @@
 Every new suite declares `target.adapter` and explicit readiness resources:
 
 - `helm`: `target.component` and `.hiroba.yaml smoke.targetComponent` identify a real chart. Local CI reuses the chart's generic `ci/test.yaml` image build declaration when present; no extension component is assumed. OCI mode verifies and deploys the exact chart and suite digests.
-- `manifests`: `adapter.path` is a confined directory of local manifests. Artifact-bound suites also identify a package component and confined `adapter.artifactPath`; OCI mode verifies/pulls the exact package and suite digests before applying it.
+- `manifests`: fixture-only suites use a confined suite-local `adapter.path`. Artifact-bound suites identify a package component and confined `adapter.artifactPath`; local CI applies that actual package file/directory, and OCI mode verifies/pulls the exact package and suite digests before applying the same artifact. Plain `manifests` packages have their own reusable test matrix.
 
 An omitted adapter and `executableProfiles` retain the legacy helm behavior so v1.0.0 consumers remain valid.
 

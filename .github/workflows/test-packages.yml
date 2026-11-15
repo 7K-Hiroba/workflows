@@ -16,6 +16,7 @@ jobs:
       kro: ${{ steps.matrix.outputs.kro }}
       policy: ${{ steps.matrix.outputs.policy }}
       app: ${{ steps.matrix.outputs.app }}
+      manifests: ${{ steps.matrix.outputs.manifests }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
@@ -40,10 +41,12 @@ jobs:
           jq -c '[.components[] | select(.kind == "package" and .packageType == "kro-rgd") | {name,path}]' plan.json > kro.json
           jq -c '[.components[] | select(.kind == "package" and .packageType == "policy-pack") | {name,path}]' plan.json > policy.json
           jq -c '[.components[] | select(.kind == "package" and .packageType == "platform-app") | {name,path}]' plan.json > app.json
+          jq -c '[.components[] | select(.kind == "package" and .packageType == "manifests") | {name,path}]' plan.json > manifests.json
           {
             echo "kro=$(cat kro.json)"
             echo "policy=$(cat policy.json)"
             echo "app=$(cat app.json)"
+            echo "manifests=$(cat manifests.json)"
           } >> "$GITHUB_OUTPUT"
   kro:
     if: needs.plan.outputs.kro != '[]'
@@ -93,9 +96,24 @@ jobs:
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
       - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type platform-app --package "${{ matrix.package.name }}" --package-path "${{ matrix.package.path }}"
+  manifests:
+    if: needs.plan.outputs.manifests != '[]'
+    needs: [plan]
+    strategy: {fail-fast: false, matrix: {package: '${{ fromJSON(needs.plan.outputs.manifests) }}'}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type manifests --package "${{ matrix.package.name }}" --package-path "${{ matrix.package.path }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with: {name: "manifests-diagnostics-${{ matrix.package.name }}", path: 'consumer/${{ inputs.root }}/diagnostics', if-no-files-found: ignore}
   result:
     if: always()
-    needs: [plan, kro, policy, app]
+    needs: [plan, kro, policy, app, manifests]
     runs-on: ubuntu-latest
     outputs: {status: "${{ steps.result.outputs.status }}"}
     steps:
@@ -105,8 +123,9 @@ jobs:
           KRO: ${{ needs.kro.result }}
           POLICY: ${{ needs.policy.result }}
           APP: ${{ needs.app.result }}
+          MANIFESTS: ${{ needs.manifests.result }}
         run: |
           status=success
-          if [[ "$PLAN" != success || "$KRO" == failure || "$KRO" == cancelled || "$POLICY" == failure || "$POLICY" == cancelled || "$APP" == failure || "$APP" == cancelled ]]; then status=failure; fi
+          if [[ "$PLAN" != success || "$KRO" == failure || "$KRO" == cancelled || "$POLICY" == failure || "$POLICY" == cancelled || "$APP" == failure || "$APP" == cancelled || "$MANIFESTS" == failure || "$MANIFESTS" == cancelled ]]; then status=failure; fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
           [[ "$status" == success ]] || exit 1

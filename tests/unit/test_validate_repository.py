@@ -256,6 +256,15 @@ class ValidateRepositoryTests(unittest.TestCase):
         result = self.run_validation()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_manifests_package_is_valid(self) -> None:
+        def add_manifests(root: Path) -> None:
+            write(root, "packages/plain/package.yaml", "version: 0.1.0\nchannel: incubating\ntype: manifests\ndescription: Plain manifests\ncategory: test\n")
+            write(root, "packages/plain/manifests.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: plain}\n")
+            write(root, "packages/plain/README.md", "# plain\n")
+            write(root, "packages/plain/tests/run.sh", "#!/usr/bin/env bash\nexit 0\n")
+        result = self.run_validation(add_manifests)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_fixture_only_manifests_smoke_is_valid_and_ci_only(self) -> None:
         result = self.run_validation(use_fixture_only_smoke)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

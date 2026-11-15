@@ -188,6 +188,14 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
         self.assertIn('refs/tags/$TAG^{}', repair_text)
 
+    def test_manifests_packages_have_a_real_test_lane(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "test-packages.yml").read_text())
+        self.assertIn("manifests", workflow["jobs"])
+        plan_runs = "\n".join(step.get("run", "") for step in workflow["jobs"]["plan"]["steps"])
+        self.assertIn('select(.kind == "package" and .packageType == "manifests")', plan_runs)
+        manifest_runs = "\n".join(step.get("run", "") for step in workflow["jobs"]["manifests"]["steps"])
+        self.assertIn('test-packages.sh', manifest_runs)
+
     def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()
         smoke = (WORKFLOWS / "release-smoke-suite.yml").read_text()

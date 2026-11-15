@@ -26,6 +26,7 @@ TYPE_FILES = {
     "kro-rgd": ("rgd.yaml", "ui-hints.yaml", "README.md", "tests/run.sh"),
     "platform-app": ("chart.yaml", "values-defaults.yaml", "values.schema.json", "README.md", "tests/run.sh"),
     "policy-pack": ("policies.yaml", "README.md", "tests/run.sh"),
+    "manifests": ("manifests.yaml", "README.md", "tests/run.sh"),
 }
 
 

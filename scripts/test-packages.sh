@@ -43,7 +43,7 @@ if [[ "$TYPE" == kro-rgd ]]; then
   if [[ -d "$PACKAGE_DIR/tests/deps" ]]; then
     kubectl apply -f "$PACKAGE_DIR/tests/deps"
   fi
-elif [[ "$TYPE" != policy-pack && "$TYPE" != platform-app ]]; then
+elif [[ "$TYPE" != policy-pack && "$TYPE" != platform-app && "$TYPE" != manifests ]]; then
   echo "unsupported package type: $TYPE" >&2
   exit 2
 fi

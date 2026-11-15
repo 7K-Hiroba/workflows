@@ -24,8 +24,20 @@ class RequiredCheckTests(unittest.TestCase):
         result = self.check([
             '{"name":"library-ci-result","status":"completed","conclusion":"success"}',
             '{"name":"scaffold-ci-result","status":"completed","conclusion":"success"}',
+            '{"name":"release","status":"in_progress","conclusion":null}',
+            '{"name":"release","status":"completed","conclusion":"failure"}',
+            '{"name":"unrelated-lane","status":"completed","conclusion":"failure"}',
         ])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_duplicate_required_context_is_ambiguous(self) -> None:
+        result = self.check([
+            '{"name":"library-ci-result","status":"completed","conclusion":"success"}',
+            '{"name":"library-ci-result","status":"completed","conclusion":"success"}',
+            '{"name":"scaffold-ci-result","status":"completed","conclusion":"success"}',
+        ])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate", (result.stdout + result.stderr).lower())
 
     def test_empty_missing_pending_skipped_and_failed_checks_block(self) -> None:
         cases = (

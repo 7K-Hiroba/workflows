@@ -15,6 +15,13 @@ def main() -> int:
     parser.add_argument("--required", action="append", required=True)
     args = parser.parse_args()
     try:
+        required_names = list(args.required)
+        required_set = set(required_names)
+        seen_required = set()
+        for name in required_names:
+            if name in seen_required:
+                raise ValueError(f"ambiguous duplicate required check context: {name}")
+            seen_required.add(name)
         checks: dict[str, dict] = {}
         for line in args.input.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -23,17 +30,18 @@ def main() -> int:
             name = item.get("name")
             if not isinstance(name, str) or not name:
                 raise ValueError("check run has no name")
+            if name not in required_set:
+                continue
             if name in checks:
                 raise ValueError(f"ambiguous duplicate check context: {name}")
             checks[name] = item
-        if not checks:
-            raise ValueError("candidate has no check runs")
-        for name, item in checks.items():
-            if str(item.get("status", "")).lower() != "completed" or str(item.get("conclusion", "")).lower() != "success":
-                raise ValueError(f"check {name} is not completed with success")
-        missing = sorted(set(args.required) - set(checks))
+        missing = sorted(required_set - set(checks))
         if missing:
             raise ValueError(f"missing required check contexts: {', '.join(missing)}")
+        for name in required_names:
+            item = checks[name]
+            if str(item.get("status", "")).lower() != "completed" or str(item.get("conclusion", "")).lower() != "success":
+                raise ValueError(f"check {name} is not completed with success")
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1

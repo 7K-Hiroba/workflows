@@ -78,6 +78,33 @@ def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str)
     return [lanes[name] for name in sorted(lanes)]
 
 
+def runtime_evidence_policy(lanes: list[dict[str, Any]]) -> dict[str, Any]:
+    runtime = next((lane for lane in lanes if lane.get("lane") == "runtime-smoke"), None)
+    if runtime is None:
+        return {}
+    fields = ("targetAdapter", "fixtureOnly", "executableProfiles", "evidenceScope", "appEvidenceEligible")
+    if not any(field in runtime for field in fields):
+        return {}
+    if any(field not in runtime for field in fields):
+        raise ValueError("new runtime-smoke evidence is missing fixture eligibility metadata")
+    fixture = runtime["fixtureOnly"]
+    profiles = runtime["executableProfiles"]
+    scope = runtime["evidenceScope"]
+    eligible = runtime["appEvidenceEligible"]
+    if not isinstance(fixture, bool) or not isinstance(profiles, list) or not all(item in {"ci", "stage", "prod"} for item in profiles):
+        raise ValueError("invalid runtime-smoke fixture/profile metadata")
+    if not isinstance(scope, str) or not isinstance(eligible, bool):
+        raise ValueError("invalid runtime-smoke evidence eligibility metadata")
+    if runtime["targetAdapter"] not in {"helm", "manifests"}:
+        raise ValueError("invalid runtime-smoke target adapter")
+    if fixture:
+        if runtime["targetAdapter"] != "manifests" or profiles != ["ci"] or scope != "fixture" or eligible is not False or runtime.get("targetComponent"):
+            raise ValueError("fixtureOnly runtime evidence must be ci-only, manifest-based, and ineligible as application evidence")
+    elif scope != "application" or eligible is not True:
+        raise ValueError("artifact-bound runtime evidence must be application-scoped and eligible")
+    return {field: runtime[field] for field in fields}
+
+
 def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
     for value in (args.source_sha, args.workflow_sha):
         if not SHA_RE.fullmatch(value):
@@ -87,8 +114,11 @@ def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
     if args.workflow_path not in PRODUCERS:
         raise ValueError(f"unexpected test-evidence producer: {args.workflow_path}")
     ordered = collect_lanes(evidence_dir, set(args.required_lane or []), args.source_sha)
+    policy = runtime_evidence_policy(ordered)
+    if policy.get("fixtureOnly") and args.trust_tier in {"reviewed", "official"} and args.media_type != "application/vnd.inari.smoke.suite.v1+yaml":
+        raise ValueError("fixtureOnly runtime evidence cannot authorize a reviewed or official application artifact")
     evidence_digest = hashlib.sha256(json.dumps(ordered, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return {
+    predicate = {
         "schema": "inari.test-evidence.v1",
         "app": args.app,
         "component": args.component,
@@ -108,6 +138,8 @@ def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
         "evidenceDigest": evidence_digest,
         "finishedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+    predicate.update(policy)
+    return predicate
 
 
 def predicates_from_document(document: Any) -> list[dict[str, Any]]:
@@ -203,6 +235,12 @@ def verify(
                 raise StaleEvidenceError("compat evidence is historical")
         if name in {"browser", "runtime-smoke"} and lane.get("sourceSha", "").lower() != source_sha.lower():
             raise ValueError(f"{name} lane sourceSha mismatch")
+    policy = runtime_evidence_policy(lanes)
+    for field, expected in policy.items():
+        if predicate.get(field) != expected:
+            raise ValueError(f"predicate {field} does not match signed runtime lane evidence")
+    if policy.get("fixtureOnly") and predicate.get("trustTier") in {"reviewed", "official"} and media_type != "application/vnd.inari.smoke.suite.v1+yaml":
+        raise ValueError("fixtureOnly runtime evidence cannot authorize a reviewed or official application artifact")
     missing = sorted(required_lanes - seen)
     if missing:
         raise ValueError(f"missing required predicate lanes: {missing}")

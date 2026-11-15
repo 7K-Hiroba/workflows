@@ -129,6 +129,72 @@ class TrustedEvidenceTests(unittest.TestCase):
         self.output.write_text(json.dumps(predicate))
         self.assertNotEqual(self.verify_output().returncode, 0)
 
+    def write_fixture_lane(self) -> None:
+        (self.evidence / "runtime-smoke.json").write_text(json.dumps({
+            "schema": "inari.lane-result.v1", "lane": "runtime-smoke", "status": "passed", "sourceSha": SOURCE,
+            "targetAdapter": "manifests", "targetComponent": "", "targetVersion": "0.1.0",
+            "fixtureOnly": True, "executableProfiles": ["ci"], "evidenceScope": "fixture", "appEvidenceEligible": False,
+        }))
+
+    def run_fixture_build(self, trust_tier: str = "experimental", app_artifact: bool = False) -> subprocess.CompletedProcess[str]:
+        self.write_fixture_lane()
+        workflow = ".github/workflows/release-oci.yml" if app_artifact else ".github/workflows/release-smoke-suite.yml"
+        repository = "ghcr.io/7k-hiroba/workflows-scaffold/catalog/app" if app_artifact else "ghcr.io/7k-hiroba/workflows-scaffold/smoke/workflows-scaffold-smoke"
+        media_type = "application/vnd.inari.catalog.package.v1+yaml" if app_artifact else "application/vnd.inari.smoke.suite.v1+yaml"
+        tag = "app-v0.1.0" if app_artifact else "workflows-scaffold-smoke-v0.1.0"
+        return subprocess.run([
+            "python3", str(SCRIPT), "--evidence-dir", str(self.evidence), "--output", str(self.output),
+            "--app", "workflows-scaffold", "--component", "app", "--trust-tier", trust_tier,
+            "--source-repository", "7K-Hiroba/workflows-scaffold", "--source-sha", SOURCE, "--workflow-sha", WORKFLOW,
+            "--workflow-path", workflow, "--run-id", "123", "--run-attempt", "1",
+            "--artifact-repository", repository, "--artifact-digest", DIGEST,
+            "--media-type", media_type, "--release-tag", tag,
+            "--required-lane", "validate", "--required-lane", "runtime-smoke",
+        ], text=True, capture_output=True, check=False)
+
+    def verify_fixture(self, app_artifact: bool = False) -> subprocess.CompletedProcess[str]:
+        workflow = ".github/workflows/release-oci.yml" if app_artifact else ".github/workflows/release-smoke-suite.yml"
+        repository = "ghcr.io/7k-hiroba/workflows-scaffold/catalog/app" if app_artifact else "ghcr.io/7k-hiroba/workflows-scaffold/smoke/workflows-scaffold-smoke"
+        media_type = "application/vnd.inari.catalog.package.v1+yaml" if app_artifact else "application/vnd.inari.smoke.suite.v1+yaml"
+        tag = "app-v0.1.0" if app_artifact else "workflows-scaffold-smoke-v0.1.0"
+        return subprocess.run([
+            "python3", str(VERIFY), "--predicate", str(self.output),
+            "--source-repository", "7K-Hiroba/workflows-scaffold", "--source-sha", SOURCE,
+            "--workflow-path", workflow, "--workflow-sha", WORKFLOW,
+            "--artifact-repository", repository, "--artifact-digest", DIGEST, "--media-type", media_type,
+            "--release-tag", tag, "--required-lane", "validate", "--required-lane", "runtime-smoke",
+        ], text=True, capture_output=True, check=False)
+
+    def test_fixture_only_evidence_is_signed_as_ci_only_and_ineligible(self) -> None:
+        result = self.run_fixture_build()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        predicate = json.loads(self.output.read_text())
+        self.assertEqual(predicate["evidenceScope"], "fixture")
+        self.assertFalse(predicate["appEvidenceEligible"])
+        self.assertEqual(predicate["executableProfiles"], ["ci"])
+        verified = self.verify_fixture()
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+
+    def test_fixture_only_cannot_authorize_reviewed_application_evidence(self) -> None:
+        result = self.run_fixture_build(trust_tier="reviewed", app_artifact=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture", (result.stdout + result.stderr).lower())
+        self.assertEqual(self.run_fixture_build(app_artifact=True).returncode, 0)
+        predicate = json.loads(self.output.read_text())
+        predicate["trustTier"] = "reviewed"
+        self.output.write_text(json.dumps(predicate))
+        self.assertNotEqual(self.verify_fixture(app_artifact=True).returncode, 0)
+
+    def test_fixture_only_evidence_rejects_eligibility_tampering(self) -> None:
+        self.assertEqual(self.run_fixture_build().returncode, 0)
+        predicate = json.loads(self.output.read_text())
+        runtime = next(lane for lane in predicate["lanes"] if lane["lane"] == "runtime-smoke")
+        runtime["appEvidenceEligible"] = True
+        import hashlib
+        predicate["evidenceDigest"] = hashlib.sha256(json.dumps(predicate["lanes"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        self.output.write_text(json.dumps(predicate))
+        self.assertNotEqual(self.verify_fixture().returncode, 0)
+
     def test_second_identical_rerun_attestation_is_idempotent(self) -> None:
         self.assertEqual(self.run_build().returncode, 0)
         predicate = json.loads(self.output.read_text())

@@ -188,6 +188,14 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
         self.assertIn('refs/tags/$TAG^{}', repair_text)
 
+    def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
+        release = (WORKFLOWS / "release.yml").read_text()
+        smoke = (WORKFLOWS / "release-smoke-suite.yml").read_text()
+        for text in (release, smoke):
+            self.assertIn('name: runtime-smoke-evidence', text)
+            self.assertIn('cp runtime-smoke-evidence/evidence/runtime-smoke.json evidence/runtime-smoke.json', text)
+        self.assertNotIn('jq -n --arg lane runtime-smoke', smoke)
+
     def test_edge_resolves_standalone_fixture_smoke_version(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()
         self.assertIn('fixture_only=$(jq -r', release)

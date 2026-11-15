@@ -40,6 +40,7 @@ class ScaffoldContractTests(unittest.TestCase):
             "chartless-observability": {"package"},
             "non-plugin-runtime": {"package", "chart", "smoke"},
             "chartless-runtime": {"template", "smoke"},
+            "artifact-bound-runtime": {"package", "smoke"},
         }
         for name, kinds in fixtures.items():
             with self.subTest(name=name):
@@ -52,6 +53,10 @@ class ScaffoldContractTests(unittest.TestCase):
         chartless = yaml.safe_load((ROOT / "tests/fixtures/chartless-observability/.hiroba.yaml").read_text())
         self.assertNotIn("chart", chartless["observability"])
         self.assertFalse((ROOT / "tests/fixtures/chartless-observability/charts").exists())
+        artifact = yaml.safe_load((ROOT / "tests/fixtures/artifact-bound-runtime/tests/smoke/suite.yaml").read_text())
+        self.assertEqual(artifact["target"]["component"], "packages/runtime-fixture")
+        self.assertEqual(artifact["target"]["adapter"]["artifactPath"], "manifests.yaml")
+        self.assertFalse(artifact["target"]["adapter"]["fixtureOnly"])
 
     def test_non_plugin_chart_has_working_nginx_probes_and_writable_state(self) -> None:
         deployment = (ROOT / "tests/fixtures/non-plugin-runtime/charts/hiroba-nonplugin-smoke/templates/deployment.yaml").read_text()
@@ -65,7 +70,7 @@ class ScaffoldContractTests(unittest.TestCase):
     def test_full_matrix_fixture_hosted_lanes_are_wired(self) -> None:
         workflow = yaml.safe_load((ROOT / ".github/workflows/scaffold-ci.yml").read_text())
         roots = {job.get("with", {}).get("root") for job in workflow["jobs"].values()}
-        for name in ("chartless-observability", "non-plugin-runtime", "chartless-runtime"):
+        for name in ("chartless-observability", "non-plugin-runtime", "chartless-runtime", "artifact-bound-runtime"):
             self.assertIn(f"tests/fixtures/{name}", roots)
 
     def test_caller_templates_are_pin_safe(self) -> None:

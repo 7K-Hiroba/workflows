@@ -196,6 +196,16 @@ class WorkflowContractTests(unittest.TestCase):
         manifest_runs = "\n".join(step.get("run", "") for step in workflow["jobs"]["manifests"]["steps"])
         self.assertIn('test-packages.sh', manifest_runs)
 
+    def test_full_matrix_rehearsal_lanes_are_gated_and_wired(self) -> None:
+        rehearsal = yaml.safe_load((WORKFLOWS / "publish-rehearsal.yml").read_text())
+        for name in ("chartless-observability", "nonplugin-helm", "chartless-manifests", "artifact-manifests"):
+            job = rehearsal["jobs"][name]
+            self.assertIn("inputs.mode == 'full'", job["if"])
+            self.assertTrue(job["with"]["rehearsal"])
+            self.assertIn("tests/fixtures/", job["with"]["root"])
+        for job_name in ("chartless-observability", "nonplugin-helm", "chartless-manifests", "artifact-manifests"):
+            self.assertIn(job_name, rehearsal["jobs"]["result"]["needs"])
+
     def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()
         smoke = (WORKFLOWS / "release-smoke-suite.yml").read_text()
@@ -328,6 +338,10 @@ class WorkflowContractTests(unittest.TestCase):
         audit("publish-rehearsal.yml")
         expected_edges = {
             ("publish-rehearsal.yml", "full", "release.yml"),
+            ("publish-rehearsal.yml", "chartless-observability", "release.yml"),
+            ("publish-rehearsal.yml", "nonplugin-helm", "release.yml"),
+            ("publish-rehearsal.yml", "chartless-manifests", "release.yml"),
+            ("publish-rehearsal.yml", "artifact-manifests", "release.yml"),
             ("publish-rehearsal.yml", "reuse-chart", "release-chart.yml"),
             ("release.yml", "validate", "validate-packages.yml"),
             ("release.yml", "packages", "test-packages.yml"),

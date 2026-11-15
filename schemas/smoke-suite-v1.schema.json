@@ -51,9 +51,6 @@
             "required": ["adapter"]
           },
           "then": {
-            "properties": {
-              "adapter": {"required": ["path"]}
-            },
             "allOf": [
               {
                 "if": {
@@ -64,8 +61,14 @@
                     }
                   }
                 },
-                "then": {"not": {"required": ["component"]}},
-                "else": {"required": ["component"]}
+                "then": {
+                  "not": {"required": ["component"]},
+                  "properties": {"adapter": {"required": ["path"]}}
+                },
+                "else": {
+                  "required": ["component"],
+                  "properties": {"adapter": {"required": ["artifactPath"]}}
+                }
               }
             ]
           },

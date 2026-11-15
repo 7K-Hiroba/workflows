@@ -311,9 +311,10 @@ class Validator:
             if "path" in adapter or "artifactPath" in adapter:
                 self.error(suite_path, "helm smoke adapter does not accept manifests paths")
         elif adapter_kind == "manifests":
-            fixture_path = self.safe_path(base_path, adapter.get("path", ""), suite_path)
-            if fixture_path is not None and not fixture_path.is_dir():
-                self.error(suite_path, "manifests smoke adapter path must be an existing directory")
+            if fixture_only or adapter.get("path"):
+                fixture_path = self.safe_path(base_path, adapter.get("path", ""), suite_path)
+                if fixture_path is not None and not fixture_path.is_dir():
+                    self.error(suite_path, "manifests smoke adapter path must be an existing directory")
             if fixture_only and component:
                 self.error(suite_path, "fixtureOnly smoke target must not bind an application component")
             if fixture_only and adapter.get("artifactPath"):

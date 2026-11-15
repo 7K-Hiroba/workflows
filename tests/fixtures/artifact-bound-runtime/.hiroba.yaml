@@ -1,0 +1,10 @@
+schema: inari.hiroba.app.v1
+app: hiroba-artifact-smoke
+trustTier: experimental
+components:
+  chartsRoot: charts
+  packagesRoot: packages
+  templatesRoot: templates
+smoke:
+  path: tests/smoke
+  targetComponent: packages/runtime-fixture

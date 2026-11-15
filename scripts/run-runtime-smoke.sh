@@ -59,7 +59,11 @@ case "$ADAPTER" in
     [[ -n "$TARGET" && -n "$CHART" ]] || { echo "helm smoke requires an existing target chart" >&2; exit 2; }
     ;;
   manifests)
-    [[ -n "$MANIFEST_PATH" ]] || { echo "manifests smoke requires adapter.path" >&2; exit 2; }
+    if [[ "$FIXTURE_ONLY" == true ]]; then
+      [[ -n "$MANIFEST_PATH" ]] || { echo "fixtureOnly manifests smoke requires adapter.path" >&2; exit 2; }
+    else
+      [[ -n "$TARGET" && -n "$ARTIFACT_PATH" ]] || { echo "artifact-bound manifests smoke requires target.component and adapter.artifactPath" >&2; exit 2; }
+    fi
     ;;
   *) echo "unsupported smoke target adapter: $ADAPTER" >&2; exit 2 ;;
 esac
@@ -121,7 +125,16 @@ if [[ "$MODE" == local ]]; then
         --values "$SUITE_DIR/values.yaml" --wait --timeout 5m
       ;;
     manifests)
-      kubectl apply -R -f "$SUITE_DIR/$MANIFEST_PATH"
+      if [[ "$FIXTURE_ONLY" == true ]]; then
+        kubectl apply -R -f "$SUITE_DIR/$MANIFEST_PATH"
+      else
+        ARTIFACT_ROOT=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import confined_path; print(confined_path(Path(sys.argv[1]), sys.argv[3], "adapter.artifactPath"))' "$ROOT/$TARGET" "$LIBRARY/scripts" "$ARTIFACT_PATH")
+        if [[ -d "$ARTIFACT_ROOT" ]]; then
+          kubectl apply -R -f "$ARTIFACT_ROOT"
+        else
+          kubectl apply -f "$ARTIFACT_ROOT"
+        fi
+      fi
       ;;
   esac
 else

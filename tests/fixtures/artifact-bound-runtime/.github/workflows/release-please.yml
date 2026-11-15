@@ -1,0 +1,10 @@
+name: release-please
+on: {push: {branches: [main]}}
+permissions: {contents: read}
+jobs:
+  propose:
+    uses: 7K-Hiroba/workflows/.github/workflows/release-please.yml@f572c5a244e27e4a77589f2730066749c7b51c6b # v1.0.0
+    with: {root: ., app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"}
+    secrets:
+      release-private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}"
+    permissions: {contents: write, pull-requests: write}

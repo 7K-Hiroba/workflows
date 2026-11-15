@@ -181,6 +181,25 @@ def render(root: Path) -> dict[Path, str]:
     return outputs
 
 
+def stale_chart_outputs(root: Path) -> list[Path]:
+    config = load_config(root)
+    observability = config.get("observability")
+    if not isinstance(observability, dict) or observability.get("chart"):
+        return []
+    charts_root = root / relative_path(root, config.get("components", {}).get("chartsRoot", "charts"), "components.chartsRoot")
+    if not charts_root.is_dir():
+        return []
+    stale = []
+    for chart in sorted(charts_root.iterdir()):
+        if not chart.is_dir():
+            continue
+        for relative in ("templates/observability/dashboards.yaml", "templates/observability/rules.yaml", "inari/observability.yaml"):
+            path = chart / relative
+            if path.is_file():
+                stale.append(path)
+    return stale
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -197,6 +216,13 @@ def main() -> int:
         if not args.check:
             path.parent.mkdir(parents=True, exist_ok=True)
         write_if_changed(path, content, args.check, errors)
+    for path in stale_chart_outputs(root):
+        if args.check:
+            errors.append(f"{path.name} is stale after chartless conversion; run the generator without --check")
+        elif path.read_text().startswith(HEADER):
+            path.unlink()
+        else:
+            errors.append(f"{path.name} is stale but no longer carries the generated header; refusing to delete it")
     for error in errors:
         print(f"::error::{error}")
     if errors:

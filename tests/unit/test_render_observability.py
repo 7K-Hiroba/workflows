@@ -94,6 +94,36 @@ class RenderObservabilityTests(unittest.TestCase):
         self.assertFalse((self.root / "charts").exists())
         self.assertFalse((self.root / "packages/observability-pack").exists())
 
+    def test_chartless_regeneration_removes_only_stale_generated_chart_outputs(self) -> None:
+        self.assertEqual(self.run_renderer().returncode, 0)
+        custom = self.root / "charts/workflows-scaffold/templates/observability/custom.yaml"
+        custom.write_text("user-owned\n")
+        unrelated = self.root / "charts/workflows-scaffold/templates/user.yaml"
+        unrelated.write_text("user-owned\n")
+        config = self.root / ".hiroba.yaml"
+        config.write_text(config.read_text().replace("  chart: charts/workflows-scaffold\n", ""))
+
+        result = self.run_renderer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for rel in ("templates/observability/dashboards.yaml", "templates/observability/rules.yaml", "inari/observability.yaml"):
+            self.assertFalse((self.root / "charts/workflows-scaffold" / rel).exists(), rel)
+        self.assertEqual(custom.read_text(), "user-owned\n")
+        self.assertEqual(unrelated.read_text(), "user-owned\n")
+        self.assertTrue((self.root / "packages/observability-pack/rgd.yaml").is_file())
+
+    def test_chartless_check_rejects_stale_outputs_without_deleting(self) -> None:
+        self.assertEqual(self.run_renderer().returncode, 0)
+        config = self.root / ".hiroba.yaml"
+        config.write_text(config.read_text().replace("  chart: charts/workflows-scaffold\n", ""))
+        stale = self.root / "charts/workflows-scaffold/inari/observability.yaml"
+
+        result = self.run_renderer("--check")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale", result.stdout + result.stderr)
+        self.assertTrue(stale.exists())
+
     def test_missing_canonical_asset_fails(self) -> None:
         (self.root / "observability/dashboards/overview.json").unlink()
         result = self.run_renderer()

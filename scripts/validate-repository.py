@@ -219,6 +219,13 @@ class Validator:
             chart = self.safe_path(self.root, chart_setting, self.root / ".hiroba.yaml")
             if chart is not None and not (chart / "Chart.yaml").is_file():
                 self.error(self.root / ".hiroba.yaml", "observability.chart must reference a chart with Chart.yaml")
+        else:
+            charts_root = self.safe_path(self.root, config.get("components", {}).get("chartsRoot", "charts"), self.root / ".hiroba.yaml")
+            if charts_root is not None and charts_root.is_dir():
+                for chart in charts_root.iterdir():
+                    for relative in ("templates/observability/dashboards.yaml", "templates/observability/rules.yaml", "inari/observability.yaml"):
+                        if (chart / relative).is_file():
+                            self.error(chart / relative, "stale generated chart output after chartless conversion")
         base_path = self.safe_path(self.root, settings.get("path", ""), self.root / ".hiroba.yaml")
         if base_path is None:
             return

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,7 +13,29 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/release-chart.sh"
-DIGEST = "sha256:" + "e" * 64
+PACKAGE_CONTENT = b"deterministic chart package"
+CONFIG_CONTENT = b"{}"
+OTHER_CONTENT = b"different chart package"
+CONTENT_MEDIA = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+MANIFEST_MEDIA = "application/vnd.oci.image.manifest.v1+json"
+INDEX_MEDIA = "application/vnd.oci.image.index.v1+json"
+CONTENT_DIGEST = hashlib.sha256(PACKAGE_CONTENT).hexdigest()
+CONFIG_DIGEST = hashlib.sha256(CONFIG_CONTENT).hexdigest()
+OTHER_DIGEST = hashlib.sha256(OTHER_CONTENT).hexdigest()
+CONTENT_LAYER = {"mediaType": CONTENT_MEDIA, "digest": "sha256:" + CONTENT_DIGEST, "size": len(PACKAGE_CONTENT)}
+
+
+def chart_manifest(layers: list[dict[str, object]]) -> bytes:
+    return json.dumps({
+        "schemaVersion": 2,
+        "mediaType": MANIFEST_MEDIA,
+        "config": {"mediaType": "application/vnd.cncf.helm.config.v1+json", "digest": "sha256:" + CONFIG_DIGEST, "size": len(CONFIG_CONTENT)},
+        "layers": layers,
+    }, sort_keys=True, separators=(",", ":")).encode()
+
+
+MANIFEST = chart_manifest([CONTENT_LAYER])
+DIGEST = "sha256:" + hashlib.sha256(MANIFEST).hexdigest()
 
 
 class ReleaseChartTests(unittest.TestCase):
@@ -26,6 +50,8 @@ class ReleaseChartTests(unittest.TestCase):
         self.log = self.root / "calls.log"
         self.state = self.root / "state"
         self.package = self.root / "package.tgz"
+        self.oci_source = self.root / "oci-source"
+        self.write_layout()
         crane = self.bin / "crane"
         crane.write_text("""#!/usr/bin/env bash
 set -e
@@ -76,25 +102,33 @@ esac
         oras.write_text("""#!/usr/bin/env bash
 set -e
 echo oras \"$@\" >> \"$CALL_LOG\"
-if [[ \"$1\" == pull ]]; then
+if [[ \"$1\" == copy ]]; then
+  dest=\"\"
+  while [[ $# -gt 0 ]]; do if [[ \"$1\" == --to-oci-layout ]]; then dest=$2; shift 2; else shift; fi; done
+  mkdir -p \"$dest\"
+  cp -R \"$OCI_SOURCE/.\" \"$dest/\"
+  if [[ -n \"$TAMPER\" ]]; then echo tampered > \"$dest/blobs/sha256/$CONTENT_DIGEST\"; fi
+elif [[ \"$1\" == pull ]]; then
   dest=\"\"
   while [[ $# -gt 0 ]]; do if [[ \"$1\" == --output ]]; then dest=$2; shift 2; else shift; fi; done
   mkdir -p \"$dest\"
-  version=$(cat \"$CHART_VERSION_STATE\")
-  if [[ -n \"$TAMPER\" ]]; then echo tampered > \"$dest/example-$version.tgz\"; else cp \"$PACKAGE_SOURCE\" \"$dest/example-$version.tgz\"; fi
+  cp \"$OCI_SOURCE/index.json\" \"$dest/index.json\"
+  echo 'Skipped pulling layers without file name in org.opencontainers.image.title'
 fi
 """)
         crane.chmod(0o755)
         helm.chmod(0o755)
         oras.chmod(0o755)
-        self.package.write_text("deterministic chart package")
+        self.package.write_bytes(PACKAGE_CONTENT)
         self.env = {
             **os.environ,
             "PATH": str(self.bin) + ":" + os.environ["PATH"],
             "CALL_LOG": str(self.log),
             "STATE": str(self.state),
-            "FAKE_DIGEST": DIGEST,
+            "FAKE_DIGEST": self.digest,
             "PACKAGE_SOURCE": str(self.package),
+            "OCI_SOURCE": str(self.oci_source),
+            "CONTENT_DIGEST": CONTENT_DIGEST,
             "TAMPER": "",
             "CHART_CAPTURE": "",
             "CHART_VERSION_STATE": str(self.root / "chart-version"),
@@ -105,6 +139,36 @@ fi
 
     def tearDown(self) -> None:
         self.temp.cleanup()
+
+    def write_layout(self, mode: str = "default") -> None:
+        other_layer = {"mediaType": CONTENT_MEDIA, "digest": "sha256:" + OTHER_DIGEST, "size": len(OTHER_CONTENT)}
+        layers = {
+            "default": [CONTENT_LAYER],
+            "missing": [dict(CONTENT_LAYER, mediaType="application/octet-stream")],
+            "ambiguous": [CONTENT_LAYER, other_layer],
+        }[mode]
+        self.manifest = chart_manifest(layers)
+        self.digest = "sha256:" + hashlib.sha256(self.manifest).hexdigest()
+        if self.oci_source.exists():
+            shutil.rmtree(self.oci_source)
+        files = {
+            "oci-layout": json.dumps({"imageLayoutVersion": "1.0.0"}).encode(),
+            "index.json": json.dumps({
+                "schemaVersion": 2,
+                "mediaType": INDEX_MEDIA,
+                "manifests": [{"mediaType": MANIFEST_MEDIA, "digest": self.digest, "size": len(self.manifest)}],
+            }).encode(),
+            "blobs/sha256/" + self.digest.removeprefix("sha256:"): self.manifest,
+            "blobs/sha256/" + CONFIG_DIGEST: CONFIG_CONTENT,
+            "blobs/sha256/" + CONTENT_DIGEST: PACKAGE_CONTENT,
+            "blobs/sha256/" + OTHER_DIGEST: OTHER_CONTENT,
+        }
+        for name, data in files.items():
+            path = self.oci_source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        if hasattr(self, "env"):
+            self.env["FAKE_DIGEST"] = self.digest
 
     def run_chart(self, repair: bool = False, channel: str = "") -> subprocess.CompletedProcess[str]:
         args = ["bash", str(SCRIPT), "--root", str(self.root), "--chart", "example", "--version", "0.1.0", "--repository-base", "ghcr.io/7k-hiroba/app/charts", "--source-sha", "f" * 40, "--output", str(self.root / "artifact.json"), "--channel", channel]
@@ -120,6 +184,36 @@ fi
         calls = self.log.read_text()
         self.assertIn("helm push", calls)
         self.assertIn(f"ghcr.io/7k-hiroba/app/charts/example@{DIGEST}", calls)
+
+    def test_exact_digest_layout_copy_compares_content_without_title(self) -> None:
+        result = self.run_chart()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("org.opencontainers.image.title", self.manifest.decode())
+        calls = self.log.read_text()
+        self.assertIn(f"oras copy ghcr.io/7k-hiroba/app/charts/example@{DIGEST} --to-oci-layout", calls)
+        script = SCRIPT.read_text()
+        self.assertNotIn("oras pull", script)
+        self.assertIn('cmp "$PACKAGE" "$CHART_BLOB"', script)
+
+    def test_rejects_missing_and_ambiguous_chart_content_layers(self) -> None:
+        for mode in ("missing", "ambiguous"):
+            with self.subTest(mode=mode):
+                self.write_layout(mode)
+                self.state.unlink(missing_ok=True)
+                self.log.unlink(missing_ok=True)
+                result = self.run_chart()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exactly one Helm chart content layer", result.stdout + result.stderr)
+
+    def test_rejects_wrong_manifest_digest(self) -> None:
+        index_path = self.oci_source / "index.json"
+        index = json.loads(index_path.read_text())
+        index["manifests"][0]["digest"] = "sha256:" + "d" * 64
+        index_path.write_text(json.dumps(index))
+        result = self.run_chart()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("digest", (result.stdout + result.stderr).lower())
+        self.assertFalse((self.root / "artifact.json").exists())
 
     def test_crane_login_precedes_every_digest_without_token_output(self) -> None:
         result = self.run_chart()
@@ -159,12 +253,12 @@ fi
         self.assertNotEqual(legacy.returncode, 0, legacy.stdout + legacy.stderr)
         self.assertIn('unknown command "login"', legacy.stdout + legacy.stderr)
 
-    def test_new_chart_tampered_exact_digest_pull_fails(self) -> None:
+    def test_new_chart_tampered_exact_digest_layout_copy_fails(self) -> None:
         self.env["TAMPER"] = "yes"
         result = self.run_chart()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("helm push", self.log.read_text())
-        self.assertIn("oras pull", self.log.read_text())
+        self.assertIn("oras copy", self.log.read_text())
         self.assertFalse((self.root / "artifact.json").exists())
 
     def test_existing_identical_chart_is_reused(self) -> None:

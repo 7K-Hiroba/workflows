@@ -74,8 +74,77 @@ crane_login
 RESOLVED=$(crane digest "$REPOSITORY:$VERSION")
 [[ "$RESOLVED" == "$DIGEST" ]] || { echo "chart digest mismatch after publish" >&2; exit 1; }
 mkdir -p "$WORK/exact"
-oras pull --output "$WORK/exact" "$REPOSITORY@$DIGEST"
-cmp "$PACKAGE" "$WORK/exact/$CHART-$VERSION.tgz" || { echo "packaged chart differs for $REPOSITORY@$DIGEST" >&2; exit 1; }
+oras copy "$REPOSITORY@$DIGEST" --to-oci-layout "$WORK/exact"
+CHART_BLOB=$(${HIROBA_PYTHON:-python3} - "$WORK/exact" "$DIGEST" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+expected = sys.argv[2].lower()
+content_media = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+manifest_media = "application/vnd.oci.image.manifest.v1+json"
+index_media = "application/vnd.oci.image.index.v1+json"
+
+
+def blob(descriptor):
+    if not isinstance(descriptor, dict):
+        raise ValueError("invalid OCI descriptor")
+    digest = descriptor.get("digest", "")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise ValueError("invalid or unsafe OCI blob digest")
+    path = root / "blobs" / "sha256" / digest.removeprefix("sha256:")
+    if not path.is_file():
+        raise ValueError("OCI blob is missing")
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != digest.removeprefix("sha256:"):
+        raise ValueError("OCI blob digest mismatch")
+    return data, path
+
+
+def load_document(descriptor, media_type):
+    data, _ = blob(descriptor)
+    document = json.loads(data)
+    if document.get("schemaVersion") != 2 or document.get("mediaType") != media_type:
+        raise ValueError("invalid OCI index/manifest chain")
+    return document
+
+
+def only_descriptor(document):
+    manifests = document.get("manifests")
+    if not isinstance(manifests, list) or len(manifests) != 1:
+        raise ValueError("expected exactly one OCI manifest descriptor")
+    return manifests[0]
+
+
+index = json.loads((root / "index.json").read_bytes())
+if index.get("schemaVersion") != 2 or index.get("mediaType", index_media) != index_media:
+    raise ValueError("invalid OCI layout index")
+descriptor = only_descriptor(index)
+if not isinstance(descriptor, dict) or descriptor.get("digest", "").lower() != expected:
+    raise ValueError("layout root digest does not match requested exact digest")
+while True:
+    media_type = descriptor.get("mediaType")
+    if media_type == index_media:
+        descriptor = only_descriptor(load_document(descriptor, index_media))
+        continue
+    if media_type != manifest_media:
+        raise ValueError("unexpected media type in OCI index/manifest chain")
+    manifest = load_document(descriptor, manifest_media)
+    layers = manifest.get("layers")
+    if not isinstance(layers, list):
+        raise ValueError("invalid Helm chart layer list")
+    selected = [layer for layer in layers if isinstance(layer, dict) and layer.get("mediaType") == content_media]
+    if len(selected) != 1:
+        raise ValueError("expected exactly one Helm chart content layer")
+    _, chart_blob = blob(selected[0])
+    print(chart_blob)
+    break
+PY
+)
+cmp "$PACKAGE" "$CHART_BLOB" || { echo "packaged chart differs for $REPOSITORY@$DIGEST" >&2; exit 1; }
 mkdir -p "$(dirname "$OUTPUT")"
 jq -n --arg repository "$REPOSITORY" --arg digest "$DIGEST" --arg sourceSha "$SOURCE_SHA" --arg tag "$VERSION" --arg releaseTag "$TAG" --arg channel "$CHANNEL" \
   '{repository:$repository,digest:$digest,ref:($repository+"@"+$digest),mediaType:"application/vnd.cncf.helm.chart.v1",sourceSha:$sourceSha,tag:$tag,releaseTag:$releaseTag,channel:$channel,signature:{verified:false},provenance:{verified:false},testEvidence:{status:"pending"}}' > "$OUTPUT"

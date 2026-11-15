@@ -107,7 +107,7 @@ def blob(descriptor):
 def load_document(descriptor, media_type):
     data, _ = blob(descriptor)
     document = json.loads(data)
-    if document.get("schemaVersion") != 2 or document.get("mediaType") != media_type:
+    if document.get("schemaVersion") != 2 or document.get("mediaType", media_type) != media_type:
         raise ValueError("invalid OCI index/manifest chain")
     return document
 

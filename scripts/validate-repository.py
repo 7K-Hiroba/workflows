@@ -284,9 +284,35 @@ class Validator:
             return
         self.validate_schema(suite, "smoke-suite-v1.schema.json", suite_path)
         target = suite.get("target") if isinstance(suite.get("target"), dict) else {}
-        if target.get("component") != settings.get("targetComponent"):
+        component = target.get("component")
+        if component != settings.get("targetComponent"):
             self.error(suite_path, "target.component must match .hiroba.yaml smoke.targetComponent")
-        self.safe_path(self.root, target.get("component", ""), suite_path)
+        if isinstance(component, str) and component:
+            component_path = self.safe_path(self.root, component, suite_path)
+            if component_path is not None and not component_path.is_dir():
+                self.error(suite_path, "target.component must reference an existing component")
+        adapter = target.get("adapter") if isinstance(target.get("adapter"), dict) else {"kind": "helm"}
+        adapter_kind = adapter.get("kind")
+        fixture_only = adapter.get("fixtureOnly") is True
+        if adapter_kind == "helm":
+            if not component:
+                self.error(suite_path, "helm smoke target requires target.component")
+            if fixture_only:
+                self.error(suite_path, "helm smoke target cannot be fixtureOnly")
+            if "path" in adapter:
+                self.error(suite_path, "helm smoke adapter does not accept path")
+        elif adapter_kind == "manifests":
+            fixture_path = self.safe_path(base_path, adapter.get("path", ""), suite_path)
+            if fixture_path is not None and not fixture_path.is_dir():
+                self.error(suite_path, "manifests smoke adapter path must be an existing directory")
+            if fixture_only and component:
+                self.error(suite_path, "fixtureOnly smoke target must not bind an application component")
+            if not fixture_only and not component:
+                self.error(suite_path, "artifact-bound manifests smoke target requires target.component")
+        else:
+            self.error(suite_path, "smoke target adapter kind must be helm or manifests")
+        if fixture_only and suite.get("executableProfiles") != ["ci"]:
+            self.error(suite_path, "fixtureOnly smoke requires executableProfiles: [ci]")
         if not SEMVER.fullmatch(str(target.get("version", ""))):
             self.error(suite_path, "target.version must be SemVer")
         profiles = suite.get("profiles") if isinstance(suite.get("profiles"), dict) else {}

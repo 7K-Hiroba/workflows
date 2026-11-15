@@ -200,6 +200,40 @@ spec:
     write(root, "ci/compatibility-matrix.json", json.dumps({"schema": "inari.compat.v1", "entries": []}))
 
 
+def use_fixture_only_smoke(root: Path) -> None:
+    config = root / ".hiroba.yaml"
+    config.write_text(config.read_text().replace("  targetComponent: charts/workflows-scaffold\n", ""))
+    suite = root / "tests/smoke/suite.yaml"
+    suite.write_text(suite.read_text().replace(
+        "target: {id: workflows-scaffold, version: 0.1.0, component: charts/workflows-scaffold}",
+        """target:
+  id: workflows-scaffold-smoke
+  version: 0.1.0
+  adapter:
+    kind: manifests
+    path: fixtures/app
+    fixtureOnly: true
+    readiness:
+      - {kind: Deployment, name: workflows-scaffold-fixture, namespace: default, condition: Available}
+executableProfiles: [ci]""",
+    ))
+    write(
+        root,
+        "tests/smoke/fixtures/app/deployment.yaml",
+        """apiVersion: apps/v1
+kind: Deployment
+metadata: {name: workflows-scaffold-fixture}
+spec:
+  template:
+    spec:
+      containers:
+        - name: fixture
+          image: ghcr.io/7k-hiroba/fixture@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          securityContext: {runAsNonRoot: true}
+""",
+    )
+
+
 class ValidateRepositoryTests(unittest.TestCase):
     def run_validation(self, mutate=None, registry: bool = True) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -217,6 +251,28 @@ class ValidateRepositoryTests(unittest.TestCase):
     def test_valid_repository_passes(self) -> None:
         result = self.run_validation()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_fixture_only_manifests_smoke_is_valid_and_ci_only(self) -> None:
+        result = self.run_validation(use_fixture_only_smoke)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_fixture_only_smoke_rejects_stage_or_prod_execution(self) -> None:
+        def stage_eligible(root: Path) -> None:
+            use_fixture_only_smoke(root)
+            suite = root / "tests/smoke/suite.yaml"
+            suite.write_text(suite.read_text().replace("executableProfiles: [ci]", "executableProfiles: [ci, stage]"))
+        result = self.run_validation(stage_eligible)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("executableProfiles", result.stdout + result.stderr)
+
+    def test_fixture_only_smoke_rejects_an_artifact_component(self) -> None:
+        def artifact_bound(root: Path) -> None:
+            use_fixture_only_smoke(root)
+            suite = root / "tests/smoke/suite.yaml"
+            suite.write_text(suite.read_text().replace("  version: 0.1.0\n  adapter:", "  version: 0.1.0\n  component: charts/workflows-scaffold\n  adapter:"))
+        result = self.run_validation(artifact_bound)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture", (result.stdout + result.stderr).lower())
 
     def test_chartless_observability_passes_without_chart_config_or_outputs(self) -> None:
         def chartless(root: Path) -> None:

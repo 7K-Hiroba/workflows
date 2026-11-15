@@ -34,7 +34,7 @@
     "smoke": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "targetComponent"],
+      "required": ["path"],
       "properties": {"path": {"type": "string"}, "targetComponent": {"type": "string"}}
     },
     "compatibility": {

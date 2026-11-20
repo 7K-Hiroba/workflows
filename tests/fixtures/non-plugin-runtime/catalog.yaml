@@ -2,14 +2,14 @@
 apiVersion: inari.dev/v1alpha1
 kind: CatalogIndex
 packages:
-- name: hiroba-nonplugin-smoke
+- name: hiroba-nonplugin-package
   version: 0.1.0
   channel: incubating
   type: platform-app
   description: First-party chart package used by the workflow scaffold
   category: test
-  ociRef: ghcr.io/7k-hiroba/hiroba-nonplugin-smoke/catalog/hiroba-nonplugin-smoke:0.1.0
-  channelRef: ghcr.io/7k-hiroba/hiroba-nonplugin-smoke/catalog/hiroba-nonplugin-smoke:incubating
+  ociRef: ghcr.io/7k-hiroba/hiroba-nonplugin-smoke/catalog/hiroba-nonplugin-package:0.1.0
+  channelRef: ghcr.io/7k-hiroba/hiroba-nonplugin-smoke/catalog/hiroba-nonplugin-package:incubating
   observability:
     package: observability-pack
     versionRange: '>=0.1.0 <2.0.0'

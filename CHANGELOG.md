@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0](https://github.com/7K-Hiroba/workflows/compare/v1.0.0...v1.1.0) (2026-11-20)
+
+
+### Features
+
+* add v2 observability producer contract ([#31](https://github.com/7K-Hiroba/workflows/issues/31)) ([7ecf629](https://github.com/7K-Hiroba/workflows/commit/7ecf629dd02c9acca82878c6487a3560025e0411))
+* support full-matrix Hiroba scaffolds ([3406716](https://github.com/7K-Hiroba/workflows/commit/340671634ca6ea56fbeca54bacd7e18f5135c49b))
+
+
+### Bug Fixes
+
+* create GitHub release inside consumer repository ([8f9bb9f](https://github.com/7K-Hiroba/workflows/commit/8f9bb9f4b42b4a7a6a7ab327e38c9a0a8cc21c22))
+* create GitHub release inside consumer repository ([0813e95](https://github.com/7K-Hiroba/workflows/commit/0813e9542c6347e174019d7f406c75b06038c220))
+* create release evidence directory before runtime copy ([7bc0b00](https://github.com/7K-Hiroba/workflows/commit/7bc0b003994714c5e85f75bbd1afc1db969461c8))
+* default fixture runtime evidence to ineligible ([#35](https://github.com/7K-Hiroba/workflows/issues/35)) ([f92f591](https://github.com/7K-Hiroba/workflows/commit/f92f591ca6eb515b46b3b6d284b739a5011aff99))
+* grant artifact metadata writes to attestation jobs ([#32](https://github.com/7K-Hiroba/workflows/issues/32)) ([e9f81b3](https://github.com/7K-Hiroba/workflows/commit/e9f81b3d9250cc67f7e0c69772eb1a3840b8c0db))
+* publish chartless rehearsal package chain ([#33](https://github.com/7K-Hiroba/workflows/issues/33)) ([c3bdc1e](https://github.com/7K-Hiroba/workflows/commit/c3bdc1e715391a8c66d599ce32356e6ea071e169))
+* separate non-plugin package release identity ([#34](https://github.com/7K-Hiroba/workflows/issues/34)) ([265b13e](https://github.com/7K-Hiroba/workflows/commit/265b13ee8f2adcd496da101ec99d4c9bd8e4f93c))
+
 ## [1.0.0](https://github.com/7K-Hiroba/workflows/releases/tag/v1.0.0) (2026-11-15)
 
 

@@ -293,7 +293,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["edge-release"]["if"])
 
     def test_publish_rehearsal_permission_chain_is_complete_and_scoped(self) -> None:
-        approved = {"contents": "write", "actions": "read", "packages": "write", "id-token": "write", "attestations": "write"}
+        approved = {"contents": "write", "actions": "read", "packages": "write", "id-token": "write", "attestations": "write", "artifact-metadata": "write"}
         access_level = {"none": 0, "read": 1, "write": 2}
         workflows = {path.name: yaml.safe_load(path.read_text()) for path in WORKFLOWS.glob("*.yml")}
         required_cache = {}
@@ -371,6 +371,23 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(workflows["release.yml"]["permissions"], approved)
         self.assertEqual(workflows["publish-rehearsal.yml"]["jobs"]["reuse-chart"]["permissions"]["contents"], "read")
+
+    def test_attestation_writers_have_artifact_metadata_permission(self) -> None:
+        expected = {
+            "release.yml": [("permissions", None)],
+            "release-oci.yml": [("jobs", "publish")],
+            "release-chart.yml": [("jobs", "publish")],
+            "release-extension.yml": [("jobs", "backend"), ("jobs", "ui")],
+            "release-smoke-suite.yml": [("jobs", "publish")],
+            "publish-rehearsal.yml": [("jobs", "full"), ("jobs", "reuse-chart")],
+            "edge.yml": [("jobs", "release")],
+        }
+        for workflow_name, selectors in expected.items():
+            workflow = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
+            for kind, name in selectors:
+                permissions = workflow if kind == "permissions" else workflow["jobs"][name]
+                with self.subTest(workflow=workflow_name, job=name):
+                    self.assertEqual(permissions.get("permissions", {}).get("artifact-metadata"), "write")
 
     def test_release_mutations_are_serialized_per_consumer_without_cancellation(self) -> None:
         paths = [

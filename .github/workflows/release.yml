@@ -190,6 +190,7 @@ jobs:
           HAS_SMOKE: "${{ needs.plan.outputs.has-smoke }}"
         run: |
           set -euo pipefail
+          mkdir -p evidence
           args=(--evidence-dir evidence --source-sha "${{ needs.plan.outputs.source-sha }}" --required-lanes "${{ needs.plan.outputs.required-lanes }}" --lane "validate=${VALIDATE:-failure}")
           [[ "$HAS_PACKAGES" != true ]] || args+=(--lane "package=${PACKAGES:-failure}")
           [[ "$HAS_EXTENSION" != true ]] || args+=(--lane "go=${GO:-failure}")

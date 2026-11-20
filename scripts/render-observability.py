@@ -122,12 +122,16 @@ def render_pack(app: str, manifest: dict[str, Any], dashboards: list[tuple[dict[
             "metadata": {"name": "${schema.spec.app}-" + evaluation, "namespace": "${schema.spec.namespace}"},
             "spec": {"groups": content.get("groups", [])},
         }
-        include = f'${{schema.spec.render == "all" || schema.spec.render == "rules-{evaluation}"}}'
+        boolean = "rulesCentral" if evaluation == "central" else "rulesLocal"
+        include = f'${{(schema.spec.render == "all" || schema.spec.render == "rules-{evaluation}") && schema.spec.{boolean}}}'
         resources.append(pack_resource(kro_resource_id("rules", evaluation), template, include))
     rgd = {
         "apiVersion": "kro.run/v1alpha1",
         "kind": "ResourceGraphDefinition",
-        "metadata": {"name": app + "-observability"},
+        "metadata": {
+            "name": app + "-observability",
+            "annotations": {"inari.dev/observability-render-contract": "inari.observability-pack/v2"},
+        },
         "spec": {
             "schema": {
                 "apiVersion": "v1alpha1",
@@ -178,6 +182,14 @@ def render(root: Path) -> dict[Path, str]:
             outputs[chart / "templates/observability/rules.yaml"] = chart_rules(app, combined)
         outputs[chart / "inari/observability.yaml"] = HEADER + dump_document(manifest)
     outputs[pack / "rgd.yaml"] = render_pack(app, manifest, dashboards, rules)
+    packages_root = root / relative_path(root, config.get("components", {}).get("packagesRoot", "packages"), "components.packagesRoot")
+    if packages_root.is_dir():
+        for package_dir in sorted(packages_root.iterdir()):
+            if not package_dir.is_dir() or not (package_dir / "package.yaml").is_file():
+                continue
+            package_manifest = yaml.safe_load((package_dir / "package.yaml").read_text())
+            if isinstance(package_manifest, dict) and isinstance(package_manifest.get("observability"), dict):
+                outputs[package_dir / "observability.yaml"] = HEADER + dump_document(manifest)
     return outputs
 
 

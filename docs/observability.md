@@ -2,7 +2,9 @@
 
 Canonical assets live in `observability/`. Dashboard UIDs are `<app>-<slug>` and use templated `${DS_*}` datasource variables. Rules declare local/central evaluation and promtool tests. Scrape topology stays in charts/RGDs, not canonical observability assets.
 
-`render-observability.py` always generates the KRO observability-pack. When `observability.chart` is set, it also generates that chart's ConfigMaps/PrometheusRules and `inari/observability.yaml` capability metadata. Omitting `chart` produces no chart files or directories; the pack remains available for the approved central/local companion path. A configured chart must contain `Chart.yaml`.
+`render-observability.py` always generates the KRO observability-pack and full `observability.yaml` in every package that declares observability. When `observability.chart` is set, it also generates that chart's ConfigMaps/PrometheusRules and `inari/observability.yaml` capability metadata. Omitting `chart` produces no chart files or directories; the pack and signed package metadata remain available for the approved central/local companion path. A configured chart must contain `Chart.yaml`.
+
+The pack declares `metadata.annotations[inari.dev/observability-render-contract]=inari.observability-pack/v2`. Dashboards require `render=all|dashboards`; each rule group requires its evaluation's render selection AND `rulesCentral`/`rulesLocal`. Component templates may add a confined `observability.manifest` declaration and the exact manifest bytes. GitOps-repo templates and nonexistent/traversing manifests are rejected.
 
 PR validation uses `--check` and fails without writing or creating directories on drift. Removing `observability.chart` makes validation reject stale generated chart outputs; regeneration removes only the three known generated files and preserves unrelated chart content. Release rebuilds and verifies packaged output. Existing chart-backed output is unchanged.
 

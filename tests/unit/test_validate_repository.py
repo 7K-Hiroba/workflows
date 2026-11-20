@@ -108,7 +108,9 @@ spec:
                 f"packages/{name}/rgd.yaml",
                 """apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
-metadata: {name: observability-pack}
+metadata:
+  name: observability-pack
+  annotations: {inari.dev/observability-render-contract: inari.observability-pack/v2}
 spec:
   schema:
     apiVersion: v1alpha1
@@ -255,6 +257,109 @@ class ValidateRepositoryTests(unittest.TestCase):
     def test_valid_repository_passes(self) -> None:
         result = self.run_validation()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_rejects_legacy_observability_pack_contract(self) -> None:
+        def legacy(root: Path) -> None:
+            rgd = root / "packages/observability-pack/rgd.yaml"
+            rgd.write_text(rgd.read_text().replace("inari.observability-pack/v2", "inari.observability-pack/v1"))
+        result = self.run_validation(legacy)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("inari.observability-pack/v2", result.stdout + result.stderr)
+
+    def test_rejects_ambiguous_v2_rule_gates(self) -> None:
+        def ambiguous(root: Path) -> None:
+            rgd = root / "packages/observability-pack/rgd.yaml"
+            rgd.write_text(rgd.read_text() + '''  - id: rulesCentral
+    template:
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      metadata: {name: workflows-scaffold-central}
+    includeWhen: [${schema.spec.render == "all"}]
+''')
+        result = self.run_validation(ambiguous)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("rulesCentral", result.stdout + result.stderr)
+
+    def test_rule_include_when_requires_exact_canonical_form(self) -> None:
+        for evaluation, boolean in (("central", "rulesCentral"), ("local", "rulesLocal")):
+            resource_id = "rules" + evaluation.capitalize()
+            invalid_expressions = (
+                f'${{schema.spec.render == "rules-{evaluation}" || schema.spec.{boolean}}}',
+                f'${{schema.spec.render == "dashboards" && schema.spec.{boolean}}}',
+                f'${{schema.spec.render == "rules-{evaluation}" && schema.spec.{boolean}}}',
+            )
+            for expression in invalid_expressions:
+                with self.subTest(evaluation=evaluation, expression=expression):
+                    def invalid(root: Path, expression=expression, resource_id=resource_id) -> None:
+                        rgd_path = root / "packages/observability-pack/rgd.yaml"
+                        document = yaml.safe_load(rgd_path.read_text())
+                        document["spec"]["resources"].append({
+                            "id": resource_id,
+                            "template": {
+                                "apiVersion": "monitoring.coreos.com/v1",
+                                "kind": "PrometheusRule",
+                                "metadata": {"name": f"workflows-scaffold-{evaluation}"},
+                            },
+                            "includeWhen": [expression],
+                        })
+                        rgd_path.write_text(yaml.safe_dump(document, sort_keys=False))
+                    result = self.run_validation(invalid)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(boolean, result.stdout + result.stderr)
+
+    def test_canonical_rule_include_when_is_valid(self) -> None:
+        def canonical(root: Path) -> None:
+            rgd_path = root / "packages/observability-pack/rgd.yaml"
+            document = yaml.safe_load(rgd_path.read_text())
+            for evaluation, boolean in (("central", "rulesCentral"), ("local", "rulesLocal")):
+                resource_id = "rules" + evaluation.capitalize()
+                expression = f'${{(schema.spec.render == "all" || schema.spec.render == "rules-{evaluation}") && schema.spec.{boolean}}}'
+                document["spec"]["resources"].append({
+                    "id": resource_id,
+                    "template": {
+                        "apiVersion": "monitoring.coreos.com/v1",
+                        "kind": "PrometheusRule",
+                        "metadata": {"name": f"workflows-scaffold-{evaluation}"},
+                    },
+                    "includeWhen": [expression],
+                })
+            rgd_path.write_text(yaml.safe_dump(document, sort_keys=False))
+        result = self.run_validation(canonical)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_observability_package_requires_full_metadata(self) -> None:
+        def missing_metadata(root: Path) -> None:
+            package = root / "packages/app/package.yaml"
+            package.write_text(package.read_text() + "observability:\n  package: observability-pack\n  versionRange: '>=0.1.0 <2.0.0'\n")
+        result = self.run_validation(missing_metadata)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("observability.yaml", result.stdout + result.stderr)
+
+    def test_component_template_observability_manifest_is_valid(self) -> None:
+        def component(root: Path) -> None:
+            template = root / "templates/service/template.yaml"
+            template.write_text(template.read_text() + "observability:\n  manifest: observability/observability.yaml\n")
+            write(root, "templates/service/observability/observability.yaml", "apiVersion: inari.dev/v1alpha1\nkind: Observability\napp: workflows-scaffold\nfolder: workflows-scaffold\ndatasources: {prometheus: '${DS_PROMETHEUS}'}\ndashboards: [{title: Overview, uid: workflows-scaffold-overview, file: dashboards/overview.json}]\nrules: [{file: rules/app.yaml, evaluation: central}]\ntargets: [central, local]\nseverityRouting: {critical: platform-security}\nminimumAppVersion: '>=0.1.0 <2.0.0'\nobservabilityPack: {package: observability-pack, versionRange: '>=0.1.0 <2.0.0'}\n")
+            write(root, "templates/service/observability/dashboards/overview.json", json.dumps({"uid": "workflows-scaffold-overview", "title": "Overview", "panels": [{"datasource": {"uid": "${DS_PROMETHEUS}"}}]}))
+        result = self.run_validation(component)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_template_observability_declaration_must_be_component_and_confined(self) -> None:
+        def invalid(root: Path) -> None:
+            template = root / "templates/service/template.yaml"
+            template.write_text(template.read_text().replace("kind: component", "kind: gitops-repo") + "observability:\n  manifest: observability/observability.yaml\n")
+            write(root, "templates/service/observability/observability.yaml", "kind: Observability\n")
+        result = self.run_validation(invalid)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("component", (result.stdout + result.stderr).lower())
+
+    def test_template_observability_manifest_must_exist_inside_template(self) -> None:
+        def invalid(root: Path) -> None:
+            template = root / "templates/service/template.yaml"
+            template.write_text(template.read_text() + "observability:\n  manifest: ../../outside.yaml\n")
+        result = self.run_validation(invalid)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsafe", (result.stdout + result.stderr).lower())
 
     def test_manifests_package_is_valid(self) -> None:
         def add_manifests(root: Path) -> None:

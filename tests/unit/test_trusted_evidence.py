@@ -165,6 +165,75 @@ class TrustedEvidenceTests(unittest.TestCase):
             "--release-tag", tag, "--required-lane", "validate", "--required-lane", "runtime-smoke",
         ], text=True, capture_output=True, check=False)
 
+    def chartless_artifact_args(self, kind: str) -> list[str]:
+        app = "hiroba-chartless-smoke"
+        if kind == "template":
+            component = f"templates-{app}"
+            workflow = ".github/workflows/release-oci.yml"
+            repository = f"ghcr.io/7k-hiroba/{app}/templates/{app}"
+            media_type = "application/vnd.inari.template.v1"
+            tag = f"{app}-v0.1.0"
+        else:
+            component = f"{app}-smoke"
+            workflow = ".github/workflows/release-smoke-suite.yml"
+            repository = f"ghcr.io/7k-hiroba/{app}/smoke/{app}-smoke"
+            media_type = "application/vnd.inari.smoke.suite.v1+yaml"
+            tag = f"{app}-smoke-v0.1.0"
+        return [
+            "--app", app, "--component", component, "--trust-tier", "experimental",
+            "--source-repository", "7K-Hiroba/workflows", "--source-sha", SOURCE, "--workflow-sha", WORKFLOW,
+            "--workflow-path", workflow, "--run-id", "123", "--run-attempt", "1",
+            "--artifact-repository", repository, "--artifact-digest", DIGEST,
+            "--media-type", media_type, "--release-tag", tag,
+            "--required-lane", "validate", "--required-lane", "runtime-smoke",
+        ]
+
+    def run_chartless_build(self, kind: str, include_eligibility: bool = True) -> subprocess.CompletedProcess[str]:
+        self.write_fixture_lane()
+        if not include_eligibility:
+            path = self.evidence / "runtime-smoke.json"
+            lane = json.loads(path.read_text())
+            del lane["appEvidenceEligible"]
+            path.write_text(json.dumps(lane))
+        return subprocess.run([
+            "python3", str(SCRIPT), "--evidence-dir", str(self.evidence), "--output", str(self.output),
+            *self.chartless_artifact_args(kind),
+        ], text=True, capture_output=True, check=False)
+
+    def verify_chartless(self, kind: str) -> subprocess.CompletedProcess[str]:
+        supported = {
+            "--source-repository", "--source-sha", "--workflow-path", "--workflow-sha",
+            "--artifact-repository", "--artifact-digest", "--media-type", "--release-tag", "--required-lane",
+        }
+        args = self.chartless_artifact_args(kind)
+        verify_args = [value for index in range(0, len(args), 2) if args[index] in supported for value in args[index:index + 2]]
+        return subprocess.run([
+            "python3", str(VERIFY), "--predicate", str(self.output), *verify_args,
+        ], text=True, capture_output=True, check=False)
+
+    def test_chartless_template_and_smoke_predicates_are_admitted_as_fixture_only(self) -> None:
+        for kind in ("template", "smoke"):
+            with self.subTest(kind=kind):
+                result = self.run_chartless_build(kind)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                predicate = json.loads(self.output.read_text())
+                runtime = next(lane for lane in predicate["lanes"] if lane["lane"] == "runtime-smoke")
+                self.assertTrue(runtime["fixtureOnly"])
+                self.assertEqual(runtime["targetAdapter"], "manifests")
+                self.assertEqual(runtime["executableProfiles"], ["ci"])
+                self.assertEqual(runtime["evidenceScope"], "fixture")
+                self.assertFalse(runtime["appEvidenceEligible"])
+                self.assertFalse(predicate["appEvidenceEligible"])
+                verified = self.verify_chartless(kind)
+                self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+
+    def test_chartless_predicates_reject_missing_eligibility_fail_closed(self) -> None:
+        for kind in ("template", "smoke"):
+            with self.subTest(kind=kind):
+                result = self.run_chartless_build(kind, include_eligibility=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("missing fixture eligibility metadata", result.stdout + result.stderr)
+
     def test_fixture_only_evidence_is_signed_as_ci_only_and_ineligible(self) -> None:
         result = self.run_fixture_build()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

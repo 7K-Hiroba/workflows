@@ -6,6 +6,15 @@
   "tag-separator": "-v",
   "pull-request-title-pattern": "chore: release ${component} ${version}",
   "packages": {
+    "packages/hiroba-nonplugin-package": {
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "package.yaml"
+      ]
+    },
     "charts/hiroba-nonplugin-smoke": {
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md",
@@ -13,15 +22,6 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "Chart.yaml"
-      ]
-    },
-    "packages/hiroba-nonplugin-smoke": {
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
-      "extra-files": [
-        "package.yaml"
       ]
     }
   }

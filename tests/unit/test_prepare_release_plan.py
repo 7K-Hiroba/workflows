@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 from tests.unit.test_validate_repository import make_valid_repo, use_fixture_only_smoke
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -133,6 +135,54 @@ class PrepareReleasePlanTests(unittest.TestCase):
         result = self.run_plan("--changed-files", str(changed))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("target", (result.stdout + result.stderr).lower())
+
+
+class NonPluginRehearsalPlanTests(unittest.TestCase):
+    def test_real_fixture_has_distinct_final_tags_and_a_viable_publish_plan(self) -> None:
+        root = ROOT / "tests/fixtures/non-plugin-runtime"
+        result = subprocess.run([
+            str(ROOT / ".venv/bin/python"), str(SCRIPT), "--root", str(root),
+            "--source-sha", "c3bdc1e715391a8c66d599ce32356e6ea071e169", "--rehearsal",
+        ], text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertTrue(plan["rehearsal"])
+        self.assertTrue(plan["shouldPublish"])
+        self.assertEqual(plan["components"], [])
+        components = {item["kind"]: item for item in plan["publishComponents"]}
+        self.assertEqual(set(components), {"chart", "package", "smoke"})
+        self.assertEqual(components["chart"]["path"], "charts/hiroba-nonplugin-smoke")
+        self.assertEqual(components["package"]["path"], "packages/hiroba-nonplugin-package")
+        self.assertEqual(components["smoke"]["targetComponent"], components["chart"]["path"])
+
+        tags = {kind: f"{item['name']}-v{item['version']}" for kind, item in components.items()}
+        self.assertEqual(tags["chart"], "hiroba-nonplugin-smoke-v0.1.0")
+        self.assertEqual(tags["package"], "hiroba-nonplugin-package-v0.1.0")
+        self.assertEqual(tags["smoke"], tags["chart"], "artifact-bound smoke shares only its target chart release")
+        self.assertNotEqual(tags["chart"], tags["package"])
+        self.assertTrue(plan["hasChart"])
+        self.assertTrue(plan["hasPackages"])
+        self.assertTrue(plan["hasSmoke"])
+        self.assertEqual(plan["requiredLanes"], ["validate", "package", "chart", "runtime-smoke"])
+
+        config = json.loads((root / "release-please-config.json").read_text())
+        manifest = json.loads((root / ".release-please-manifest.json").read_text())
+        self.assertTrue(config["include-component-in-tag"])
+        self.assertEqual(config["tag-separator"], "-v")
+        self.assertEqual(set(config["packages"]), {components["chart"]["path"], components["package"]["path"]})
+        self.assertEqual(set(manifest), set(config["packages"]))
+        for script in ("build-indexes.py", "sync-release-please-config.py"):
+            checked = subprocess.run([
+                str(ROOT / ".venv/bin/python"), str(ROOT / "scripts" / script), "--root", str(root), "--check",
+            ], text=True, capture_output=True, check=False)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+        suite = yaml.safe_load((root / "tests/smoke/suite.yaml").read_text())
+        self.assertEqual(suite["target"]["component"], components["chart"]["path"])
+        self.assertEqual(suite["target"]["adapter"]["kind"], "helm")
+        self.assertFalse(suite["target"]["adapter"]["fixtureOnly"])
+        package_chart = yaml.safe_load((root / components["package"]["path"] / "chart.yaml").read_text())
+        self.assertEqual(package_chart["chart"], components["chart"]["name"])
 
 
 if __name__ == "__main__":

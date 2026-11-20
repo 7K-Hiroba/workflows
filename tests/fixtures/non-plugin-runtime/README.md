@@ -9,7 +9,7 @@ Reserve the permanent app ID in [`7K-Hiroba/community`](https://github.com/7K-Hi
 After the package is published and its trusted source is configured, deploy it with its canonical source-qualified identity:
 
 ~~~sh
-inari deploy <source>/hiroba-nonplugin-smoke --cluster <cluster-id> --file values.yaml
+inari deploy <source>/hiroba-nonplugin-package --cluster <cluster-id> --file values.yaml
 ~~~
 
 Short package names are local/display names only. Use the canonical `<source>/<package>` form when names collide.

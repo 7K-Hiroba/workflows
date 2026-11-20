@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -17,11 +18,11 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
     def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["bash", str(SCRIPT), "--root", str(ROOT / "scaffold"), *args], text=True, capture_output=True, check=False)
 
-    def assert_reaches_failing_kind_create(self, mutate) -> None:
+    def assert_reaches_failing_kind_create(self, mutate, source: Path = ROOT / "scaffold") -> dict:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             root = base / "scaffold"
-            shutil.copytree(ROOT / "scaffold", root, ignore=shutil.ignore_patterns("node_modules", "dist", "evidence", "diagnostics"))
+            shutil.copytree(source, root, ignore=shutil.ignore_patterns("node_modules", "dist", "evidence", "diagnostics"))
             mutate(root)
             bin_dir = base / "bin"
             bin_dir.mkdir()
@@ -40,6 +41,7 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
             self.assertTrue(kind_log.exists(), result.stdout + result.stderr)
             self.assertIn("create cluster", kind_log.read_text(), result.stdout + result.stderr)
             self.assertIn("delete cluster", kind_log.read_text())
+            return json.loads((root / "evidence/runtime-smoke.json").read_text())
 
     def test_driver_uses_explicit_adapters_without_extension_assumption(self) -> None:
         text = SCRIPT.read_text()
@@ -62,6 +64,36 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
 
     def test_chartless_manifests_fixture_reaches_cluster_creation(self) -> None:
         self.assert_reaches_failing_kind_create(use_fixture_only_smoke)
+
+    def test_chartless_manifests_runtime_evidence_defaults_to_fixture_ineligible(self) -> None:
+        evidence = self.assert_reaches_failing_kind_create(
+            lambda root: None, source=ROOT / "tests/fixtures/chartless-runtime",
+        )
+        self.assertEqual(evidence["schema"], "inari.lane-result.v1")
+        self.assertEqual(evidence["profile"], "ci")
+        self.assertEqual(evidence["targetAdapter"], "manifests")
+        self.assertEqual(evidence["targetComponent"], "")
+        self.assertEqual(evidence["targetDigest"], "")
+        self.assertTrue(evidence["fixtureOnly"])
+        self.assertEqual(evidence["executableProfiles"], ["ci"])
+        self.assertEqual(evidence["evidenceScope"], "fixture")
+        self.assertFalse(evidence["appEvidenceEligible"])
+
+    def test_real_application_runtime_evidence_remains_eligible(self) -> None:
+        fixtures = {
+            "scaffold": (ROOT / "scaffold", "helm", "charts/workflows-scaffold"),
+            "nonplugin": (ROOT / "tests/fixtures/non-plugin-runtime", "helm", "charts/hiroba-nonplugin-smoke"),
+            "artifact": (ROOT / "tests/fixtures/artifact-bound-runtime", "manifests", "packages/runtime-fixture"),
+        }
+        for name, (source, adapter, target) in fixtures.items():
+            with self.subTest(fixture=name):
+                evidence = self.assert_reaches_failing_kind_create(lambda root: None, source=source)
+                self.assertEqual(evidence["profile"], "ci")
+                self.assertEqual(evidence["targetAdapter"], adapter)
+                self.assertEqual(evidence["targetComponent"], target)
+                self.assertFalse(evidence["fixtureOnly"])
+                self.assertEqual(evidence["evidenceScope"], "application")
+                self.assertTrue(evidence["appEvidenceEligible"])
 
     def test_rejects_real_environment_profiles_before_cluster_creation(self) -> None:
         for profile in ("stage", "prod"):

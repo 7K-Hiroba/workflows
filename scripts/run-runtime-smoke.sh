@@ -37,7 +37,7 @@ ADAPTER=$(jq -r 'first(.components[] | select(.kind == "smoke") | .targetAdapter
 FIXTURE_ONLY=$(jq -r 'first(.components[] | select(.kind == "smoke") | .fixtureOnly) // false' "$ROOT/evidence-runtime-plan.json")
 EXECUTABLE_PROFILES=$(jq -c 'first(.components[] | select(.kind == "smoke") | .executableProfiles) // ["ci", "stage", "prod"]' "$ROOT/evidence-runtime-plan.json")
 EVIDENCE_SCOPE=$(jq -r 'first(.components[] | select(.kind == "smoke") | .evidenceScope) // "application"' "$ROOT/evidence-runtime-plan.json")
-APP_EVIDENCE_ELIGIBLE=$(jq -r 'first(.components[] | select(.kind == "smoke") | .appEvidenceEligible) // true' "$ROOT/evidence-runtime-plan.json")
+APP_EVIDENCE_ELIGIBLE=$(jq -r 'first(.components[] | select(.kind == "smoke") | .appEvidenceEligible) // false' "$ROOT/evidence-runtime-plan.json")
 SUITE_DIR="$ROOT/$SMOKE_PATH"
 TARGET_ID=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["id"])' "$SUITE_DIR/suite.yaml")
 TARGET_VERSION=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["target"]["version"])' "$SUITE_DIR/suite.yaml")

@@ -213,7 +213,7 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
           [[ "$status" == success ]] || exit 1
   publish-packages:
-    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-packages == 'true'
+    if: always() && needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-packages == 'true'
     needs: [plan, evidence]
     strategy: {fail-fast: false, matrix: {component: "${{ fromJSON(needs.plan.outputs.package-components) }}"}}
     uses: $/.github/workflows/release-oci.yml
@@ -229,7 +229,7 @@ jobs:
       edge: ${{ inputs.edge }}
       rehearsal: ${{ inputs.rehearsal }}
   publish-templates:
-    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-templates == 'true'
+    if: always() && needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-templates == 'true'
     needs: [plan, evidence]
     strategy: {fail-fast: false, matrix: {component: "${{ fromJSON(needs.plan.outputs.template-components) }}"}}
     uses: $/.github/workflows/release-oci.yml
@@ -245,7 +245,7 @@ jobs:
       edge: ${{ inputs.edge }}
       rehearsal: ${{ inputs.rehearsal }}
   publish-charts:
-    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-chart == 'true'
+    if: always() && needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-chart == 'true'
     needs: [plan, evidence]
     strategy: {fail-fast: false, matrix: {component: "${{ fromJSON(needs.plan.outputs.chart-components) }}"}}
     uses: $/.github/workflows/release-chart.yml
@@ -261,7 +261,7 @@ jobs:
       required-lanes: ${{ needs.plan.outputs.required-lanes }}
       edge: ${{ inputs.edge }}
   publish-extension:
-    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-extension == 'true' && needs.plan.outputs.has-ui == 'true'
+    if: always() && needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-extension == 'true' && needs.plan.outputs.has-ui == 'true'
     needs: [plan, evidence]
     uses: $/.github/workflows/release-extension.yml
     with:
@@ -277,7 +277,7 @@ jobs:
       ui-version: ${{ needs.plan.outputs.ui-version }}
       ui-path: ${{ needs.plan.outputs.ui-path }}
   publish-smoke:
-    if: needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-smoke == 'true'
+    if: always() && needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-smoke == 'true'
     needs: [plan, evidence]
     uses: $/.github/workflows/release-smoke-suite.yml
     with:
@@ -290,7 +290,18 @@ jobs:
       edge: ${{ inputs.edge }}
       target-version: ${{ needs.plan.outputs.smoke-version }}
   indexes:
-    if: needs.evidence.outputs.status == 'success' && inputs.repair_tag == '' && needs.publish-packages.result != 'failure' && needs.publish-templates.result != 'failure' && needs.publish-charts.result != 'failure' && needs.publish-extension.result != 'failure' && needs.publish-smoke.result != 'failure'
+    if: >-
+      always() && needs.evidence.outputs.status == 'success' && inputs.repair_tag == '' &&
+      (needs.plan.outputs.has-packages != 'true' || needs.publish-packages.result == 'success') &&
+      (needs.plan.outputs.has-templates != 'true' || needs.publish-templates.result == 'success') &&
+      (needs.plan.outputs.has-chart != 'true' || needs.publish-charts.result == 'success') &&
+      (needs.plan.outputs.has-extension != 'true' || needs.plan.outputs.has-ui != 'true' || needs.publish-extension.result == 'success') &&
+      (needs.plan.outputs.has-smoke != 'true' || needs.publish-smoke.result == 'success') &&
+      needs.publish-packages.result != 'failure' && needs.publish-packages.result != 'cancelled' &&
+      needs.publish-templates.result != 'failure' && needs.publish-templates.result != 'cancelled' &&
+      needs.publish-charts.result != 'failure' && needs.publish-charts.result != 'cancelled' &&
+      needs.publish-extension.result != 'failure' && needs.publish-extension.result != 'cancelled' &&
+      needs.publish-smoke.result != 'failure' && needs.publish-smoke.result != 'cancelled'
     needs: [plan, evidence, publish-packages, publish-templates, publish-charts, publish-extension, publish-smoke]
     uses: $/.github/workflows/release-oci.yml
     with:
@@ -303,7 +314,7 @@ jobs:
       edge: ${{ inputs.edge }}
       rehearsal: ${{ inputs.rehearsal }}
   channels:
-    if: inputs.repair_tag == '' && needs.indexes.outputs.status == 'success'
+    if: always() && inputs.repair_tag == '' && needs.indexes.outputs.status == 'success'
     needs: [plan, evidence, publish-packages, publish-templates, publish-charts, publish-extension, publish-smoke, indexes]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -406,6 +417,12 @@ jobs:
         env:
           SHOULD_PUBLISH: "${{ needs.plan.outputs.should-publish }}"
           EVIDENCE: "${{ needs.evidence.outputs.status }}"
+          HAS_PACKAGES: "${{ needs.plan.outputs.has-packages }}"
+          HAS_TEMPLATES: "${{ needs.plan.outputs.has-templates }}"
+          HAS_CHART: "${{ needs.plan.outputs.has-chart }}"
+          HAS_EXTENSION: "${{ needs.plan.outputs.has-extension }}"
+          HAS_UI: "${{ needs.plan.outputs.has-ui }}"
+          HAS_SMOKE: "${{ needs.plan.outputs.has-smoke }}"
           PACKAGES: "${{ needs.publish-packages.result }}"
           TEMPLATES: "${{ needs.publish-templates.result }}"
           CHARTS: "${{ needs.publish-charts.result }}"
@@ -422,6 +439,11 @@ jobs:
           if [[ "$SHOULD_PUBLISH" == false ]]; then echo "status=$status" >> "$GITHUB_OUTPUT"; exit 0; fi
           [[ "$EVIDENCE" == success ]] || status=failure
           for result in "$PACKAGES" "$TEMPLATES" "$CHARTS" "$EXTENSION" "$SMOKE"; do [[ "$result" != failure && "$result" != cancelled ]] || status=failure; done
+          [[ "$HAS_PACKAGES" != true || "$PACKAGES" == success ]] || status=failure
+          [[ "$HAS_TEMPLATES" != true || "$TEMPLATES" == success ]] || status=failure
+          [[ "$HAS_CHART" != true || "$CHARTS" == success ]] || status=failure
+          [[ "$HAS_EXTENSION" != true || "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure
+          [[ "$HAS_SMOKE" != true || "$SMOKE" == success ]] || status=failure
           if [[ -z "$REPAIR" ]]; then
             [[ "$INDEXES" == success && "$CHANNELS" == success ]] || status=failure
           fi

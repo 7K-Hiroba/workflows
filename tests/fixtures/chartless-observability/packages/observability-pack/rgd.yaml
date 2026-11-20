@@ -39,7 +39,7 @@ spec:
           '
     includeWhen:
     - ${schema.spec.render == "all" || schema.spec.render == "dashboards"}
-  - id: dashboardWorkflowsScaffoldOverview
+  - id: dashboardHirobaChartlessObsOverview
     template:
       apiVersion: v1
       kind: ConfigMap

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.unit.test_validate_repository import make_valid_repo
+from tests.unit.test_validate_repository import make_valid_repo, use_fixture_only_smoke
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/prepare-release-plan.py"
@@ -75,6 +75,56 @@ class PrepareReleasePlanTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         plan = json.loads(result.stdout)
         self.assertEqual([item["kind"] for item in plan["components"]], ["chart", "smoke"])
+
+    def enable_standalone_smoke(self) -> None:
+        use_fixture_only_smoke(self.root)
+        subprocess.run(["git", "-C", str(self.root), "add", ".hiroba.yaml", "tests/smoke"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "standalone smoke"], check=True, capture_output=True)
+        self.sha = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True).strip()
+
+    def test_standalone_fixture_smoke_has_independent_release_plan(self) -> None:
+        self.enable_standalone_smoke()
+        result = self.run_plan()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        smoke = next(item for item in json.loads(result.stdout)["components"] if item["kind"] == "smoke")
+        self.assertEqual(smoke["name"], "workflows-scaffold-smoke")
+        self.assertFalse(smoke["appEvidenceEligible"])
+
+    def test_standalone_fixture_tag_filters_and_repairs_only_smoke(self) -> None:
+        self.enable_standalone_smoke()
+        subprocess.run(["git", "-C", str(self.root), "tag", "workflows-scaffold-smoke-v0.1.0", self.sha], check=True)
+        result = self.run_plan()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("smoke", [item["kind"] for item in json.loads(result.stdout)["components"]])
+        repair = self.run_plan("--repair-tag", "workflows-scaffold-smoke-v0.1.0")
+        self.assertEqual(repair.returncode, 0, repair.stdout + repair.stderr)
+        self.assertEqual([item["kind"] for item in json.loads(repair.stdout)["components"]], ["smoke"])
+
+    def test_standalone_fixture_rejects_duplicate_final_tag(self) -> None:
+        self.enable_standalone_smoke()
+        package = self.root / "packages/workflows-scaffold-smoke"
+        (package / "tests").mkdir(parents=True)
+        (package / "package.yaml").write_text("version: 0.1.0\nchannel: incubating\ntype: policy-pack\ndescription: collision\ncategory: test\n")
+        (package / "policies.yaml").write_text("apiVersion: admissionregistration.k8s.io/v1\nkind: ValidatingAdmissionPolicy\n")
+        (package / "README.md").write_text("# collision\n")
+        (package / "tests/run.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "packages/workflows-scaffold-smoke"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "tag collision"], check=True, capture_output=True)
+        self.sha = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True).strip()
+        for args in ((), ("--repair-tag", "workflows-scaffold-smoke-v0.1.0")):
+            with self.subTest(args=args):
+                result = self.run_plan(*args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("duplicate", (result.stdout + result.stderr).lower())
+
+    def test_standalone_fixture_change_requires_own_version_bump(self) -> None:
+        self.enable_standalone_smoke()
+        subprocess.run(["git", "-C", str(self.root), "tag", "workflows-scaffold-smoke-v0.1.0", self.sha], check=True)
+        changed = self.root / "changed.txt"
+        changed.write_text("tests/smoke/suite.yaml\n")
+        result = self.run_plan("--changed-files", str(changed))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("version bump", (result.stdout + result.stderr).lower())
 
     def test_smoke_only_change_requires_target_version_bump(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "tag", "workflows-scaffold-v0.1.0", self.sha], check=True)

@@ -164,19 +164,40 @@ def render(root: Path) -> dict[Path, str]:
             raise ValueError(f"rule asset must be a mapping: {path}")
         rules.append((entry, parsed))
 
-    chart = root / relative_path(root, settings["chart"], "observability.chart")
     pack = root / relative_path(root, settings["package"], "observability.package")
     outputs: dict[Path, str] = {}
-    if dashboards:
-        outputs[chart / "templates/observability/dashboards.yaml"] = "\n---\n".join(
-            chart_configmap(app, dashboard, content) for dashboard, content in dashboards
-        )
-    if rules:
-        combined = {"groups": [group for _, content in rules for group in content.get("groups", [])]}
-        outputs[chart / "templates/observability/rules.yaml"] = chart_rules(app, combined)
-    outputs[chart / "inari/observability.yaml"] = HEADER + dump_document(manifest)
+    chart_setting = settings.get("chart")
+    if chart_setting:
+        chart = root / relative_path(root, chart_setting, "observability.chart")
+        if dashboards:
+            outputs[chart / "templates/observability/dashboards.yaml"] = "\n---\n".join(
+                chart_configmap(app, dashboard, content) for dashboard, content in dashboards
+            )
+        if rules:
+            combined = {"groups": [group for _, content in rules for group in content.get("groups", [])]}
+            outputs[chart / "templates/observability/rules.yaml"] = chart_rules(app, combined)
+        outputs[chart / "inari/observability.yaml"] = HEADER + dump_document(manifest)
     outputs[pack / "rgd.yaml"] = render_pack(app, manifest, dashboards, rules)
     return outputs
+
+
+def stale_chart_outputs(root: Path) -> list[Path]:
+    config = load_config(root)
+    observability = config.get("observability")
+    if not isinstance(observability, dict) or observability.get("chart"):
+        return []
+    charts_root = root / relative_path(root, config.get("components", {}).get("chartsRoot", "charts"), "components.chartsRoot")
+    if not charts_root.is_dir():
+        return []
+    stale = []
+    for chart in sorted(charts_root.iterdir()):
+        if not chart.is_dir():
+            continue
+        for relative in ("templates/observability/dashboards.yaml", "templates/observability/rules.yaml", "inari/observability.yaml"):
+            path = chart / relative
+            if path.is_file():
+                stale.append(path)
+    return stale
 
 
 def main() -> int:
@@ -192,8 +213,16 @@ def main() -> int:
         return 1
     errors: list[str] = []
     for path, content in outputs.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if not args.check:
+            path.parent.mkdir(parents=True, exist_ok=True)
         write_if_changed(path, content, args.check, errors)
+    for path in stale_chart_outputs(root):
+        if args.check:
+            errors.append(f"{path.name} is stale after chartless conversion; run the generator without --check")
+        elif path.read_text().startswith(HEADER):
+            path.unlink()
+        else:
+            errors.append(f"{path.name} is stale but no longer carries the generated header; refusing to delete it")
     for error in errors:
         print(f"::error::{error}")
     if errors:

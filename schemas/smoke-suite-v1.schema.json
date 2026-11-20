@@ -5,11 +5,87 @@
   "required": ["suiteSchema", "target", "compatibleAppVersions", "parameterContract", "dependencies", "timeout", "profiles", "rbacRequirements", "workflowTemplate", "entrypoint"],
   "properties": {
     "suiteSchema": {"const": "inari.smoke.v1"},
-    "target": {"type": "object", "required": ["id", "version", "component"], "properties": {"id": {"type": "string"}, "version": {"type": "string"}, "component": {"type": "string"}}},
+    "target": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "version": {"type": "string"},
+        "component": {"type": "string"},
+        "adapter": {
+          "type": "object",
+          "required": ["kind", "readiness"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"enum": ["helm", "manifests"]},
+            "path": {"type": "string", "minLength": 1},
+            "artifactPath": {"type": "string", "minLength": 1},
+            "fixtureOnly": {"type": "boolean"},
+            "readiness": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["kind", "name", "namespace", "condition"],
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {"type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$"},
+                  "name": {"type": "string", "minLength": 1},
+                  "namespace": {"type": "string", "minLength": 1},
+                  "condition": {"type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$"}
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "adapter": {
+                "required": ["kind"],
+                "properties": {"kind": {"const": "manifests"}}
+              }
+            },
+            "required": ["adapter"]
+          },
+          "then": {
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "required": ["fixtureOnly"],
+                      "properties": {"fixtureOnly": {"const": true}}
+                    }
+                  }
+                },
+                "then": {
+                  "not": {"required": ["component"]},
+                  "properties": {"adapter": {"required": ["path"]}}
+                },
+                "else": {
+                  "required": ["component"],
+                  "properties": {"adapter": {"required": ["artifactPath"]}}
+                }
+              }
+            ]
+          },
+          "else": {"required": ["component"]}
+        }
+      ]
+    },
     "compatibleAppVersions": {"type": "string", "minLength": 1},
     "parameterContract": {"type": "string"},
     "dependencies": {"type": "array"},
     "timeout": {"type": "string", "pattern": "^[1-9][0-9]*(s|m|h)$"},
+    "executableProfiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["ci", "stage", "prod"]}
+    },
     "profiles": {
       "type": "object",
       "required": ["ci", "stage", "prod"],
@@ -23,7 +99,36 @@
     "workflowTemplate": {"type": "string"},
     "entrypoint": {"type": "string"}
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "required": ["adapter"],
+            "properties": {
+              "adapter": {
+                "required": ["fixtureOnly"],
+                "properties": {"fixtureOnly": {"const": true}}
+              }
+            }
+          }
+        },
+        "required": ["target"]
+      },
+      "then": {
+        "required": ["executableProfiles"],
+        "properties": {"executableProfiles": {"const": ["ci"]}}
+      }
+    }
+  ],
   "$defs": {
-    "profile": {"type": "object", "required": ["sideEffects", "cleanup"], "properties": {"sideEffects": {"enum": ["readOnly", "syntheticWrite", "mutating"]}, "cleanup": {"const": "required"}}}
+    "profile": {
+      "type": "object",
+      "required": ["sideEffects", "cleanup"],
+      "properties": {
+        "sideEffects": {"enum": ["readOnly", "syntheticWrite", "mutating"]},
+        "cleanup": {"const": "required"}
+      }
+    }
   }
 }

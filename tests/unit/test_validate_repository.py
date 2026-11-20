@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "validate-repository.py"
@@ -199,6 +202,42 @@ spec:
     write(root, "ci/compatibility-matrix.json", json.dumps({"schema": "inari.compat.v1", "entries": []}))
 
 
+def use_fixture_only_smoke(root: Path) -> None:
+    config_path = root / ".hiroba.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["smoke"].pop("targetComponent", None)
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    suite_path = root / "tests/smoke/suite.yaml"
+    suite = yaml.safe_load(suite_path.read_text())
+    suite["target"] = {
+        "id": "workflows-scaffold-smoke",
+        "version": "0.1.0",
+        "adapter": {
+            "kind": "manifests",
+            "path": "fixtures/app",
+            "fixtureOnly": True,
+            "readiness": [{"kind": "Deployment", "name": "workflows-scaffold-fixture", "namespace": "default", "condition": "Available"}],
+        },
+    }
+    suite["executableProfiles"] = ["ci"]
+    suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+    write(
+        root,
+        "tests/smoke/fixtures/app/deployment.yaml",
+        """apiVersion: apps/v1
+kind: Deployment
+metadata: {name: workflows-scaffold-fixture}
+spec:
+  template:
+    spec:
+      containers:
+        - name: fixture
+          image: ghcr.io/7k-hiroba/fixture@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          securityContext: {runAsNonRoot: true}
+""",
+    )
+
+
 class ValidateRepositoryTests(unittest.TestCase):
     def run_validation(self, mutate=None, registry: bool = True) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -216,6 +255,85 @@ class ValidateRepositoryTests(unittest.TestCase):
     def test_valid_repository_passes(self) -> None:
         result = self.run_validation()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_manifests_package_is_valid(self) -> None:
+        def add_manifests(root: Path) -> None:
+            write(root, "packages/plain/package.yaml", "version: 0.1.0\nchannel: incubating\ntype: manifests\ndescription: Plain manifests\ncategory: test\n")
+            write(root, "packages/plain/manifests.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: plain}\n")
+            write(root, "packages/plain/README.md", "# plain\n")
+            write(root, "packages/plain/tests/run.sh", "#!/usr/bin/env bash\nexit 0\n")
+        result = self.run_validation(add_manifests)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_fixture_only_manifests_smoke_is_valid_and_ci_only(self) -> None:
+        result = self.run_validation(use_fixture_only_smoke)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_artifact_bound_manifests_smoke_is_valid(self) -> None:
+        def artifact_bound(root: Path) -> None:
+            use_fixture_only_smoke(root)
+            config_path = root / ".hiroba.yaml"
+            config = yaml.safe_load(config_path.read_text())
+            config["smoke"]["targetComponent"] = "packages/observability-pack"
+            config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["component"] = "packages/observability-pack"
+            suite["target"]["adapter"]["fixtureOnly"] = False
+            suite["target"]["adapter"].pop("path")
+            suite["target"]["adapter"]["artifactPath"] = "rgd.yaml"
+            suite["executableProfiles"] = ["ci", "stage", "prod"]
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+        result = self.run_validation(artifact_bound)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_fixture_only_smoke_rejects_stage_or_prod_execution(self) -> None:
+        def stage_eligible(root: Path) -> None:
+            use_fixture_only_smoke(root)
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["executableProfiles"] = ["ci", "stage"]
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+        result = self.run_validation(stage_eligible)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("executableProfiles", result.stdout + result.stderr)
+
+    def test_fixture_only_smoke_rejects_an_artifact_component(self) -> None:
+        def artifact_bound(root: Path) -> None:
+            use_fixture_only_smoke(root)
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["component"] = "charts/workflows-scaffold"
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+        result = self.run_validation(artifact_bound)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture", (result.stdout + result.stderr).lower())
+
+    def test_chartless_observability_passes_without_chart_config_or_outputs(self) -> None:
+        def chartless(root: Path) -> None:
+            config = root / ".hiroba.yaml"
+            text = config.read_text().replace("  chart: charts/workflows-scaffold\n", "")
+            text = text.replace("smoke:\n  path: tests/smoke\n  targetComponent: charts/workflows-scaffold\n", "")
+            config.write_text(text)
+            shutil.rmtree(root / "charts")
+        result = self.run_validation(chartless)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_chartless_observability_rejects_stale_generated_chart_output(self) -> None:
+        def stale_output(root: Path) -> None:
+            config = root / ".hiroba.yaml"
+            config.write_text(config.read_text().replace("  chart: charts/workflows-scaffold\n", ""))
+            write(root, "charts/workflows-scaffold/inari/observability.yaml", "# GENERATED by scripts/render-observability.py; DO NOT EDIT.\nkind: Observability\n")
+        result = self.run_validation(stale_output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale", (result.stdout + result.stderr).lower())
+
+    def test_observability_chart_reference_must_exist(self) -> None:
+        def missing_chart(root: Path) -> None:
+            shutil.rmtree(root / "charts/workflows-scaffold")
+        result = self.run_validation(missing_chart)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("chart", (result.stdout + result.stderr).lower())
 
     def test_rejects_invalid_package_metadata_and_unknown_type(self) -> None:
         def invalid(root: Path) -> None:

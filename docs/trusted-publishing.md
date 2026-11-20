@@ -12,3 +12,17 @@ Each publish performs: immutable build/push → registry digest capture and re-r
 Verification uses cosign, `gh attestation verify`, and `verify-test-evidence.py`. Sibling admission work must consume the same OCI referrer and predicate contract. Any producer/admission mismatch stops finalization; never substitute unsigned files or weaken identity checks.
 
 No GHCR operation is performed during repository setup. The protected publish rehearsal and stable release require separate approvals.
+
+## Full-matrix rehearsal
+
+Run exactly one fixture release graph per `workflow_dispatch`; artifact uploads and `artifact-*`/`channel-reconciliation` downloads are scoped to that run. Select the fixture through the validated `fixture` choice. Coordinate all five fixtures at the same reviewed merged main SHA, waiting for each result before proceeding:
+
+```sh
+SHA=<reviewed-merged-main-sha>
+for FIXTURE in scaffold chartless-observability nonplugin-helm chartless-manifests artifact-manifests; do
+  gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main \
+    -f source_sha="$SHA" -f mode=full -f fixture="$FIXTURE"
+done
+```
+
+This list only prepares the required dispatches; it does not authorize them. Do not fan out release graphs inside one run or share evidence/channel artifacts across fixture roots.

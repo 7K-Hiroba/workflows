@@ -23,7 +23,7 @@
     "observability": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "chart", "package", "alloyConfig"],
+      "required": ["path", "package", "alloyConfig"],
       "properties": {
         "path": {"type": "string"},
         "chart": {"type": "string"},
@@ -34,7 +34,7 @@
     "smoke": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "targetComponent"],
+      "required": ["path"],
       "properties": {"path": {"type": "string"}, "targetComponent": {"type": "string"}}
     },
     "compatibility": {

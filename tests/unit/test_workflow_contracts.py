@@ -188,6 +188,43 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
         self.assertIn('refs/tags/$TAG^{}', repair_text)
 
+    def test_manifests_packages_have_a_real_test_lane(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "test-packages.yml").read_text())
+        self.assertIn("manifests", workflow["jobs"])
+        plan_runs = "\n".join(step.get("run", "") for step in workflow["jobs"]["plan"]["steps"])
+        self.assertIn('select(.kind == "package" and .packageType == "manifests")', plan_runs)
+        manifest_runs = "\n".join(step.get("run", "") for step in workflow["jobs"]["manifests"]["steps"])
+        self.assertIn('test-packages.sh', manifest_runs)
+
+    def test_full_matrix_rehearsal_lanes_are_gated_and_wired(self) -> None:
+        rehearsal = yaml.safe_load((WORKFLOWS / "publish-rehearsal.yml").read_text())
+        fixture = rehearsal.get("on", rehearsal.get(True))["workflow_dispatch"]["inputs"]["fixture"]
+        self.assertEqual(fixture["default"], "scaffold")
+        self.assertEqual(fixture["options"], ["scaffold", "chartless-observability", "nonplugin-helm", "chartless-manifests", "artifact-manifests"])
+        full = rehearsal["jobs"]["full"]
+        self.assertEqual(full["needs"], ["resolve"])
+        self.assertEqual(full["with"]["root"], "${{ needs.resolve.outputs.root }}")
+        self.assertTrue(full["with"]["rehearsal"])
+        resolve = rehearsal["jobs"]["resolve"]["steps"][0]["run"]
+        for root in ("scaffold", "tests/fixtures/chartless-observability", "tests/fixtures/non-plugin-runtime", "tests/fixtures/chartless-runtime", "tests/fixtures/artifact-bound-runtime"):
+            self.assertIn(root, resolve)
+        release_graphs = [name for name, job in rehearsal["jobs"].items() if job.get("uses", "").endswith("/release.yml")]
+        self.assertEqual(release_graphs, ["full"], "one dispatch must run exactly one release graph so artifact names remain run-scoped")
+
+    def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
+        release = (WORKFLOWS / "release.yml").read_text()
+        smoke = (WORKFLOWS / "release-smoke-suite.yml").read_text()
+        for text in (release, smoke):
+            self.assertIn('name: runtime-smoke-evidence', text)
+            self.assertIn('cp runtime-smoke-evidence/evidence/runtime-smoke.json evidence/runtime-smoke.json', text)
+        self.assertNotIn('jq -n --arg lane runtime-smoke', smoke)
+
+    def test_edge_resolves_standalone_fixture_smoke_version(self) -> None:
+        release = (WORKFLOWS / "release.yml").read_text()
+        self.assertIn('fixture_only=$(jq -r', release)
+        self.assertIn('if [[ "$fixture_only" == true ]]; then', release)
+        self.assertIn('resolve-edge-version.sh" "$path"', release)
+
     def test_edge_threads_versions_and_channels_through_every_publisher(self) -> None:
         release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
         for job_name in ("publish-packages", "publish-templates"):

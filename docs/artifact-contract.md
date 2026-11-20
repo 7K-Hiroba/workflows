@@ -14,3 +14,5 @@
 Deployable artifacts have no `latest`. Packages/templates may move `stable`/`incubating` only after verification. Indexes use immutable source-SHA plus `latest` after all entries verify; edge uses `edge`. Rehearsal uses CI-only source-SHA/prerelease tags and no stable channel.
 
 Release indexes contain exact `repository@sha256:digest`, media type, source SHA, signature/SLSA verification, and test evidence for every entry. Source `catalog.yaml`/`templates.yaml` remain generated projections and are not rewritten after tagging.
+
+Artifact-bound smoke follows its target's tag. Standalone fixture-only smoke uses a collision-free `<app>-smoke` target and its own version. Its signed evidence carries `evidenceScope: fixture`, `appEvidenceEligible: false`, and `executableProfiles: [ci]`; it cannot satisfy reviewed/official application evidence or real stage/prod verification.

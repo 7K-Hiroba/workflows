@@ -72,7 +72,8 @@ class ReleaseEvidenceCollectionTests(unittest.TestCase):
         download = next(step for step in release["jobs"]["evidence"]["steps"] if step.get("with", {}).get("name") == "compatibility-evidence")
         collect = next(step for step in release["jobs"]["evidence"]["steps"] if step.get("id") == "collect")
         self.assertIn("--evidence-dir evidence", collect["run"])
-        self.assertIn('--lane "runtime-smoke=${RUNTIME:-failure}"', collect["run"])
+        self.assertIn('cp runtime-smoke-evidence/evidence/runtime-smoke.json evidence/runtime-smoke.json', collect["run"])
+        self.assertNotIn('--lane "runtime-smoke=${RUNTIME:-failure}"', collect["run"])
 
         artifact = self.root / "artifact"
         artifact_evidence = artifact / "evidence"

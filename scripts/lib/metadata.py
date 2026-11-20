@@ -88,15 +88,24 @@ def discover(root: Path) -> dict[str, Any]:
         smoke_path = relative_path(root, smoke["path"], "smoke.path")
         suite = load_yaml(root / smoke_path / "suite.yaml")
         target = suite["target"]
-        components.append({
+        adapter = target.get("adapter", {})
+        fixture_only = adapter.get("fixtureOnly") is True
+        component = {
             "kind": "smoke",
             "name": str(target["id"]),
             "path": smoke_path,
             "version": str(target["version"]),
             "channel": "stable",
-            "targetComponent": relative_path(root, str(target["component"]), "smoke.target.component"),
+            "targetAdapter": str(adapter.get("kind", "helm")),
+            "fixtureOnly": fixture_only,
+            "executableProfiles": suite.get("executableProfiles", ["ci", "stage", "prod"]),
+            "evidenceScope": "fixture" if fixture_only else "application",
+            "appEvidenceEligible": not fixture_only,
             "compatibleAppVersions": str(suite["compatibleAppVersions"]),
-        })
+        }
+        if target.get("component"):
+            component["targetComponent"] = relative_path(root, str(target["component"]), "smoke.target.component")
+        components.append(component)
 
     components.sort(key=lambda item: (item["name"], item["kind"], item["path"]))
     return {"schema": "inari.release-plan.v1", "app": app, "trustTier": config.get("trustTier", "experimental"), "components": components}

@@ -29,15 +29,21 @@ def component_config(component: dict[str, Any]) -> dict[str, Any]:
         "chart": ["Chart.yaml"],
         "package": ["package.yaml"],
         "template": ["template.yaml"],
+        "smoke": ["suite.yaml"],
     }.get(kind)
     if extra_files:
         config["extra-files"] = extra_files
+    if kind == "smoke":
+        config["component"] = component["name"]
     return config
 
 
 def generate(root: Path) -> tuple[str, str]:
     plan = discover(root)
-    components = [component for component in plan["components"] if component["kind"] != "smoke"]
+    components = [
+        component for component in plan["components"]
+        if component["kind"] != "smoke" or component.get("fixtureOnly") is True
+    ]
     packages = {component["path"]: component_config(component) for component in components}
     config: dict[str, Any] = {
         "$schema": CONFIG_SCHEMA,

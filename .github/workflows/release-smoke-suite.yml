@@ -40,10 +40,12 @@ jobs:
       - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with: {name: "${{ inputs.evidence-name }}", path: evidence}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with: {name: runtime-smoke-evidence, path: runtime-smoke-evidence}
       - name: Add runtime lane and validate suite safety
         run: |
           mkdir -p evidence
-          jq -n --arg sourceSha "${{ inputs.source-sha }}" '{schema:"inari.lane-result.v1",lane:"runtime-smoke",status:"passed",sourceSha:$sourceSha}' > evidence/runtime-smoke.json
+          cp runtime-smoke-evidence/evidence/runtime-smoke.json evidence/runtime-smoke.json
           python3 .hiroba/workflows/scripts/validate-repository.py --root "consumer/${{ inputs.root }}"
       - id: config
         run: |

@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.unit.test_validate_repository import use_fixture_only_smoke
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "run-runtime-smoke.sh"
 
@@ -14,6 +16,52 @@ SCRIPT = ROOT / "scripts" / "run-runtime-smoke.sh"
 class RuntimeSmokeScriptTests(unittest.TestCase):
     def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["bash", str(SCRIPT), "--root", str(ROOT / "scaffold"), *args], text=True, capture_output=True, check=False)
+
+    def assert_reaches_failing_kind_create(self, mutate) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "scaffold"
+            shutil.copytree(ROOT / "scaffold", root, ignore=shutil.ignore_patterns("node_modules", "dist", "evidence", "diagnostics"))
+            mutate(root)
+            bin_dir = base / "bin"
+            bin_dir.mkdir()
+            kind_log = base / "kind.log"
+            kind = bin_dir / "kind"
+            kind.write_text("#!/usr/bin/env bash\necho \"$@\" >> \"$KIND_LOG\"\nif [[ \"$1\" == create ]]; then exit 1; fi\n")
+            git = bin_dir / "git"
+            git.write_text("#!/usr/bin/env bash\nprintf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n")
+            kubectl = bin_dir / "kubectl"
+            kubectl.write_text("#!/usr/bin/env bash\necho kubectl \"$@\"\n")
+            for tool in (kind, git, kubectl):
+                tool.chmod(0o755)
+            env = {**os.environ, "PATH": str(ROOT / ".venv/bin") + ":" + str(bin_dir) + ":/usr/local/go/bin:/usr/bin:/bin", "KIND_LOG": str(kind_log), "GITHUB_RUN_ID": "negative"}
+            result = subprocess.run(["bash", str(SCRIPT), "--root", str(root), "--mode", "local", "--profile", "ci"], env=env, text=True, capture_output=True, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(kind_log.exists(), result.stdout + result.stderr)
+            self.assertIn("create cluster", kind_log.read_text(), result.stdout + result.stderr)
+            self.assertIn("delete cluster", kind_log.read_text())
+
+    def test_driver_uses_explicit_adapters_without_extension_assumption(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn("chart-test-config.py", text)
+        self.assertIn('case "$ADAPTER"', text)
+        self.assertNotIn("runtime smoke requires extension, chart, and smoke components", text)
+        self.assertNotIn('docker build -t "$APP:ci" "$ROOT/$EXTENSION"', text)
+
+    def test_nonplugin_helm_target_reaches_cluster_creation(self) -> None:
+        def nonplugin(root: Path) -> None:
+            shutil.rmtree(root / "extension")
+            config = root / ".hiroba.yaml"
+            text = config.read_text().replace("  extension: {path: extension, version: 0.1.0}\n", "")
+            text = text.replace("  ui: {path: ui, version: 0.1.0}\n", "")
+            config.write_text(text)
+            (root / "extension.yaml").unlink()
+            chart_test = root / "charts/workflows-scaffold/ci/test.yaml"
+            chart_test.write_text("schema: inari.chart-test.v1\ndependencies:" + chart_test.read_text().split("dependencies:", 1)[1])
+        self.assert_reaches_failing_kind_create(nonplugin)
+
+    def test_chartless_manifests_fixture_reaches_cluster_creation(self) -> None:
+        self.assert_reaches_failing_kind_create(use_fixture_only_smoke)
 
     def test_rejects_real_environment_profiles_before_cluster_creation(self) -> None:
         for profile in ("stage", "prod"):
@@ -69,7 +117,7 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
             self.assertIn("create cluster", calls)
             self.assertIn("delete cluster", calls)
             diagnostics = (root / "diagnostics/runtime-smoke.txt").read_text()
-            self.assertIn("logs -A", diagnostics)
+            self.assertIn("logs -n default", diagnostics)
             self.assertIn("export logs", calls)
 
     def test_driver_has_argo_lint_diagnostics_and_guaranteed_kind_cleanup(self) -> None:
@@ -92,6 +140,12 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertIn('"path":"/data/artifactRepository"', text)
         self.assertIn('"op":"remove"', text)
         self.assertIn("rollout restart deployment/workflow-controller --namespace argo", text)
+
+    def test_diagnostics_collect_workload_namespace_logs(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn("kubectl get pods -n default -o name", text)
+        self.assertIn('kubectl logs -n default "$pod"', text)
+        self.assertNotIn("kubectl logs -A", text)
 
     def test_default_executor_uses_canonical_task_result_rbac(self) -> None:
         text = SCRIPT.read_text()

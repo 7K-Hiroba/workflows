@@ -1,0 +1,6 @@
+schema: inari.chart-test.v1
+dependencies: []
+install:
+  timeout: 5m
+  values:
+    - charts/hiroba-nonplugin-smoke/ci/kind-values.yaml

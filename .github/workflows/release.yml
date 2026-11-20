@@ -73,8 +73,13 @@ jobs:
               [[ -n "$path" ]] || continue
               kind=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .kind' edge-plan.json)
               if [[ "$kind" == smoke ]]; then
-                target=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .targetComponent' edge-plan.json)
-                version=$(jq -r --arg target "$target" 'first(.publishComponents[] | select(.path == $target) | .version) // empty' edge-plan.json)
+                fixture_only=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .fixtureOnly' edge-plan.json)
+                if [[ "$fixture_only" == true ]]; then
+                  version=$(cd "consumer/${{ inputs.root }}" && "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/resolve-edge-version.sh" "$path")
+                else
+                  target=$(jq -r --arg path "$path" '.components[] | select(.path == $path) | .targetComponent' edge-plan.json)
+                  version=$(jq -r --arg target "$target" 'first(.publishComponents[] | select(.path == $target) | .version) // empty' edge-plan.json)
+                fi
               else
                 version=$(cd "consumer/${{ inputs.root }}" && "$GITHUB_WORKSPACE/.hiroba/workflows/scripts/resolve-edge-version.sh" "$path")
               fi
@@ -163,6 +168,9 @@ jobs:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         if: needs.compat.outputs.status != ''
         with: {name: compatibility-evidence, path: .}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: needs.plan.outputs.has-smoke == 'true'
+        with: {name: runtime-smoke-evidence, path: runtime-smoke-evidence}
       - id: collect
         if: always()
         name: Normalize and validate required release evidence
@@ -188,7 +196,9 @@ jobs:
           [[ "$HAS_UI" != true ]] || args+=(--lane "ui=${UI:-failure}")
           [[ "$HAS_CHART" != true ]] || args+=(--lane "chart=${CHART:-failure}")
           [[ "$HAS_OBSERVABILITY" != true ]] || args+=(--lane "observability=${OBSERVABILITY:-failure}")
-          [[ "$HAS_SMOKE" != true ]] || args+=(--lane "runtime-smoke=${RUNTIME:-failure}")
+          if [[ "$HAS_SMOKE" == true ]]; then
+            cp runtime-smoke-evidence/evidence/runtime-smoke.json evidence/runtime-smoke.json
+          fi
           python3 .hiroba/workflows/scripts/collect-release-evidence.py "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()

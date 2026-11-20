@@ -3,6 +3,8 @@ apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:
   name: hiroba-chartless-obs-observability
+  annotations:
+    inari.dev/observability-render-contract: inari.observability-pack/v2
 spec:
   schema:
     apiVersion: v1alpha1
@@ -37,7 +39,7 @@ spec:
           '
     includeWhen:
     - ${schema.spec.render == "all" || schema.spec.render == "dashboards"}
-  - id: dashboardHirobaChartlessObsOverview
+  - id: dashboardWorkflowsScaffoldOverview
     template:
       apiVersion: v1
       kind: ConfigMap
@@ -89,4 +91,5 @@ spec:
             annotations:
               summary: Synthetic hiroba-chartless-obs target is down
     includeWhen:
-    - ${schema.spec.render == "all" || schema.spec.render == "rules-central"}
+    - ${(schema.spec.render == "all" || schema.spec.render == "rules-central") &&
+      schema.spec.rulesCentral}

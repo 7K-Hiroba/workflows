@@ -6,4 +6,4 @@ jobs:
   edge:
     uses: 7K-Hiroba/workflows/.github/workflows/edge.yml@f572c5a244e27e4a77589f2730066749c7b51c6b # v1.0.0
     with: {root: .}
-    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
+    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read, artifact-metadata: write}

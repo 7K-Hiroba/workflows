@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import re
 import subprocess
@@ -211,6 +212,68 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(root, resolve)
         release_graphs = [name for name, job in rehearsal["jobs"].items() if job.get("uses", "").endswith("/release.yml")]
         self.assertEqual(release_graphs, ["full"], "one dispatch must run exactly one release graph so artifact names remain run-scoped")
+
+    def test_chartless_rehearsal_publishes_required_packages_through_aggregate_chain(self) -> None:
+        result = subprocess.run([
+            str(ROOT / ".venv/bin/python"), str(ROOT / "scripts/prepare-release-plan.py"),
+            "--root", str(ROOT / "tests/fixtures/chartless-observability"),
+            "--source-sha", "7ecf629dd02c9acca82878c6487a3560025e0411", "--rehearsal",
+        ], text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertTrue(plan["rehearsal"])
+        self.assertEqual(plan["components"], [])
+        self.assertEqual(
+            [(item["kind"], item["path"]) for item in plan["publishComponents"]],
+            [("package", "packages/hiroba-chartless-obs"), ("package", "packages/observability-pack")],
+        )
+        self.assertTrue(plan["hasPackages"])
+        self.assertTrue(plan["hasObservability"])
+        for flag in ("hasTemplates", "hasChart", "hasExtension", "hasUI", "hasSmoke"):
+            self.assertFalse(plan[flag], flag)
+
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        jobs = release["jobs"]
+        publishers = {
+            "publish-packages": ("has-packages", "package-components"),
+            "publish-templates": ("has-templates", "template-components"),
+            "publish-charts": ("has-chart", "chart-components"),
+            "publish-smoke": ("has-smoke", None),
+        }
+        for name, (flag, components) in publishers.items():
+            with self.subTest(publisher=name):
+                condition = jobs[name]["if"]
+                self.assertTrue(condition.startswith("always() && "), condition)
+                self.assertIn(f"needs.plan.outputs.{flag} == 'true'", condition)
+                if components is not None:
+                    matrix = jobs[name]["strategy"]["matrix"]["component"]
+                    self.assertEqual(matrix, "${{ fromJSON(needs.plan.outputs." + components + ") }}")
+                self.assertIn(
+                    f"(needs.plan.outputs.{flag} != 'true' || needs.{name}.result == 'success')",
+                    jobs["indexes"]["if"],
+                )
+        for name, flag in (("publish-extension", "has-extension"),):
+            condition = jobs[name]["if"]
+            self.assertTrue(condition.startswith("always() && "), condition)
+            self.assertIn(f"needs.plan.outputs.{flag} == 'true'", condition)
+            self.assertIn("needs.plan.outputs.has-ui == 'true'", condition)
+            self.assertIn(
+                "(needs.plan.outputs.has-extension != 'true' || needs.plan.outputs.has-ui != 'true' || needs.publish-extension.result == 'success')",
+                jobs["indexes"]["if"],
+            )
+        for name in ("indexes", "channels"):
+            self.assertTrue(jobs[name]["if"].startswith("always() && "), jobs[name]["if"])
+        self.assertIn("needs.indexes.outputs.status == 'success'", jobs["channels"]["if"])
+
+        result_step = jobs["result"]["steps"][0]
+        for flag in ("HAS_PACKAGES", "HAS_TEMPLATES", "HAS_CHART", "HAS_EXTENSION", "HAS_UI", "HAS_SMOKE"):
+            self.assertIn(flag, result_step["env"])
+        for flag, result_name in (
+            ("HAS_PACKAGES", "PACKAGES"), ("HAS_TEMPLATES", "TEMPLATES"),
+            ("HAS_CHART", "CHARTS"), ("HAS_SMOKE", "SMOKE"),
+        ):
+            self.assertIn(f'[[ "${flag}" != true || "${result_name}" == success ]] || status=failure', result_step["run"])
+        self.assertIn('[[ "$HAS_EXTENSION" != true || "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure', result_step["run"])
 
     def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()

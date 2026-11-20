@@ -42,7 +42,7 @@ jobs:
       rehearsal: true
       registry-prefix: ghcr.io/7k-hiroba/workflows/ci
       environment: ci-publish
-    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read}
+    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read, artifact-metadata: write}
   reuse-chart:
     if: inputs.mode == 'repair-chart' && inputs.source_sha == github.sha
     uses: $/.github/workflows/release-chart.yml
@@ -57,7 +57,7 @@ jobs:
       registry-prefix: ghcr.io/7k-hiroba/workflows/ci
       environment: ci-publish
       required-lanes: chart
-    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read}
+    permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read, artifact-metadata: write}
   result:
     if: always()
     needs: [resolve, full, reuse-chart]

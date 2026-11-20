@@ -4,6 +4,7 @@ import fnmatch
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -293,7 +294,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("needs.channels.outputs.status == 'success'", release["jobs"]["edge-release"]["if"])
 
     def test_publish_rehearsal_permission_chain_is_complete_and_scoped(self) -> None:
-        approved = {"contents": "write", "actions": "read", "packages": "write", "id-token": "write", "attestations": "write"}
+        approved = {"contents": "write", "actions": "read", "packages": "write", "id-token": "write", "attestations": "write", "artifact-metadata": "write"}
         access_level = {"none": 0, "read": 1, "write": 2}
         workflows = {path.name: yaml.safe_load(path.read_text()) for path in WORKFLOWS.glob("*.yml")}
         required_cache = {}
@@ -371,6 +372,40 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(workflows["release.yml"]["permissions"], approved)
         self.assertEqual(workflows["publish-rehearsal.yml"]["jobs"]["reuse-chart"]["permissions"]["contents"], "read")
+
+    def test_attestation_writers_have_artifact_metadata_permission(self) -> None:
+        expected = {
+            "release.yml": [("permissions", None)],
+            "release-oci.yml": [("jobs", "publish")],
+            "release-chart.yml": [("jobs", "publish")],
+            "release-extension.yml": [("jobs", "backend"), ("jobs", "ui")],
+            "release-smoke-suite.yml": [("jobs", "publish")],
+            "publish-rehearsal.yml": [("jobs", "full"), ("jobs", "reuse-chart")],
+            "edge.yml": [("jobs", "release")],
+            "scaffold/.github/workflows/release.yml.template": [("jobs", "release")],
+            "scaffold/.github/workflows/edge.yml.template": [("jobs", "edge")],
+            "scaffold/.github/workflows/chart-repair.yml.template": [("jobs", "repair")],
+        }
+        for workflow_name, selectors in expected.items():
+            path = ROOT / workflow_name if workflow_name.startswith("scaffold/") else WORKFLOWS / workflow_name
+            workflow = yaml.safe_load(path.read_text())
+            for kind, name in selectors:
+                permissions = workflow if kind == "permissions" else workflow["jobs"][name]
+                with self.subTest(workflow=workflow_name, job=name):
+                    self.assertEqual(permissions.get("permissions", {}).get("artifact-metadata"), "write")
+
+    def test_rendered_consumer_callers_have_artifact_metadata_permission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run([
+                "bash", str(ROOT / "scripts/render-scaffold.sh", ),
+                "--source", str(ROOT / "scaffold"), "--out", tmp,
+                "--sha", "0123456789abcdef0123456789abcdef01234567",
+            ], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name, job in (("release.yml", "release"), ("edge.yml", "edge"), ("chart-repair.yml", "repair")):
+                workflow = yaml.safe_load((Path(tmp) / ".github/workflows" / (name + ".template")).read_text())
+                with self.subTest(workflow=name, job=job):
+                    self.assertEqual(workflow["jobs"][job].get("permissions", {}).get("artifact-metadata"), "write")
 
     def test_release_mutations_are_serialized_per_consumer_without_cancellation(self) -> None:
         paths = [

@@ -122,9 +122,26 @@ class Validator:
                 if isinstance(rgd, dict):
                     if rgd.get("kind") != "ResourceGraphDefinition" or rgd.get("apiVersion") != "kro.run/v1alpha1":
                         self.error(rgd_path, "must be a kro.run/v1alpha1 ResourceGraphDefinition")
+                    metadata = rgd.get("metadata") if isinstance(rgd.get("metadata"), dict) else {}
+                    annotations = metadata.get("annotations") if isinstance(metadata.get("annotations"), dict) else {}
+                    if annotations.get("inari.dev/observability-render-contract") != "inari.observability-pack/v2":
+                        self.error(rgd_path, "metadata.annotations[inari.dev/observability-render-contract] must be inari.observability-pack/v2")
                     spec = rgd.get("spec") if isinstance(rgd.get("spec"), dict) else {}
                     if not isinstance(spec.get("schema"), dict) or not isinstance(spec.get("resources"), list):
                         self.error(rgd_path, "spec.schema and spec.resources are required")
+                    for resource in spec.get("resources", []):
+                        template = resource.get("template") if isinstance(resource, dict) else None
+                        if not isinstance(template, dict) or template.get("kind") != "PrometheusRule":
+                            continue
+                        resource_id = str(resource.get("id", ""))
+                        evaluation = "central" if resource_id == "rulesCentral" else "local" if resource_id == "rulesLocal" else ""
+                        if not evaluation:
+                            self.error(rgd_path, f"rule resource {resource_id!r} must declare central or local evaluation")
+                            continue
+                        boolean = "rulesCentral" if evaluation == "central" else "rulesLocal"
+                        include = " ".join(resource.get("includeWhen", []))
+                        if f"rules-{evaluation}" not in include or boolean not in include:
+                            self.error(rgd_path, f"{resource_id} must require render=rules-{evaluation} AND {boolean}")
             if package_type == "platform-app":
                 chart_path = directory / "chart.yaml"
                 chart = self.yaml(chart_path) if chart_path.is_file() else None
@@ -148,7 +165,7 @@ class Validator:
                 self.error(manifest, "observability pack must use an explicit compatible version range")
         return packages
 
-    def validate_templates(self, root_name: str) -> dict[str, dict[str, Any]]:
+    def validate_templates(self, root_name: str, app: str) -> dict[str, dict[str, Any]]:
         templates: dict[str, dict[str, Any]] = {}
         templates_root = self.safe_path(self.root, root_name, self.root / ".hiroba.yaml")
         if templates_root is None:
@@ -179,6 +196,22 @@ class Validator:
             skeleton = directory / "skeleton"
             if not skeleton.is_dir() or not any(path.is_file() for path in skeleton.rglob("*")):
                 self.error(manifest, "skeleton/ must contain at least one file")
+            declaration = data.get("observability")
+            if declaration is not None:
+                if data.get("kind") != "component":
+                    self.error(manifest, "observability is supported only for component templates")
+                manifest_path = self.safe_path(directory, declaration.get("manifest", "") if isinstance(declaration, dict) else "", manifest)
+                if manifest_path is None or not manifest_path.is_file():
+                    self.error(manifest, "observability.manifest must reference an existing file inside the template artifact")
+                else:
+                    metadata = self.yaml(manifest_path)
+                    if metadata is not None:
+                        self.validate_schema(metadata, "observability-v1.schema.json", manifest_path)
+                        if metadata.get("app") != app:
+                            self.error(manifest_path, f"app must equal configured app {app}")
+                        folder = metadata.get("folder")
+                        if folder != app and not str(folder).startswith(app + "/"):
+                            self.error(manifest_path, "folder must use the registered app prefix")
             templates[directory.name] = data
             self.counts["templates"] += 1
         return templates
@@ -276,6 +309,22 @@ class Validator:
         pack = data.get("observabilityPack")
         if isinstance(pack, dict) and pack.get("package") not in packages:
             self.error(manifest, f"observability package {pack.get('package')!r} does not exist")
+        packages_root = self.safe_path(self.root, config.get("components", {}).get("packagesRoot", "packages"), self.root / ".hiroba.yaml")
+        if packages_root is not None and packages_root.is_dir():
+            for name, package in packages.items():
+                declaration = package.get("observability") if isinstance(package, dict) else None
+                metadata_path = packages_root / name / "observability.yaml"
+                if isinstance(declaration, dict):
+                    if not metadata_path.is_file():
+                        self.error(metadata_path, "package declares observability but signed observability.yaml is missing")
+                        continue
+                    metadata = self.yaml(metadata_path)
+                    if metadata is not None:
+                        self.validate_schema(metadata, "observability-v1.schema.json", metadata_path)
+                        if metadata != data:
+                            self.error(metadata_path, "package observability.yaml does not match canonical observability.yaml")
+                elif metadata_path.is_file():
+                    self.error(metadata_path, "stale package observability.yaml without package.yaml declaration")
         self.counts["observability"] += 1
 
     def validate_smoke(self, config: dict[str, Any]) -> None:
@@ -407,7 +456,7 @@ class Validator:
             if isinstance(config.get("app"), str) and isinstance(config.get("components"), dict):
                 self.validate_symlinks()
                 packages = self.validate_packages(config["components"].get("packagesRoot", "packages"))
-                self.validate_templates(config["components"].get("templatesRoot", "templates"))
+                self.validate_templates(config["components"].get("templatesRoot", "templates"), config["app"])
                 self.validate_extension(config)
                 self.validate_observability(config, config["app"], packages)
                 self.validate_smoke(config)

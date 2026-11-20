@@ -280,6 +280,53 @@ class ValidateRepositoryTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("rulesCentral", result.stdout + result.stderr)
 
+    def test_rule_include_when_requires_exact_canonical_form(self) -> None:
+        for evaluation, boolean in (("central", "rulesCentral"), ("local", "rulesLocal")):
+            resource_id = "rules" + evaluation.capitalize()
+            invalid_expressions = (
+                f'${{schema.spec.render == "rules-{evaluation}" || schema.spec.{boolean}}}',
+                f'${{schema.spec.render == "dashboards" && schema.spec.{boolean}}}',
+                f'${{schema.spec.render == "rules-{evaluation}" && schema.spec.{boolean}}}',
+            )
+            for expression in invalid_expressions:
+                with self.subTest(evaluation=evaluation, expression=expression):
+                    def invalid(root: Path, expression=expression, resource_id=resource_id) -> None:
+                        rgd_path = root / "packages/observability-pack/rgd.yaml"
+                        document = yaml.safe_load(rgd_path.read_text())
+                        document["spec"]["resources"].append({
+                            "id": resource_id,
+                            "template": {
+                                "apiVersion": "monitoring.coreos.com/v1",
+                                "kind": "PrometheusRule",
+                                "metadata": {"name": f"workflows-scaffold-{evaluation}"},
+                            },
+                            "includeWhen": [expression],
+                        })
+                        rgd_path.write_text(yaml.safe_dump(document, sort_keys=False))
+                    result = self.run_validation(invalid)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(boolean, result.stdout + result.stderr)
+
+    def test_canonical_rule_include_when_is_valid(self) -> None:
+        def canonical(root: Path) -> None:
+            rgd_path = root / "packages/observability-pack/rgd.yaml"
+            document = yaml.safe_load(rgd_path.read_text())
+            for evaluation, boolean in (("central", "rulesCentral"), ("local", "rulesLocal")):
+                resource_id = "rules" + evaluation.capitalize()
+                expression = f'${{(schema.spec.render == "all" || schema.spec.render == "rules-{evaluation}") && schema.spec.{boolean}}}'
+                document["spec"]["resources"].append({
+                    "id": resource_id,
+                    "template": {
+                        "apiVersion": "monitoring.coreos.com/v1",
+                        "kind": "PrometheusRule",
+                        "metadata": {"name": f"workflows-scaffold-{evaluation}"},
+                    },
+                    "includeWhen": [expression],
+                })
+            rgd_path.write_text(yaml.safe_dump(document, sort_keys=False))
+        result = self.run_validation(canonical)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_observability_package_requires_full_metadata(self) -> None:
         def missing_metadata(root: Path) -> None:
             package = root / "packages/app/package.yaml"

@@ -140,8 +140,9 @@ class Validator:
                             continue
                         boolean = "rulesCentral" if evaluation == "central" else "rulesLocal"
                         include = " ".join(resource.get("includeWhen", []))
-                        if f"rules-{evaluation}" not in include or boolean not in include:
-                            self.error(rgd_path, f"{resource_id} must require render=rules-{evaluation} AND {boolean}")
+                        expected = f'${{(schema.spec.render == "all" || schema.spec.render == "rules-{evaluation}") && schema.spec.{boolean}}}'
+                        if include != expected:
+                            self.error(rgd_path, f"{resource_id} must use the exact canonical predicate {expected}")
             if package_type == "platform-app":
                 chart_path = directory / "chart.yaml"
                 chart = self.yaml(chart_path) if chart_path.is_file() else None

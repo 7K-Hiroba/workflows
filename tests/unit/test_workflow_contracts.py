@@ -219,6 +219,12 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn('cp runtime-smoke-evidence/evidence/runtime-smoke.json evidence/runtime-smoke.json', text)
         self.assertNotIn('jq -n --arg lane runtime-smoke', smoke)
 
+    def test_release_creates_evidence_directory_before_runtime_copy(self) -> None:
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        collect = next(step for step in release["jobs"]["evidence"]["steps"] if step.get("id") == "collect")
+        run = collect["run"]
+        self.assertLess(run.index("mkdir -p evidence"), run.index("cp runtime-smoke-evidence/evidence/runtime-smoke.json"))
+
     def test_edge_resolves_standalone_fixture_smoke_version(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()
         self.assertIn('fixture_only=$(jq -r', release)

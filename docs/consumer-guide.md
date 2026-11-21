@@ -4,6 +4,8 @@
 2. Keep `.hiroba.yaml`, extension/package/template manifests, values schemas, canonical observability, generated outputs, and optional `tests/smoke/` synchronized. Chartless observability omits `observability.chart`; runtime smoke declares an explicit `helm` or `manifests` adapter and its allowed `executableProfiles`.
 3. Use thin callers from `scaffold/.github/workflows/*.template`. The renderer replaces `__WORKFLOWS_V1_SHA__` with the full approved commit SHA and preserves the version comment. Placeholders, `@v1`, `@main`, and short SHAs fail policy.
 4. Use only explicit App credentials for release-please/finalization; never `secrets: inherit`. PR lanes require contents-read only.
+
+Declare `releaseComponents` only for components that need a non-legacy signed Release identity, and remove stale entries when components are removed. Artifact-bound smoke must not have its own entry because it inherits the target. Backend-only repositories require backend compatibility evidence; UI-only repositories require browser evidence; repositories with both retain the combined lanes. The compatibility matrix is valid for any of these selections. Chart repair tries `chart-NAME-vVERSION` first and falls back to the legacy `NAME-vVERSION` annotated tag.
 5. Require the stable `library CI / result` and `scaffold CI / result` checks after verifying the exact names on a completed PR run. Keep matrix summary names stable.
 6. Let Renovate propose workflow/action/chart/SDK updates; trusted workflow updates are manually reviewed.
 

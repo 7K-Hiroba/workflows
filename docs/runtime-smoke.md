@@ -13,7 +13,7 @@ An omitted adapter and `executableProfiles` retain the legacy helm behavior so v
 
 ## Fixture-only suites
 
-A chartless synthetic suite uses `fixtureOnly: true`, no `target.component`, a collision-free `<app>-smoke` target ID, independent `tests/smoke` release metadata, and exactly `executableProfiles: [ci]`. Its manifests must deploy and assert a meaningful workload, not skip the journey.
+A chartless synthetic suite uses `fixtureOnly: true`, no `target.component`, a collision-free `<app>-smoke` target ID, independent `tests/smoke` release metadata, and exactly `executableProfiles: [ci]`. Its manifests must deploy and assert a meaningful workload, not skip the journey. A standalone suite may declare a `releaseComponents` entry for its own signed Release. Artifact-bound suites inherit the target chart/package release identity for signing and OCI verification.
 
 Schema, repository validation, the runtime driver, release planning, and signed evidence verification enforce these restrictions. Evidence includes `evidenceScope: fixture` and `appEvidenceEligible: false`. Fixture-only evidence cannot satisfy reviewed/official application runtime evidence and cannot be used for real stage/prod application verification. Maintainers must replace it with an artifact-bound target for those purposes.
 

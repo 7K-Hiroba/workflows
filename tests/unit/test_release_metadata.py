@@ -81,6 +81,20 @@ class ReleaseMetadataTests(unittest.TestCase):
         release_please = json.loads((self.root / "release-please-config.json").read_text())
         self.assertEqual(release_please["packages"]["tests/smoke"]["component"], "smoke-workflows-scaffold-smoke")
 
+    def test_release_components_reject_unknown_paths_and_artifact_bound_smoke(self) -> None:
+        for release_components, expected in (
+            ({"packages/missing": "package-missing"}, "unknown component"),
+            ({"tests/smoke": "smoke-custom"}, "inherits its target"),
+        ):
+            with self.subTest(release_components=release_components):
+                config_path = self.root / ".hiroba.yaml"
+                config = yaml.safe_load(config_path.read_text())
+                config["releaseComponents"] = release_components
+                config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+                result = self.run_script("discover-components.py", "--all")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stdout + result.stderr)
+
     def test_discovery_can_filter_changed_files(self) -> None:
         changed = self.root / "changed.txt"
         changed.write_text("packages/app/package.yaml\n")

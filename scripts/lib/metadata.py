@@ -121,6 +121,13 @@ def discover(root: Path) -> dict[str, Any]:
             raise ValueError("artifact-bound smoke inherits its target release component")
         component["releaseComponent"] = release_component
 
+    for component in components:
+        if component["kind"] != "smoke" or component["fixtureOnly"]:
+            continue
+        target = by_path.get(component.get("targetComponent", ""))
+        if target is not None and target.get("releaseComponent"):
+            component["releaseComponent"] = target["releaseComponent"]
+
     components.sort(key=lambda item: (item["name"], item["kind"], item["path"]))
     return {"schema": "inari.release-plan.v1", "app": app, "trustTier": config.get("trustTier", "experimental"), "components": components}
 

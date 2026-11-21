@@ -33,7 +33,7 @@ for component in plan["components"]:
     data = json.load(open(path))
     validate_artifact(data, component, plan["app"], plan["registryPrefix"], source, "normal")
 PY
-mapfile -t COMPONENTS < <(jq -r '.components[] | select(.kind != "smoke") | [.kind,.name,.path,.version] | @tsv' "$PLAN")
+mapfile -t COMPONENTS < <(jq -r '.components[] | select(.kind != "smoke" or .fixtureOnly == true) | [.kind,(.releaseComponent // .name),.path,.version] | @tsv' "$PLAN")
 [[ ${#COMPONENTS[@]} -gt 0 ]] || { echo "no components to finalize" >&2; exit 2; }
 git -C "$ROOT" config gpg.format x509
 git -C "$ROOT" config gpg.x509.program gitsign
@@ -41,11 +41,7 @@ git -C "$ROOT" config gitsign.tokenProvider github-actions
 TAGS=()
 for row in "${COMPONENTS[@]}"; do
   IFS=$'\t' read -r KIND NAME _ VERSION <<< "$row"
-  case "$KIND" in
-    extension) TAG="extension-v$VERSION" ;;
-    ui) TAG="ui-v$VERSION" ;;
-    *) TAG="$NAME-v$VERSION" ;;
-  esac
+  TAG="$NAME-v$VERSION"
   EXISTING=$(git -C "$ROOT" rev-parse -q --verify "refs/tags/$TAG^{commit}" 2>/dev/null || true)
   if [[ -n "$EXISTING" ]]; then
     [[ "$EXISTING" == "$SOURCE_SHA" ]] || { echo "tag $TAG points at $EXISTING, not $SOURCE_SHA" >&2; exit 1; }

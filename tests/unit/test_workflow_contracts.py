@@ -189,6 +189,20 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(repair["jobs"]["repair"]["needs"], "resolve")
         self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
         self.assertIn('refs/tags/$TAG^{}', repair_text)
+        self.assertIn('TAG="chart-$CHART-v$VERSION"', repair_text)
+        self.assertIn('TAG="$CHART-v$VERSION"', repair_text)
+        chart_release = (WORKFLOWS / "release-chart.yml").read_text()
+        self.assertIn("releaseComponents", chart_release)
+        self.assertIn('release_tag="$release_component-v$version"', chart_release)
+
+    def test_smoke_release_and_runtime_verification_share_opt_in_target_identity(self) -> None:
+        smoke_release = (WORKFLOWS / "release-smoke-suite.yml").read_text()
+        self.assertIn("releaseComponents", smoke_release)
+        self.assertIn('release_tag="$release_component-v${version}"', smoke_release)
+        runtime = (ROOT / "scripts/run-runtime-smoke.sh").read_text()
+        self.assertIn(".releaseComponent // .name", runtime)
+        self.assertNotIn('app_release_tag="$APP_NAME-v$APP_VERSION"', runtime)
+        self.assertNotIn('release_tag="$TARGET_ID-v$TARGET_VERSION"', runtime)
 
     def test_manifests_packages_have_a_real_test_lane(self) -> None:
         workflow = yaml.safe_load((WORKFLOWS / "test-packages.yml").read_text())

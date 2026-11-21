@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 from tests.unit.test_validate_repository import make_valid_repo
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +44,17 @@ class PrepareOciTests(unittest.TestCase):
         self.assertEqual(descriptor["mediaType"], "application/vnd.inari.template.v1")
         self.assertEqual(descriptor["key"], "templates-service")
         self.assertEqual(descriptor["key"], artifact_key({"kind": "template", "name": "service"}))
+
+    def test_opt_in_release_component_flows_into_descriptor_and_edge_tag(self) -> None:
+        config_path = self.root / ".hiroba.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["releaseComponents"] = {"packages/app": "package-app"}
+        config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+        result = self.run_prepare("--kind", "package", "--name", "app", "--edge", "--version", "0.2.0-0123456")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        descriptor = json.loads(result.stdout)[0]
+        self.assertEqual(descriptor["releaseTag"], "package-app-v0.2.0-0123456")
+        self.assertEqual(descriptor["repository"], "ghcr.io/7k-hiroba/workflows-scaffold/catalog/app")
 
     def test_edge_uses_resolved_prerelease_version_and_release_tag(self) -> None:
         result = self.run_prepare("--kind", "package", "--name", "app", "--edge", "--version", "0.2.0-0123456")

@@ -63,7 +63,8 @@ jobs:
           [[ -n "$chart_path" ]] || { echo "chart is not declared in the consumer plan" >&2; exit 2; }
           version="${{ inputs.version }}"
           source_sha="${{ inputs.source-sha }}"
-          release_tag="${{ inputs.chart }}-v$version"
+          release_component=$(python3 -c 'import sys,yaml; data=yaml.safe_load(open(sys.argv[1])); print(data.get("releaseComponents", {}).get(sys.argv[2], sys.argv[3]))' "consumer/${{ inputs.root }}/.hiroba.yaml" "$chart_path" "${{ inputs.chart }}")
+          release_tag="$release_component-v$version"
           if [[ "${{ inputs.rehearsal }}" == true && "${{ inputs.repair }}" == true ]]; then echo "rehearsal cannot repair a git tag" >&2; exit 2; fi
           if [[ "${{ inputs.rehearsal }}" == true ]]; then
             version="$version-ci.${source_sha:0:12}"

@@ -248,6 +248,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('release_tag="$release_component-v${version}"', smoke_release)
         runtime = (ROOT / "scripts/run-runtime-smoke.sh").read_text()
         self.assertIn(".releaseComponent // .name", runtime)
+        self.assertIn('first(.components[] | select(.kind == "smoke")) | (.releaseComponent // .name) + "-v" + $version', runtime)
+        self.assertNotIn('if $target == "" then $smoke', runtime)
         self.assertNotIn('app_release_tag="$APP_NAME-v$APP_VERSION"', runtime)
         self.assertNotIn('release_tag="$TARGET_ID-v$TARGET_VERSION"', runtime)
 

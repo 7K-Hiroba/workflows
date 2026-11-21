@@ -172,7 +172,7 @@ else
       expected_publisher="^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-smoke-suite\\.yml@${WORKFLOW_SHA}$"
       media_type=application/vnd.inari.smoke.suite.v1+yaml
       required="validate runtime-smoke"
-      release_tag=$(jq -r --arg target "$TARGET" --arg version "$TARGET_VERSION" 'first(.components[] | select(.kind == "smoke")) as $smoke | (if $target == "" then $smoke else first(.components[] | select(.path == $target)) end) | (.releaseComponent // .name) + "-v" + $version' "$ROOT/evidence-runtime-plan.json")
+      release_tag=$(jq -r --arg version "$TARGET_VERSION" 'first(.components[] | select(.kind == "smoke")) | (.releaseComponent // .name) + "-v" + $version' "$ROOT/evidence-runtime-plan.json")
     fi
     ARTIFACT_REF="$ref" ARTIFACT_REPOSITORY="$repository" ARTIFACT_DIGEST="${ref#*@}" MEDIA_TYPE="$media_type" \
       SOURCE_REPOSITORY="$GITHUB_REPOSITORY" SOURCE_SHA="$SOURCE_SHA" WORKFLOW_SHA="$WORKFLOW_SHA" WORKFLOW_PATH="$workflow_path" \

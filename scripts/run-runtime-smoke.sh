@@ -31,6 +31,7 @@ SOURCE_SHA=$(git -C "$ROOT" rev-parse HEAD)
 python3 "$LIBRARY/scripts/validate-repository.py" --root "$ROOT"
 python3 "$LIBRARY/scripts/discover-components.py" --root "$ROOT" --all > "$ROOT/evidence-runtime-plan.json"
 APP=$(jq -r '.app' "$ROOT/evidence-runtime-plan.json")
+RELEASE_NAME=$(python3 -c 'import sys; sys.path.insert(0,sys.argv[2]); from lib.names import bounded_resource_name; print(bounded_resource_name(sys.argv[1], 53))' "$APP" "$LIBRARY/scripts")
 TARGET=$(jq -r 'first(.components[] | select(.kind == "smoke") | .targetComponent) // empty' "$ROOT/evidence-runtime-plan.json")
 SMOKE_PATH=$(jq -r 'first(.components[] | select(.kind == "smoke") | .path) // empty' "$ROOT/evidence-runtime-plan.json")
 ADAPTER=$(jq -r 'first(.components[] | select(.kind == "smoke") | .targetAdapter) // "helm"' "$ROOT/evidence-runtime-plan.json")
@@ -121,7 +122,7 @@ if [[ "$MODE" == local ]]; then
         [[ -n "$dependency" ]] || continue
         kubectl apply -f "$ROOT/$dependency"
       done < <(jq -r '.dependencies[]' "$WORK/chart-test.json")
-      helm upgrade --install "$APP" "$ROOT/$CHART" --namespace default \
+      helm upgrade --install "$RELEASE_NAME" "$ROOT/$CHART" --namespace default \
         --values "$SUITE_DIR/values.yaml" --wait --timeout 5m
       ;;
     manifests)
@@ -185,7 +186,7 @@ else
   if [[ "$ADAPTER" == helm ]]; then
     APP_REPOSITORY=${APP_REF%@*}
     crane digest "$APP_REPOSITORY:$APP_VERSION" | grep -Fx "${APP_REF#*@}"
-    helm upgrade --install "$APP" "oci://$APP_REPOSITORY" --namespace default --version "$APP_VERSION" --wait --timeout 5m
+    helm upgrade --install "$RELEASE_NAME" "oci://$APP_REPOSITORY" --namespace default --version "$APP_VERSION" --wait --timeout 5m
     crane digest "$APP_REPOSITORY:$APP_VERSION" | grep -Fx "${APP_REF#*@}"
   else
     mkdir -p "$WORK/app"

@@ -128,7 +128,7 @@ def main() -> int:
             required.append(lane)
     if has_observability and components:
         required.append("observability")
-    if "extension" in kinds or "ui" in kinds:
+    if "extension" in kinds:
         required.append("compat")
     if "ui" in kinds:
         required.append("browser")

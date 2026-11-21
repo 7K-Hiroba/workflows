@@ -42,6 +42,27 @@ class PrepareReleasePlanTests(unittest.TestCase):
         self.assertTrue(plan["hasExtension"])
         self.assertTrue(plan["hasSmoke"])
 
+    def test_single_component_release_lanes_are_independent(self) -> None:
+        config_path = self.root / ".hiroba.yaml"
+        for absent, expected, forbidden in (
+            ("ui", {"go", "compat"}, {"ui", "browser"}),
+            ("extension", {"ui", "browser"}, {"go", "compat"}),
+        ):
+            with self.subTest(absent=absent):
+                config = yaml.safe_load(config_path.read_text())
+                config["components"].pop(absent, None)
+                config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+                result = self.run_plan("--rehearsal")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                plan = json.loads(result.stdout)
+                self.assertTrue(expected.issubset(set(plan["requiredLanes"])))
+                self.assertTrue(forbidden.isdisjoint(plan["requiredLanes"]))
+                self.assertEqual(plan["hasExtension"], absent != "extension")
+                self.assertEqual(plan["hasUI"], absent != "ui")
+                restored = yaml.safe_load(config_path.read_text())
+                restored["components"][absent] = {"path": absent, "version": "0.1.0"}
+                config_path.write_text(yaml.safe_dump(restored, sort_keys=False))
+
     def test_existing_target_tag_filters_chart_and_smoke(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "tag", "workflows-scaffold-v0.1.0", self.sha], check=True)
         result = self.run_plan()

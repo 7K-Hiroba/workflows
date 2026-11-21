@@ -159,6 +159,26 @@ class WorkflowContractTests(unittest.TestCase):
         data = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
         self.assertEqual(data["jobs"]["test"]["runs-on"], "ubuntu-24.04")
 
+    def test_compatibility_supports_backend_only_and_ui_only_repositories(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
+        plan = next(step for step in workflow["jobs"]["plan"]["steps"] if step.get("id") == "plan")
+        self.assertIn('[[ -n "$extension_path" || -n "$ui_path" ]]', plan["run"])
+        conditions = {
+            "Run backend stable/previous or nightly matrix": "needs.plan.outputs.extension-path != ''",
+            "Build canonical UI remote": "needs.plan.outputs.ui-path != ''",
+            "Mount every declared slot in a real stable/edge UI host": "needs.plan.outputs.ui-path != ''",
+            "Validate source-bound fresh compatibility evidence": "needs.plan.outputs.extension-path != ''",
+        }
+        for step in workflow["jobs"]["test"]["steps"]:
+            name = step.get("name")
+            if name in conditions:
+                self.assertEqual(step.get("if"), conditions[name], name)
+            uses = str(step.get("uses", ""))
+            if uses.startswith("actions/setup-go@"):
+                self.assertEqual(step.get("if"), "needs.plan.outputs.extension-path != ''")
+            if uses.startswith("actions/setup-node@"):
+                self.assertEqual(step.get("if"), "needs.plan.outputs.ui-path != ''")
+
     def test_extension_ui_setup_node_uses_default_no_cache_behavior(self) -> None:
         workflow = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         steps = [step for step in workflow["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/setup-node@")]

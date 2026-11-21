@@ -40,7 +40,7 @@ jobs:
       - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with: {name: "${{ inputs.evidence-name }}", path: evidence}
       - id: config
         run: |
@@ -147,7 +147,7 @@ jobs:
       - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with: {name: "${{ inputs.evidence-name }}", path: evidence}
       - id: config
         run: |
@@ -233,7 +233,7 @@ jobs:
           mkdir -p evidence/oci-ui
           oras pull --output evidence/oci-ui "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/dist" --oci-dir evidence/oci-ui --manifest "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/ui-bundle-manifest.json"
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: inputs.backend-enabled
         with: {name: artifact-extension, path: evidence/backend}
       - name: Render exact extension registration metadata

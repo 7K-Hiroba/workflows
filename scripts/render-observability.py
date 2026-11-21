@@ -125,6 +125,20 @@ def render_pack(app: str, manifest: dict[str, Any], dashboards: list[tuple[dict[
         boolean = "rulesCentral" if evaluation == "central" else "rulesLocal"
         include = f'${{(schema.spec.render == "all" || schema.spec.render == "rules-{evaluation}") && schema.spec.{boolean}}}'
         resources.append(pack_resource(kro_resource_id("rules", evaluation), template, include))
+        rules_config = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "${schema.spec.app}-" + evaluation + "-rules",
+                "namespace": "${schema.spec.namespace}",
+                "labels": {
+                    "app.kubernetes.io/name": app,
+                    "inari.dev/rule-evaluation": evaluation,
+                },
+            },
+            "data": {evaluation + ".yaml": dump_document(content)},
+        }
+        resources.append(pack_resource(kro_resource_id("rulesConfig", evaluation), rules_config, include))
     rgd = {
         "apiVersion": "kro.run/v1alpha1",
         "kind": "ResourceGraphDefinition",

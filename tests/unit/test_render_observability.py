@@ -81,6 +81,16 @@ class RenderObservabilityTests(unittest.TestCase):
             resources["rulesLocal"]["includeWhen"][0],
             '${(schema.spec.render == "all" || schema.spec.render == "rules-local") && schema.spec.rulesLocal}',
         )
+        for evaluation, gate in (("Central", "rulesCentral"), ("Local", "rulesLocal")):
+            resource_id = "rulesConfig" + evaluation
+            self.assertIn(resource_id, resources)
+            config_map = resources[resource_id]
+            self.assertEqual("ConfigMap", config_map["template"]["kind"])
+            self.assertEqual(config_map["includeWhen"], resources["rules" + evaluation]["includeWhen"])
+            self.assertEqual("monitoring.coreos.com/v1", resources["rules" + evaluation]["template"]["apiVersion"])
+            self.assertEqual("${schema.spec.app}-" + evaluation.lower() + "-rules", config_map["template"]["metadata"]["name"])
+            self.assertEqual(evaluation.lower(), config_map["template"]["metadata"]["labels"]["inari.dev/rule-evaluation"])
+            self.assertIn("groups:", config_map["template"]["data"][evaluation.lower() + ".yaml"])
 
     def test_app_package_contains_full_signed_observability_manifest(self) -> None:
         package = self.root / "packages/app/package.yaml"

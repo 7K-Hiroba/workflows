@@ -42,6 +42,11 @@
       "additionalProperties": false,
       "required": ["matrix"],
       "properties": {"matrix": {"type": "string"}}
+    },
+    "releaseComponents": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-zA-Z0-9._/-]+$"},
+      "additionalProperties": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
     }
   },
   "$defs": {

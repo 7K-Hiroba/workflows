@@ -17,12 +17,9 @@ MEDIA = {
 }
 
 
-def release_tag(component: dict[str, Any]) -> str:
-    if component["kind"] == "extension":
-        return f"extension-v{component['version']}"
-    if component["kind"] == "ui":
-        return f"ui-v{component['version']}"
-    return f"{component['name']}-v{component['version']}"
+def release_tag(component: dict[str, Any], version: str | None = None) -> str:
+    identity = component.get("releaseComponent", component["name"])
+    return f"{identity}-v{version or component['version']}"
 
 
 def artifact_key(component: dict[str, Any]) -> str:

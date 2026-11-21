@@ -33,8 +33,8 @@ def component_config(component: dict[str, Any]) -> dict[str, Any]:
     }.get(kind)
     if extra_files:
         config["extra-files"] = extra_files
-    if kind == "smoke":
-        config["component"] = component["name"]
+    if kind == "smoke" or component.get("releaseComponent"):
+        config["component"] = component.get("releaseComponent", component["name"])
     return config
 
 

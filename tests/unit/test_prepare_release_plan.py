@@ -78,6 +78,47 @@ class PrepareReleasePlanTests(unittest.TestCase):
         plan = json.loads(result.stdout)
         self.assertEqual([item["kind"] for item in plan["components"]], ["chart", "smoke"])
 
+    def test_opt_in_kind_qualified_identities_resolve_same_name_components(self) -> None:
+        (self.root / "packages/app").rename(self.root / "packages/workflows-scaffold")
+        (self.root / "templates/service").rename(self.root / "templates/workflows-scaffold")
+        template = self.root / "templates/workflows-scaffold/template.yaml"
+        document = yaml.safe_load(template.read_text())
+        document["name"] = "workflows-scaffold"
+        template.write_text(yaml.safe_dump(document, sort_keys=False))
+        config_path = self.root / ".hiroba.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["releaseComponents"] = {
+            "charts/workflows-scaffold": "chart-workflows-scaffold",
+            "packages/workflows-scaffold": "package-workflows-scaffold",
+            "templates/workflows-scaffold": "template-workflows-scaffold",
+        }
+        config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+
+        result = self.run_plan("--rehearsal")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        components = {
+            item["path"]: item
+            for item in json.loads(result.stdout)["publishComponents"]
+            if item["path"] in config["releaseComponents"]
+        }
+        self.assertEqual(set(components), set(config["releaseComponents"]))
+        for path, release_component in config["releaseComponents"].items():
+            self.assertEqual(components[path]["releaseComponent"], release_component)
+
+        repair = self.run_plan("--repair-tag", "chart-workflows-scaffold-v0.1.0")
+        self.assertEqual(repair.returncode, 0, repair.stdout + repair.stderr)
+        self.assertEqual([item["kind"] for item in json.loads(repair.stdout)["components"]], ["chart", "smoke"])
+
+        synchronized = subprocess.run([
+            str(ROOT / ".venv/bin/python"), str(ROOT / "scripts/sync-release-please-config.py"),
+            "--root", str(self.root),
+        ], text=True, capture_output=True, check=False)
+        self.assertEqual(synchronized.returncode, 0, synchronized.stdout + synchronized.stderr)
+        release_please = json.loads((self.root / "release-please-config.json").read_text())
+        for path, release_component in config["releaseComponents"].items():
+            self.assertEqual(release_please["packages"][path]["component"], release_component)
+        self.assertNotIn("component", release_please["packages"]["packages/admission-example"])
+
     def enable_standalone_smoke(self) -> None:
         use_fixture_only_smoke(self.root)
         subprocess.run(["git", "-C", str(self.root), "add", ".hiroba.yaml", "tests/smoke"], check=True)

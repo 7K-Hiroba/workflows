@@ -34,6 +34,37 @@ class ExtensionReleaseTests(unittest.TestCase):
             self.assertEqual(data["spec"]["ui"]["checksum"], "b" * 64)
             self.assertNotIn("@sha256:", source.read_text())
 
+    def test_backend_only_metadata_does_not_require_ui_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "extension.yaml"
+            source.write_text("spec:\n  kinds: [backend]\n  backend: {image: ghcr.io/7k-hiroba/app/extension}\n  ui: {remoteEntryOci: ghcr.io/7k-hiroba/app/extension-ui}\n")
+            backend = root / "backend.json"
+            backend.write_text(json.dumps({"repository": "ghcr.io/7k-hiroba/app/extension", "digest": DIGEST}))
+            output = root / "extension.release.yaml"
+            result = subprocess.run([str(ROOT / ".venv/bin/python"), str(SCRIPT), "--extension", str(source), "--backend", str(backend), "--output", str(output)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            data = yaml.safe_load(output.read_text())
+            self.assertEqual(data["spec"]["backend"]["image"], "ghcr.io/7k-hiroba/app/extension@" + DIGEST)
+            self.assertEqual(data["spec"]["ui"]["remoteEntryOci"], "ghcr.io/7k-hiroba/app/extension-ui")
+
+    def test_ui_only_metadata_does_not_require_backend_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "extension.yaml"
+            source.write_text("spec:\n  kinds: [ui]\n  backend: {image: ghcr.io/7k-hiroba/app/extension}\n  ui: {remoteEntryOci: ghcr.io/7k-hiroba/app/extension-ui}\n")
+            ui = root / "ui.json"
+            ui.write_text(json.dumps({"repository": "ghcr.io/7k-hiroba/app/extension-ui", "digest": DIGEST}))
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"files": [{"name": "remoteEntry.js", "sha256": "b" * 64}]}))
+            output = root / "extension.release.yaml"
+            result = subprocess.run([str(ROOT / ".venv/bin/python"), str(SCRIPT), "--extension", str(source), "--ui", str(ui), "--ui-manifest", str(manifest), "--output", str(output)], text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            data = yaml.safe_load(output.read_text())
+            self.assertEqual(data["spec"]["backend"]["image"], "ghcr.io/7k-hiroba/app/extension")
+            self.assertEqual(data["spec"]["ui"]["remoteEntryOci"], "ghcr.io/7k-hiroba/app/extension-ui@" + DIGEST)
+            self.assertEqual(data["spec"]["ui"]["checksum"], "b" * 64)
+
     def test_missing_digest_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

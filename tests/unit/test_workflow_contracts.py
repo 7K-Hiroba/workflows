@@ -186,6 +186,33 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(steps[0]["with"]["node-version"], 24)
         self.assertNotIn("cache", steps[0]["with"])
 
+    def test_extension_publication_supports_independent_backend_and_ui(self) -> None:
+        extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
+        inputs = extension.get("on", extension.get(True))["workflow_call"]["inputs"]
+        self.assertIn("backend-enabled", inputs)
+        self.assertIn("ui-enabled", inputs)
+        self.assertTrue(inputs["backend-enabled"]["default"])
+        self.assertTrue(inputs["ui-enabled"]["default"])
+        self.assertEqual(extension["jobs"]["backend"]["if"], "inputs.backend-enabled")
+        self.assertIn("inputs.ui-enabled", extension["jobs"]["ui"]["if"])
+        self.assertIn("needs.backend.result == 'success'", extension["jobs"]["ui"]["if"])
+        backend_render = next(step for step in extension["jobs"]["backend"]["steps"] if "render-extension-release.py" in step.get("run", ""))
+        self.assertIn("--backend evidence/artifact-extension.json", backend_render["run"])
+        self.assertNotIn("--ui ", backend_render["run"])
+        ui_download = next(step for step in extension["jobs"]["ui"]["steps"] if step.get("with", {}).get("name") == "artifact-extension")
+        self.assertEqual(ui_download["if"], "inputs.backend-enabled")
+        ui_render = next(step for step in extension["jobs"]["ui"]["steps"] if "render-extension-release.py" in step.get("run", ""))
+        self.assertIn('if [[ "${{ inputs.backend-enabled }}" == true ]]', ui_render["run"])
+
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        publish = release["jobs"]["publish-extension"]
+        self.assertIn("(needs.plan.outputs.has-extension == 'true' || needs.plan.outputs.has-ui == 'true')", publish["if"])
+        self.assertEqual(publish["with"]["backend-enabled"], "${{ needs.plan.outputs.has-extension == 'true' }}")
+        self.assertEqual(publish["with"]["ui-enabled"], "${{ needs.plan.outputs.has-ui == 'true' }}")
+        self.assertIn("((needs.plan.outputs.has-extension != 'true' && needs.plan.outputs.has-ui != 'true') || needs.publish-extension.result == 'success')", release["jobs"]["indexes"]["if"])
+        result = next(step for step in release["jobs"]["result"]["steps"] if step.get("id") == "result")
+        self.assertIn('[[ "$HAS_EXTENSION" != true && "$HAS_UI" != true || "$EXTENSION" == success ]]', result["run"])
+
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
         self.assertIn("scripts/chart-test-config.py", chart)
@@ -292,7 +319,7 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(f"needs.plan.outputs.{flag} == 'true'", condition)
             self.assertIn("needs.plan.outputs.has-ui == 'true'", condition)
             self.assertIn(
-                "(needs.plan.outputs.has-extension != 'true' || needs.plan.outputs.has-ui != 'true' || needs.publish-extension.result == 'success')",
+                "((needs.plan.outputs.has-extension != 'true' && needs.plan.outputs.has-ui != 'true') || needs.publish-extension.result == 'success')",
                 jobs["indexes"]["if"],
             )
         for name in ("indexes", "channels"):
@@ -307,7 +334,7 @@ class WorkflowContractTests(unittest.TestCase):
             ("HAS_CHART", "CHARTS"), ("HAS_SMOKE", "SMOKE"),
         ):
             self.assertIn(f'[[ "${flag}" != true || "${result_name}" == success ]] || status=failure', result_step["run"])
-        self.assertIn('[[ "$HAS_EXTENSION" != true || "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure', result_step["run"])
+        self.assertIn('[[ "$HAS_EXTENSION" != true && "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure', result_step["run"])
 
     def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()

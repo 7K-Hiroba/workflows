@@ -14,11 +14,14 @@ on:
       ui-version: {type: string, default: ""}
       backend-path: {type: string, default: ""}
       ui-path: {type: string, default: ""}
+      backend-enabled: {type: boolean, default: true}
+      ui-enabled: {type: boolean, default: true}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
 jobs:
   backend:
+    if: inputs.backend-enabled
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: ${{ inputs.environment }}
@@ -113,9 +116,17 @@ jobs:
           VERIFICATION_RECEIPT: evidence/receipt-extension.json
         run: .hiroba/workflows/scripts/verify-release.sh
       - run: python3 .hiroba/workflows/scripts/mark-artifact-verified.py --artifact evidence/artifact-extension.json --receipt evidence/receipt-extension.json --predicate evidence/test-extension.json
+      - name: Render exact backend registration metadata
+        run: python3 .hiroba/workflows/scripts/render-extension-release.py --extension "consumer/${{ inputs.root }}/extension.yaml" --backend evidence/artifact-extension.json --output evidence/extension.release.yaml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with: {name: artifact-extension, path: evidence/artifact-extension.json, retention-days: 30}
+        with:
+          name: artifact-extension
+          path: |
+            evidence/artifact-extension.json
+            evidence/extension.release.yaml
+          retention-days: 30
   ui:
+    if: always() && inputs.ui-enabled && (inputs.backend-enabled == false || needs.backend.result == 'success')
     needs: [backend]
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -223,9 +234,15 @@ jobs:
           oras pull --output evidence/oci-ui "${{ steps.config.outputs.repository }}@${{ steps.publish.outputs.digest }}"
           python3 .hiroba/workflows/scripts/check-ui-bundle.py --dist "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/dist" --oci-dir evidence/oci-ui --manifest "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/ui-bundle-manifest.json"
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: inputs.backend-enabled
         with: {name: artifact-extension, path: evidence/backend}
       - name: Render exact extension registration metadata
-        run: python3 .hiroba/workflows/scripts/render-extension-release.py --extension "consumer/${{ inputs.root }}/extension.yaml" --backend evidence/backend/artifact-extension.json --ui evidence/artifact-extension-ui.json --ui-manifest "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/ui-bundle-manifest.json" --output evidence/extension.release.yaml
+        run: |
+          args=(--extension "consumer/${{ inputs.root }}/extension.yaml" --ui evidence/artifact-extension-ui.json --ui-manifest "consumer/${{ inputs.root }}/${{ steps.config.outputs.ui-path }}/ui-bundle-manifest.json" --output evidence/extension.release.yaml)
+          if [[ "${{ inputs.backend-enabled }}" == true ]]; then
+            args+=(--backend evidence/backend/artifact-extension.json)
+          fi
+          python3 .hiroba/workflows/scripts/render-extension-release.py "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: artifact-extension-ui
@@ -242,7 +259,9 @@ jobs:
       - id: result
         env: {BACKEND: "${{ needs.backend.result }}", UI: "${{ needs.ui.result }}"}
         run: |
+          [[ "${{ inputs.backend-enabled }}" == true || "${{ inputs.ui-enabled }}" == true ]] || { echo "at least one extension component must be enabled" >&2; exit 2; }
           status=success
-          [[ "$BACKEND" == success && "$UI" == success ]] || status=failure
+          [[ "${{ inputs.backend-enabled }}" != true || "$BACKEND" == success ]] || status=failure
+          [[ "${{ inputs.ui-enabled }}" != true || "$UI" == success ]] || status=failure
           echo "status=$status" >> "$GITHUB_OUTPUT"
           [[ "$status" == success ]] || exit 1

@@ -40,7 +40,7 @@ git -C "$ROOT" config gpg.x509.program gitsign
 git -C "$ROOT" config gitsign.tokenProvider github-actions
 TAGS=()
 for row in "${COMPONENTS[@]}"; do
-  IFS=$'\t' read -r KIND NAME _ VERSION <<< "$row"
+  IFS=$'\t' read -r _ NAME _ VERSION <<< "$row"
   TAG="$NAME-v$VERSION"
   EXISTING=$(git -C "$ROOT" rev-parse -q --verify "refs/tags/$TAG^{commit}" 2>/dev/null || true)
   if [[ -n "$EXISTING" ]]; then

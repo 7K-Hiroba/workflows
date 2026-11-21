@@ -85,6 +85,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         for release_components, expected in (
             ({"packages/missing": "package-missing"}, "unknown component"),
             ({"tests/smoke": "smoke-custom"}, "inherits its target"),
+            ({"extension": "backend-custom"}, "fixed extension/UI"),
         ):
             with self.subTest(release_components=release_components):
                 config_path = self.root / ".hiroba.yaml"

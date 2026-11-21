@@ -117,6 +117,8 @@ def discover(root: Path) -> dict[str, Any]:
             raise ValueError(f"releaseComponents references unknown component path {path!r}")
         if not isinstance(release_component, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", release_component):
             raise ValueError(f"invalid release component {release_component!r} for {path}")
+        if component["kind"] in {"extension", "ui"}:
+            raise ValueError("backend and UI have fixed extension/UI release identities")
         if component["kind"] == "smoke" and not component["fixtureOnly"]:
             raise ValueError("artifact-bound smoke inherits its target release component")
         component["releaseComponent"] = release_component

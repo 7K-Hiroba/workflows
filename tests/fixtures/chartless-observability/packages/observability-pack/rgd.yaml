@@ -48,6 +48,8 @@ spec:
         namespace: ${schema.spec.namespace}
         labels:
           grafana_dashboard: '1'
+        annotations:
+          inari.dev/folder: ${schema.spec.folder}
       data:
         hiroba-chartless-obs-overview.json: "{\n  \"panels\": [\n    {\n      \"datasource\"\
           : {\n        \"type\": \"prometheus\",\n        \"uid\": \"${\"${DS_PROMETHEUS}\"\

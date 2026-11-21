@@ -52,6 +52,7 @@ class RenderObservabilityTests(unittest.TestCase):
         for resource in pack["spec"]["resources"]:
             self.assertRegex(resource["id"], re.compile(r"^[a-z][a-zA-Z0-9]*$"))
         dashboard = next(resource for resource in pack["spec"]["resources"] if resource["id"] == "dashboardWorkflowsScaffoldOverview")
+        self.assertEqual("${schema.spec.folder}", dashboard["template"]["metadata"]["annotations"]["inari.dev/folder"])
         payload = dashboard["template"]["data"]["workflows-scaffold-overview.json"]
         self.assertIn('${"${DS_PROMETHEUS}"}', payload)
         canonical = json.loads((self.root / "observability/dashboards/overview.json").read_text())

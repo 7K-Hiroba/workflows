@@ -110,7 +110,7 @@ def render_pack(app: str, manifest: dict[str, Any], dashboards: list[tuple[dict[
         template = {
             "apiVersion": "v1",
             "kind": "ConfigMap",
-            "metadata": {"name": uid, "namespace": "${schema.spec.namespace}", "labels": {"grafana_dashboard": "1"}},
+            "metadata": {"name": uid, "namespace": "${schema.spec.namespace}", "labels": {"grafana_dashboard": "1"}, "annotations": {"inari.dev/folder": "${schema.spec.folder}"}},
             "data": {f"{uid}.json": kro_json(content)},
         }
         resources.append(pack_resource(kro_resource_id("dashboard", uid), template, '${schema.spec.render == "all" || schema.spec.render == "dashboards"}'))

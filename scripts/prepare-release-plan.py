@@ -12,14 +12,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.metadata import SHA_RE, discover  # noqa: E402
+from lib.release_contract import release_tag  # noqa: E402
 
 
 def tag_for(component: dict) -> str:
-    if component["kind"] == "extension":
-        return f"extension-v{component['version']}"
-    if component["kind"] == "ui":
-        return f"ui-v{component['version']}"
-    return f"{component['name']}-v{component['version']}"
+    return release_tag(component)
 
 
 def smoke_release_target(component: dict, all_components: list[dict]) -> dict | None:
@@ -131,7 +128,7 @@ def main() -> int:
             required.append(lane)
     if has_observability and components:
         required.append("observability")
-    if "extension" in kinds or "ui" in kinds:
+    if "extension" in kinds:
         required.append("compat")
     if "ui" in kinds:
         required.append("browser")

@@ -261,7 +261,7 @@ jobs:
       required-lanes: ${{ needs.plan.outputs.required-lanes }}
       edge: ${{ inputs.edge }}
   publish-extension:
-    if: always() && needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-extension == 'true' && needs.plan.outputs.has-ui == 'true'
+    if: always() && needs.evidence.outputs.status == 'success' && (needs.plan.outputs.has-extension == 'true' || needs.plan.outputs.has-ui == 'true')
     needs: [plan, evidence]
     uses: $/.github/workflows/release-extension.yml
     with:
@@ -276,6 +276,8 @@ jobs:
       backend-path: ${{ needs.plan.outputs.extension-path }}
       ui-version: ${{ needs.plan.outputs.ui-version }}
       ui-path: ${{ needs.plan.outputs.ui-path }}
+      backend-enabled: ${{ needs.plan.outputs.has-extension == 'true' }}
+      ui-enabled: ${{ needs.plan.outputs.has-ui == 'true' }}
   publish-smoke:
     if: always() && needs.evidence.outputs.status == 'success' && needs.plan.outputs.has-smoke == 'true'
     needs: [plan, evidence]
@@ -295,7 +297,7 @@ jobs:
       (needs.plan.outputs.has-packages != 'true' || needs.publish-packages.result == 'success') &&
       (needs.plan.outputs.has-templates != 'true' || needs.publish-templates.result == 'success') &&
       (needs.plan.outputs.has-chart != 'true' || needs.publish-charts.result == 'success') &&
-      (needs.plan.outputs.has-extension != 'true' || needs.plan.outputs.has-ui != 'true' || needs.publish-extension.result == 'success') &&
+      ((needs.plan.outputs.has-extension != 'true' && needs.plan.outputs.has-ui != 'true') || needs.publish-extension.result == 'success') &&
       (needs.plan.outputs.has-smoke != 'true' || needs.publish-smoke.result == 'success') &&
       needs.publish-packages.result != 'failure' && needs.publish-packages.result != 'cancelled' &&
       needs.publish-templates.result != 'failure' && needs.publish-templates.result != 'cancelled' &&
@@ -442,7 +444,7 @@ jobs:
           [[ "$HAS_PACKAGES" != true || "$PACKAGES" == success ]] || status=failure
           [[ "$HAS_TEMPLATES" != true || "$TEMPLATES" == success ]] || status=failure
           [[ "$HAS_CHART" != true || "$CHARTS" == success ]] || status=failure
-          [[ "$HAS_EXTENSION" != true || "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure
+          [[ "$HAS_EXTENSION" != true && "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure
           [[ "$HAS_SMOKE" != true || "$SMOKE" == success ]] || status=failure
           if [[ -z "$REPAIR" ]]; then
             [[ "$INDEXES" == success && "$CHANNELS" == success ]] || status=failure

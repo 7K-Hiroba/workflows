@@ -70,6 +70,32 @@ class ReleaseMetadataTests(unittest.TestCase):
         manifest = json.loads((self.root / ".release-please-manifest.json").read_text())
         self.assertEqual(manifest["tests/smoke"], "0.1.0")
 
+    def test_standalone_smoke_uses_opt_in_release_component(self) -> None:
+        use_fixture_only_smoke(self.root)
+        config_path = self.root / ".hiroba.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["releaseComponents"] = {"tests/smoke": "smoke-workflows-scaffold-smoke"}
+        config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+        result = self.run_script("sync-release-please-config.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        release_please = json.loads((self.root / "release-please-config.json").read_text())
+        self.assertEqual(release_please["packages"]["tests/smoke"]["component"], "smoke-workflows-scaffold-smoke")
+
+    def test_release_components_reject_unknown_paths_and_artifact_bound_smoke(self) -> None:
+        for release_components, expected in (
+            ({"packages/missing": "package-missing"}, "unknown component"),
+            ({"tests/smoke": "smoke-custom"}, "inherits its target"),
+            ({"extension": "backend-custom"}, "fixed extension/UI"),
+        ):
+            with self.subTest(release_components=release_components):
+                config_path = self.root / ".hiroba.yaml"
+                config = yaml.safe_load(config_path.read_text())
+                config["releaseComponents"] = release_components
+                config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+                result = self.run_script("discover-components.py", "--all")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stdout + result.stderr)
+
     def test_discovery_can_filter_changed_files(self) -> None:
         changed = self.root / "changed.txt"
         changed.write_text("packages/app/package.yaml\n")

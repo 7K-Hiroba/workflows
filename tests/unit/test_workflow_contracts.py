@@ -159,12 +159,59 @@ class WorkflowContractTests(unittest.TestCase):
         data = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
         self.assertEqual(data["jobs"]["test"]["runs-on"], "ubuntu-24.04")
 
+    def test_compatibility_supports_backend_only_and_ui_only_repositories(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "compat-check.yml").read_text())
+        plan = next(step for step in workflow["jobs"]["plan"]["steps"] if step.get("id") == "plan")
+        self.assertIn('[[ -n "$extension_path" || -n "$ui_path" ]]', plan["run"])
+        conditions = {
+            "Run backend stable/previous or nightly matrix": "needs.plan.outputs.extension-path != ''",
+            "Build canonical UI remote": "needs.plan.outputs.ui-path != ''",
+            "Mount every declared slot in a real stable/edge UI host": "needs.plan.outputs.ui-path != ''",
+            "Validate source-bound fresh compatibility evidence": "needs.plan.outputs.extension-path != ''",
+        }
+        for step in workflow["jobs"]["test"]["steps"]:
+            name = step.get("name")
+            if name in conditions:
+                self.assertEqual(step.get("if"), conditions[name], name)
+            uses = str(step.get("uses", ""))
+            if uses.startswith("actions/setup-go@"):
+                self.assertEqual(step.get("if"), "needs.plan.outputs.extension-path != ''")
+            if uses.startswith("actions/setup-node@"):
+                self.assertEqual(step.get("if"), "needs.plan.outputs.ui-path != ''")
+
     def test_extension_ui_setup_node_uses_default_no_cache_behavior(self) -> None:
         workflow = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         steps = [step for step in workflow["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/setup-node@")]
         self.assertEqual(len(steps), 1)
         self.assertEqual(steps[0]["with"]["node-version"], 24)
         self.assertNotIn("cache", steps[0]["with"])
+
+    def test_extension_publication_supports_independent_backend_and_ui(self) -> None:
+        extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
+        inputs = extension.get("on", extension.get(True))["workflow_call"]["inputs"]
+        self.assertIn("backend-enabled", inputs)
+        self.assertIn("ui-enabled", inputs)
+        self.assertTrue(inputs["backend-enabled"]["default"])
+        self.assertTrue(inputs["ui-enabled"]["default"])
+        self.assertEqual(extension["jobs"]["backend"]["if"], "inputs.backend-enabled")
+        self.assertIn("inputs.ui-enabled", extension["jobs"]["ui"]["if"])
+        self.assertIn("needs.backend.result == 'success'", extension["jobs"]["ui"]["if"])
+        backend_render = next(step for step in extension["jobs"]["backend"]["steps"] if "render-extension-release.py" in step.get("run", ""))
+        self.assertIn("--backend evidence/artifact-extension.json", backend_render["run"])
+        self.assertNotIn("--ui ", backend_render["run"])
+        ui_download = next(step for step in extension["jobs"]["ui"]["steps"] if step.get("with", {}).get("name") == "artifact-extension")
+        self.assertEqual(ui_download["if"], "inputs.backend-enabled")
+        ui_render = next(step for step in extension["jobs"]["ui"]["steps"] if "render-extension-release.py" in step.get("run", ""))
+        self.assertIn('if [[ "${{ inputs.backend-enabled }}" == true ]]', ui_render["run"])
+
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        publish = release["jobs"]["publish-extension"]
+        self.assertIn("(needs.plan.outputs.has-extension == 'true' || needs.plan.outputs.has-ui == 'true')", publish["if"])
+        self.assertEqual(publish["with"]["backend-enabled"], "${{ needs.plan.outputs.has-extension == 'true' }}")
+        self.assertEqual(publish["with"]["ui-enabled"], "${{ needs.plan.outputs.has-ui == 'true' }}")
+        self.assertIn("((needs.plan.outputs.has-extension != 'true' && needs.plan.outputs.has-ui != 'true') || needs.publish-extension.result == 'success')", release["jobs"]["indexes"]["if"])
+        result = next(step for step in release["jobs"]["result"]["steps"] if step.get("id") == "result")
+        self.assertIn('[[ "$HAS_EXTENSION" != true && "$HAS_UI" != true || "$EXTENSION" == success ]]', result["run"])
 
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
@@ -189,6 +236,25 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(repair["jobs"]["repair"]["needs"], "resolve")
         self.assertEqual(repair["jobs"]["repair"]["with"]["source-sha"], "${{ needs.resolve.outputs.source-sha }}")
         self.assertIn('refs/tags/$TAG^{}', repair_text)
+        self.assertIn("discover-components.py", repair_text)
+        self.assertIn("(.releaseComponent // .name)", repair_text)
+        self.assertIn('TAG="$release_component-v$VERSION"', repair_text)
+        self.assertNotIn('TAG="chart-$CHART', repair_text)
+        self.assertNotIn('TAG="$CHART', repair_text)
+        chart_release = (WORKFLOWS / "release-chart.yml").read_text()
+        self.assertIn("releaseComponents", chart_release)
+        self.assertIn('release_tag="$release_component-v$version"', chart_release)
+
+    def test_smoke_release_and_runtime_verification_share_opt_in_target_identity(self) -> None:
+        smoke_release = (WORKFLOWS / "release-smoke-suite.yml").read_text()
+        self.assertIn("releaseComponents", smoke_release)
+        self.assertIn('release_tag="$release_component-v${version}"', smoke_release)
+        runtime = (ROOT / "scripts/run-runtime-smoke.sh").read_text()
+        self.assertIn(".releaseComponent // .name", runtime)
+        self.assertIn('first(.components[] | select(.kind == "smoke")) | (.releaseComponent // .name) + "-v" + $version', runtime)
+        self.assertNotIn('if $target == "" then $smoke', runtime)
+        self.assertNotIn('app_release_tag="$APP_NAME-v$APP_VERSION"', runtime)
+        self.assertNotIn('release_tag="$TARGET_ID-v$TARGET_VERSION"', runtime)
 
     def test_manifests_packages_have_a_real_test_lane(self) -> None:
         workflow = yaml.safe_load((WORKFLOWS / "test-packages.yml").read_text())
@@ -258,7 +324,7 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(f"needs.plan.outputs.{flag} == 'true'", condition)
             self.assertIn("needs.plan.outputs.has-ui == 'true'", condition)
             self.assertIn(
-                "(needs.plan.outputs.has-extension != 'true' || needs.plan.outputs.has-ui != 'true' || needs.publish-extension.result == 'success')",
+                "((needs.plan.outputs.has-extension != 'true' && needs.plan.outputs.has-ui != 'true') || needs.publish-extension.result == 'success')",
                 jobs["indexes"]["if"],
             )
         for name in ("indexes", "channels"):
@@ -273,7 +339,7 @@ class WorkflowContractTests(unittest.TestCase):
             ("HAS_CHART", "CHARTS"), ("HAS_SMOKE", "SMOKE"),
         ):
             self.assertIn(f'[[ "${flag}" != true || "${result_name}" == success ]] || status=failure', result_step["run"])
-        self.assertIn('[[ "$HAS_EXTENSION" != true || "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure', result_step["run"])
+        self.assertIn('[[ "$HAS_EXTENSION" != true && "$HAS_UI" != true || "$EXTENSION" == success ]] || status=failure', result_step["run"])
 
     def test_runtime_evidence_preserves_fixture_eligibility_metadata(self) -> None:
         release = (WORKFLOWS / "release.yml").read_text()

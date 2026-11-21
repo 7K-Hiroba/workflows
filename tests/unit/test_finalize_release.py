@@ -58,6 +58,28 @@ class FinalizeReleaseTests(unittest.TestCase):
         self.assertIn("gh release create app-v0.1.0", calls)
         self.assertNotIn("release upload", calls)
 
+    def test_finalizes_opt_in_release_component_identity(self) -> None:
+        self.plan.write_text(json.dumps({"app": "workflows-scaffold", "registryPrefix": "ghcr.io/7k-hiroba", "components": [{"kind": "package", "name": "app", "path": "packages/app", "version": "0.1.0", "releaseComponent": "package-app"}]}))
+        artifact = self.evidence / "artifact-catalog-app.json"
+        data = json.loads(artifact.read_text())
+        data["testEvidence"]["releaseTag"] = "package-app-v0.1.0"
+        artifact.write_text(json.dumps(data))
+        result = self.run_finalize()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        resolved = subprocess.run(["git", "-C", str(self.root), "rev-parse", "package-app-v0.1.0^{commit}"], text=True, capture_output=True, check=False)
+        self.assertEqual(resolved.returncode, 0, resolved.stdout + resolved.stderr)
+        self.assertEqual(resolved.stdout.strip(), self.source)
+        self.assertIn("gh release create package-app-v0.1.0", self.log.read_text())
+
+    def test_finalizes_standalone_fixture_smoke_with_its_own_identity(self) -> None:
+        self.plan.write_text(json.dumps({"app": "workflows-scaffold", "registryPrefix": "ghcr.io/7k-hiroba", "components": [{"kind": "smoke", "name": "workflows-scaffold-smoke", "path": "tests/smoke", "version": "0.1.0", "fixtureOnly": True, "releaseComponent": "smoke-workflows-scaffold-smoke"}]}))
+        (self.evidence / "artifact-smoke-workflows-scaffold-smoke.json").write_text(json.dumps({"repository": "ghcr.io/7k-hiroba/workflows-scaffold/smoke/workflows-scaffold-smoke", "digest": "sha256:" + "c" * 64, "mediaType": "application/vnd.inari.smoke.suite.v1+yaml", "tag": "0.1.0", "sourceSha": self.source, "signature": {"verified": True}, "provenance": {"verified": True}, "testEvidence": {"status": "passed", "releaseTag": "smoke-workflows-scaffold-smoke-v0.1.0"}}))
+        result = self.run_finalize()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        resolved = subprocess.run(["git", "-C", str(self.root), "rev-parse", "smoke-workflows-scaffold-smoke-v0.1.0^{commit}"], text=True, capture_output=True, check=False)
+        self.assertEqual(resolved.returncode, 0, resolved.stdout + resolved.stderr)
+        self.assertIn("gh release create smoke-workflows-scaffold-smoke-v0.1.0", self.log.read_text())
+
     def test_finalizes_extension_and_ui_with_matching_artifact_names(self) -> None:
         self.plan.write_text(json.dumps({"app": "workflows-scaffold", "registryPrefix": "ghcr.io/7k-hiroba", "components": [
             {"kind": "extension", "name": "extension", "path": "extension", "version": "0.1.0"},

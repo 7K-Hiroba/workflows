@@ -301,6 +301,13 @@ fi
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f"helm package {configured}", self.log.read_text())
 
+    def test_uses_opt_in_chart_release_component(self) -> None:
+        (self.root / ".hiroba.yaml").write_text("components:\n  chartsRoot: charts\nreleaseComponents:\n  charts/example: chart-example\n")
+        result = self.run_chart()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        artifact = json.loads((self.root / "artifact.json").read_text())
+        self.assertEqual(artifact["releaseTag"], "chart-example-v0.1.0")
+
     def test_edge_packages_prerelease_in_temporary_chart_without_source_mutation(self) -> None:
         source_chart = self.chart / "Chart.yaml"
         original = source_chart.read_bytes()

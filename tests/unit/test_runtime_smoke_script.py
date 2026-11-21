@@ -95,6 +95,12 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
                 self.assertEqual(evidence["evidenceScope"], "application")
                 self.assertTrue(evidence["appEvidenceEligible"])
 
+    def test_helm_release_names_use_bounded_identity(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn("from lib.names import bounded_resource_name", text)
+        self.assertEqual(text.count('helm upgrade --install "$RELEASE_NAME"'), 2)
+        self.assertNotIn('helm upgrade --install "$APP"', text)
+
     def test_rejects_real_environment_profiles_before_cluster_creation(self) -> None:
         for profile in ("stage", "prod"):
             with self.subTest(profile=profile):

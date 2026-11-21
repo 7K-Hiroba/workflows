@@ -107,6 +107,29 @@ def discover(root: Path) -> dict[str, Any]:
             component["targetComponent"] = relative_path(root, str(target["component"]), "smoke.target.component")
         components.append(component)
 
+    release_components = config.get("releaseComponents", {})
+    if not isinstance(release_components, dict):
+        raise ValueError("releaseComponents must be a mapping of component paths to release identities")
+    by_path = {component["path"]: component for component in components}
+    for path, release_component in release_components.items():
+        component = by_path.get(path)
+        if component is None:
+            raise ValueError(f"releaseComponents references unknown component path {path!r}")
+        if not isinstance(release_component, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", release_component):
+            raise ValueError(f"invalid release component {release_component!r} for {path}")
+        if component["kind"] in {"extension", "ui"}:
+            raise ValueError("backend and UI have fixed extension/UI release identities")
+        if component["kind"] == "smoke" and not component["fixtureOnly"]:
+            raise ValueError("artifact-bound smoke inherits its target release component")
+        component["releaseComponent"] = release_component
+
+    for component in components:
+        if component["kind"] != "smoke" or component["fixtureOnly"]:
+            continue
+        target = by_path.get(component.get("targetComponent", ""))
+        if target is not None and target.get("releaseComponent"):
+            component["releaseComponent"] = target["releaseComponent"]
+
     components.sort(key=lambda item: (item["name"], item["kind"], item["path"]))
     return {"schema": "inari.release-plan.v1", "app": app, "trustTier": config.get("trustTier", "experimental"), "components": components}
 

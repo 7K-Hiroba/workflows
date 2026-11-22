@@ -110,6 +110,7 @@ kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --wait 120s
 if [[ "$MODE" == local ]]; then
   case "$ADAPTER" in
     helm)
+      python3 "$LIBRARY/scripts/prepare-chart.py" --chart "$ROOT/$CHART"
       python3 "$LIBRARY/scripts/chart-test-config.py" --root "$ROOT" --chart "$CHART" > "$WORK/chart-test.json"
       if [[ $(jq -r '.image != null' "$WORK/chart-test.json") == true ]]; then
         repository=$(jq -r .image.repository "$WORK/chart-test.json")

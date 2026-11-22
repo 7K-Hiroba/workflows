@@ -213,6 +213,11 @@ class WorkflowContractTests(unittest.TestCase):
         result = next(step for step in release["jobs"]["result"]["steps"] if step.get("id") == "result")
         self.assertIn('[[ "$HAS_EXTENSION" != true && "$HAS_UI" != true || "$EXTENSION" == success ]]', result["run"])
 
+    def test_chart_lanes_fetch_only_exact_locked_dependencies(self) -> None:
+        for path in (WORKFLOWS / "ci-chart.yml", ROOT / "scripts/run-runtime-smoke.sh", ROOT / "scripts/release-chart.sh"):
+            with self.subTest(path=path.name):
+                self.assertIn("prepare-chart.py", path.read_text())
+
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
         self.assertIn("scripts/chart-test-config.py", chart)

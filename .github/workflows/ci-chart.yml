@@ -68,7 +68,7 @@ jobs:
             kubectl apply -f "consumer/${{ inputs.root }}/$dependency"
           done < <(jq -r '.dependencies[]' chart-test.json)
       - name: Chart-testing lint
-        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --helm-dependency-build=false --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
+        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --skip-helm-dependencies --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
       - name: Chart-testing kind install
         run: |
           set -euo pipefail

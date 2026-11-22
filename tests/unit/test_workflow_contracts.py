@@ -235,7 +235,7 @@ class WorkflowContractTests(unittest.TestCase):
         prepare = next(step for step in steps if "prepare-chart.py" in step.get("run", ""))
         lint = next(step for step in steps if step.get("name") == "Chart-testing lint")
         self.assertLess(steps.index(prepare), steps.index(lint))
-        self.assertIn("--helm-dependency-build=false", lint["run"])
+        self.assertIn("--skip-helm-dependencies", lint["run"])
 
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()

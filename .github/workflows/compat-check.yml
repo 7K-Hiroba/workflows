@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
+      consumer-root: "${{ steps.plan.outputs.consumer-root }}"
       extension-path: "${{ steps.plan.outputs.extension-path }}"
       ui-path: "${{ steps.plan.outputs.ui-path }}"
     steps:
@@ -24,8 +25,10 @@ jobs:
         with: {python-version: "3.11"}
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
       - id: plan
+        env: {ROOT: "${{ inputs.root }}"}
         run: |
           set -euo pipefail
+          echo "consumer-root=$(python3 -c 'import os; print(os.path.normpath(os.path.join("consumer", os.environ["ROOT"])))')" >> "$GITHUB_OUTPUT"
           python3 .hiroba/workflows/scripts/discover-components.py --root "consumer/${{ inputs.root }}" --all > plan.json
           extension_path=$(jq -r 'first(.components[] | select(.kind == "extension") | .path) // empty' plan.json)
           ui_path=$(jq -r 'first(.components[] | select(.kind == "ui") | .path) // empty' plan.json)
@@ -72,8 +75,8 @@ jobs:
         with:
           name: compatibility-evidence
           path: |
-            consumer/${{ inputs.root }}/evidence
-            consumer/${{ inputs.root }}/diagnostics
+            ${{ needs.plan.outputs.consumer-root }}/evidence
+            ${{ needs.plan.outputs.consumer-root }}/diagnostics
           if-no-files-found: ignore
           retention-days: 30
   result:

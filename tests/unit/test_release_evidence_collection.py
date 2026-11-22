@@ -65,8 +65,8 @@ class ReleaseEvidenceCollectionTests(unittest.TestCase):
         compat = yaml.safe_load((ROOT / ".github/workflows/compat-check.yml").read_text())
         upload = next(step for step in compat["jobs"]["test"]["steps"] if step.get("with", {}).get("name") == "compatibility-evidence")
         self.assertEqual(upload["with"]["path"].splitlines(), [
-            "consumer/${{ inputs.root }}/evidence",
-            "consumer/${{ inputs.root }}/diagnostics",
+            "${{ needs.plan.outputs.consumer-root }}/evidence",
+            "${{ needs.plan.outputs.consumer-root }}/diagnostics",
         ])
         release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
         download = next(step for step in release["jobs"]["evidence"]["steps"] if step.get("with", {}).get("name") == "compatibility-evidence")

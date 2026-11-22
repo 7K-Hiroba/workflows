@@ -124,7 +124,8 @@ class Validator:
                         self.error(rgd_path, "must be a kro.run/v1alpha1 ResourceGraphDefinition")
                     metadata = rgd.get("metadata") if isinstance(rgd.get("metadata"), dict) else {}
                     annotations = metadata.get("annotations") if isinstance(metadata.get("annotations"), dict) else {}
-                    if annotations.get("inari.dev/observability-render-contract") != "inari.observability-pack/v2":
+                    is_observability_pack = name == "observability-pack" or "inari.dev/observability-render-contract" in annotations
+                    if is_observability_pack and annotations.get("inari.dev/observability-render-contract") != "inari.observability-pack/v2":
                         self.error(rgd_path, "metadata.annotations[inari.dev/observability-render-contract] must be inari.observability-pack/v2")
                     spec = rgd.get("spec") if isinstance(rgd.get("spec"), dict) else {}
                     if not isinstance(spec.get("schema"), dict) or not isinstance(spec.get("resources"), list):
@@ -437,11 +438,14 @@ class Validator:
         if not isinstance(apps, list):
             self.error(self.registry, "registry must contain an apps list")
             return
-        names = [entry.get("name") for entry in apps if isinstance(entry, dict)]
-        duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
+        def app_name(entry: dict[str, Any]) -> str | None:
+            return entry.get("name") or entry.get("id")
+
+        names = [app_name(entry) for entry in apps if isinstance(entry, dict)]
+        duplicates = sorted(name for name, count in Counter(names).items() if name is not None and count > 1)
         for name in duplicates:
             self.error(self.registry, f"duplicate app ID {name!r}")
-        matches = [entry for entry in apps if isinstance(entry, dict) and entry.get("name") == app]
+        matches = [entry for entry in apps if isinstance(entry, dict) and app_name(entry) == app]
         if len(matches) == 1 and not matches[0].get("repository"):
             self.error(self.registry, f"app {app!r} has no owning repository")
         if not matches:

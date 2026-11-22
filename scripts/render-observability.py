@@ -29,7 +29,7 @@ def json_block(value: Any, indent: int) -> str:
     return "".join(prefix + line + "\n" for line in raw.splitlines())
 
 
-def chart_configmap(app: str, dashboard: dict[str, Any], content: dict[str, Any]) -> str:
+def chart_configmap(app: str, folder: str, dashboard: dict[str, Any], content: dict[str, Any]) -> str:
     uid = dashboard["uid"]
     resource = {
         "apiVersion": "v1",
@@ -38,14 +38,15 @@ def chart_configmap(app: str, dashboard: dict[str, Any], content: dict[str, Any]
             "name": uid,
             "namespace": "{{ .Release.Namespace }}",
             "labels": {"app.kubernetes.io/name": app, "grafana_dashboard": "1"},
-            "annotations": {"inari.dev/dashboard-uid": uid},
+            "annotations": {"inari.dev/dashboard-uid": uid, "inari.dev/folder": folder},
         },
         "data": {f"{uid}.json": json.dumps(content, indent=2, sort_keys=True) + "\n"},
     }
     return HEADER + "{{- if .Values.observability.enabled }}\n" + dump_document(resource) + "{{- end }}\n"
 
 
-def chart_rules(app: str, rules: dict[str, Any]) -> str:
+def chart_rules(app: str, rules: list[tuple[dict[str, Any], dict[str, Any]]]) -> str:
+    combined = {"groups": [group for _, content in rules for group in content.get("groups", [])]}
     resource = {
         "apiVersion": "monitoring.coreos.com/v1",
         "kind": "PrometheusRule",
@@ -54,9 +55,28 @@ def chart_rules(app: str, rules: dict[str, Any]) -> str:
             "namespace": "{{ .Release.Namespace }}",
             "labels": {"app.kubernetes.io/name": app},
         },
-        "spec": {"groups": rules.get("groups", [])},
+        "spec": {"groups": combined["groups"]},
     }
-    return HEADER + "{{- if and .Values.observability.enabled .Values.observability.rules.enabled }}\n" + dump_document(resource) + "{{- end }}\n"
+    documents = [dump_document(resource)]
+    for entry, content in rules:
+        evaluation = entry["evaluation"]
+        config_map = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": f"{app}-{evaluation}-rules",
+                "namespace": "{{ .Release.Namespace }}",
+                "labels": {
+                    "app.kubernetes.io/name": app,
+                    "inari.dev/rule-evaluation": evaluation,
+                },
+            },
+            "data": {evaluation + ".yaml": dump_document(content)},
+        }
+        documents.append('{{- if eq $topology "' + evaluation + '" }}\n' + dump_document(config_map) + "{{- end }}\n")
+    guard = "{{- if and .Values.observability.enabled .Values.observability.rules.enabled }}\n"
+    topology = '{{- $topology := "central" -}}\n{{- with .Values.global }}{{ $topology = default "central" .topology }}{{ end }}\n'
+    return HEADER + guard + topology + "---\n".join(documents) + "{{- end }}\n"
 
 
 def kro_resource_id(prefix: str, value: str) -> str:
@@ -189,11 +209,10 @@ def render(root: Path) -> dict[Path, str]:
         chart = root / relative_path(root, chart_setting, "observability.chart")
         if dashboards:
             outputs[chart / "templates/observability/dashboards.yaml"] = "\n---\n".join(
-                chart_configmap(app, dashboard, content) for dashboard, content in dashboards
+                chart_configmap(app, manifest["folder"], dashboard, content) for dashboard, content in dashboards
             )
         if rules:
-            combined = {"groups": [group for _, content in rules for group in content.get("groups", [])]}
-            outputs[chart / "templates/observability/rules.yaml"] = chart_rules(app, combined)
+            outputs[chart / "templates/observability/rules.yaml"] = chart_rules(app, rules)
         outputs[chart / "inari/observability.yaml"] = HEADER + dump_document(manifest)
     outputs[pack / "rgd.yaml"] = render_pack(app, manifest, dashboards, rules)
     packages_root = root / relative_path(root, config.get("components", {}).get("packagesRoot", "packages"), "components.packagesRoot")

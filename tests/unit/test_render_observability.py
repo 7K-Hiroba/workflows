@@ -43,7 +43,12 @@ class RenderObservabilityTests(unittest.TestCase):
             self.assertIn("GENERATED", path.read_text())
         self.assertIn("workflows-scaffold-overview", dashboard_output.read_text())
         self.assertIn("DS_PROMETHEUS", dashboard_output.read_text())
+        self.assertIn("inari.dev/folder: workflows-scaffold", dashboard_output.read_text())
         self.assertNotIn("ServiceMonitor", dashboard_output.read_text() + rules_output.read_text())
+        chart_rules = rules_output.read_text()
+        self.assertIn("kind: ConfigMap", chart_rules)
+        self.assertIn("name: workflows-scaffold-central-rules", chart_rules)
+        self.assertIn("central.yaml:", chart_rules)
         pack = yaml.safe_load(pack_output.read_text())
         self.assertEqual(pack["kind"], "ResourceGraphDefinition")
         self.assertIn("render", pack["spec"]["schema"]["spec"])
@@ -82,6 +87,9 @@ class RenderObservabilityTests(unittest.TestCase):
             resources["rulesLocal"]["includeWhen"][0],
             '${(schema.spec.render == "all" || schema.spec.render == "rules-local") && schema.spec.rulesLocal}',
         )
+        chart_rules = (self.root / "charts/workflows-scaffold/templates/observability/rules.yaml").read_text()
+        self.assertIn('if eq $topology "central"', chart_rules)
+        self.assertIn('if eq $topology "local"', chart_rules)
         for evaluation, gate in (("Central", "rulesCentral"), ("Local", "rulesLocal")):
             resource_id = "rulesConfig" + evaluation
             self.assertIn(resource_id, resources)

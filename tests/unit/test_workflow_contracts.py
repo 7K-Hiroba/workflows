@@ -229,6 +229,14 @@ class WorkflowContractTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertIn("prepare-chart.py", path.read_text())
 
+    def test_chart_lint_reuses_prepared_locked_dependencies(self) -> None:
+        chart = yaml.safe_load((WORKFLOWS / "ci-chart.yml").read_text())
+        steps = chart["jobs"]["test"]["steps"]
+        prepare = next(step for step in steps if "prepare-chart.py" in step.get("run", ""))
+        lint = next(step for step in steps if step.get("name") == "Chart-testing lint")
+        self.assertLess(steps.index(prepare), steps.index(lint))
+        self.assertIn("--helm-dependency-build=false", lint["run"])
+
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
         self.assertIn("scripts/chart-test-config.py", chart)

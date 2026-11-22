@@ -382,6 +382,17 @@ class Validator:
                         self.error(suite_path, "adapter.artifactPath must exist in the target package")
         else:
             self.error(suite_path, "smoke target adapter kind must be helm or manifests")
+        ci_context = adapter.get("ciContext", "")
+        if ci_context:
+            context_path = self.safe_path(base_path, ci_context, suite_path)
+            if context_path is None or context_path.suffix != ".json" or not context_path.is_file():
+                self.error(suite_path, "adapter.ciContext must be an existing JSON file inside the suite")
+            else:
+                try:
+                    if not isinstance(json.loads(context_path.read_text(encoding="utf-8")), dict):
+                        self.error(context_path, "CI context must be a JSON object")
+                except (OSError, json.JSONDecodeError) as exc:
+                    self.error(context_path, f"invalid CI context JSON: {exc}")
         if fixture_only and suite.get("executableProfiles") != ["ci"]:
             self.error(suite_path, "fixtureOnly smoke requires executableProfiles: [ci]")
         if not SEMVER.fullmatch(str(target.get("version", ""))):

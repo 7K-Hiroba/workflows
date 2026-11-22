@@ -50,6 +50,13 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertNotIn("runtime smoke requires extension, chart, and smoke components", text)
         self.assertNotIn('docker build -t "$APP:ci" "$ROOT/$EXTENSION"', text)
 
+    def test_declared_ci_context_uses_named_workflow_parameter(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn('.get("ciContext", "")', text)
+        self.assertIn('confined_path(Path(sys.argv[1])', text)
+        self.assertIn('submit_args+=(--parameter "context=', text)
+        self.assertNotIn('argo submit --from "workflowtemplate/$TEMPLATE_NAME" --namespace default -o name', text)
+
     def test_nonplugin_helm_target_reaches_cluster_creation(self) -> None:
         def nonplugin(root: Path) -> None:
             shutil.rmtree(root / "extension")

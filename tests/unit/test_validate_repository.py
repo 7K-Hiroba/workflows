@@ -410,6 +410,24 @@ class ValidateRepositoryTests(unittest.TestCase):
         result = self.run_validation(artifact_bound)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_ci_context_is_a_confined_json_file(self) -> None:
+        def with_context(root: Path) -> None:
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["adapter"] = {"kind": "helm", "readiness": [{"kind": "Deployment", "name": "web", "namespace": "default", "condition": "Available"}], "ciContext": "fixtures/ci-context.json"}
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+            write(root, "tests/smoke/fixtures/ci-context.json", "{}\n")
+        result = self.run_validation(with_context)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        def escape(root: Path) -> None:
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["adapter"] = {"kind": "helm", "readiness": [{"kind": "Deployment", "name": "web", "namespace": "default", "condition": "Available"}], "ciContext": "../../outside.json"}
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+        result = self.run_validation(escape)
+        self.assertNotEqual(result.returncode, 0)
+
     def test_fixture_only_smoke_rejects_stage_or_prod_execution(self) -> None:
         def stage_eligible(root: Path) -> None:
             use_fixture_only_smoke(root)

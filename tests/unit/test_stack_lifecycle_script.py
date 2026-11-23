@@ -74,7 +74,11 @@ EOF
     def make_fake_commands(self) -> None:
         for name in ("kind", "kubectl"):
             path = self.fake_bin / name
-            path.write_text("#!/usr/bin/env bash\nprintf '%s:%s\\n' \"" + name + "\" \"$*\" >> \"$STACK_LOG\"\n", encoding="utf-8")
+            path.write_text(
+                "#!/usr/bin/env bash\nprintf '%s:%s\\n' \"" + name + "\" \"$*\" >> \"$STACK_LOG\"\n"
+                "if [[ \"${FAIL_KIND_CREATE:-false}\" == true && \"$1\" == create ]]; then exit 1; fi\n",
+                encoding="utf-8",
+            )
             path.chmod(0o755)
 
     def run_runner(self, **extra: str) -> subprocess.CompletedProcess[str]:
@@ -125,6 +129,24 @@ EOF
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("distinct", result.stdout + result.stderr)
         self.assertEqual(self.evidence()["status"], "failed")
+
+    def test_failed_create_still_deletes_a_partial_cluster(self) -> None:
+        result = self.run_runner(FAIL_KIND_CREATE="true")
+        self.assertNotEqual(result.returncode, 0)
+        commands = self.log.read_text().splitlines()
+        self.assertEqual(1, sum(line.startswith("kind:delete cluster") for line in commands))
+        evidence = self.evidence()
+        self.assertEqual(evidence["status"], "failed")
+        self.assertEqual(evidence["clusterCreateCount"], 0)
+        self.assertEqual(evidence["clusterDeleteCount"], 1)
+        self.assertTrue(evidence["cleanedUp"])
+
+    def test_chart_runner_marks_create_attempt_before_kind(self) -> None:
+        script = (ROOT / "scripts/run-chart-tests.sh").read_text()
+        attempt = script.index("CLUSTER_CREATE_ATTEMPTED=true")
+        create = script.index('create_kind_cluster "$CLUSTER"', attempt)
+        self.assertLess(attempt, create)
+        self.assertIn('if [[ "$CLUSTER_CREATE_ATTEMPTED" == true ]]; then kind delete cluster', script)
 
     def test_kro_install_reuses_the_verified_digest(self) -> None:
         script = (ROOT / "scripts/lib/stack-cluster.sh").read_text()

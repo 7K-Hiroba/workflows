@@ -35,6 +35,7 @@ STARTED=$(date +%s)
 STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 CLUSTER_CREATE_COUNT=0
 CLUSTER_DELETE_COUNT=0
+CLUSTER_CREATE_ATTEMPTED=false
 CLEANED_UP=false
 CURRENT_PHASE=setup
 declare -A PHASE_STARTED=()
@@ -63,7 +64,7 @@ finish() {
     stack_generic_diagnostics "$ROOT/diagnostics/stack-lifecycle.txt"
   fi
   stop_stack_port_forwards
-  if [[ $CLUSTER_CREATE_COUNT -gt 0 ]]; then
+  if [[ "$CLUSTER_CREATE_ATTEMPTED" == true ]]; then
     if kind delete cluster --name "$CLUSTER"; then
       CLUSTER_DELETE_COUNT=$((CLUSTER_DELETE_COUNT + 1))
       CLEANED_UP=true
@@ -111,6 +112,7 @@ PY
   PHASE_DURATION[$phase]=$(( $(date +%s) - PHASE_STARTED[$phase] ))
 }
 
+CLUSTER_CREATE_ATTEMPTED=true
 kind create cluster --name "$CLUSTER" --image "$(stack_pin .kind.nodeImage)" --wait 120s
 CLUSTER_CREATE_COUNT=1
 mapfile -t PROFILES < <(jq -r '.setupProfiles[]' <<< "$PLAN")

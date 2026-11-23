@@ -20,7 +20,7 @@ LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
 source "$LIBRARY/scripts/lib/stack-cluster.sh"
 WORK=$(mktemp -d)
 CLUSTER="hiroba-chart-${GITHUB_RUN_ID:-local}-$$"
-CLUSTER_STARTED=false
+CLUSTER_CREATE_ATTEMPTED=false
 mkdir -p "$ROOT/diagnostics"
 finish() {
   rc=$?
@@ -28,7 +28,7 @@ finish() {
   if [[ $rc -ne 0 ]]; then
     kubectl get all,events -A -o wide > "$ROOT/diagnostics/chart-$(basename "$CHART").txt" 2>&1 || true
   fi
-  if [[ "$CLUSTER_STARTED" == true ]]; then kind delete cluster --name "$CLUSTER" || true; fi
+  if [[ "$CLUSTER_CREATE_ATTEMPTED" == true ]]; then kind delete cluster --name "$CLUSTER" || true; fi
   rm -rf "$WORK"
   exit "$rc"
 }
@@ -48,8 +48,8 @@ if [[ "$STACK_COVERED" == true ]]; then
   exit 0
 fi
 
+CLUSTER_CREATE_ATTEMPTED=true
 create_kind_cluster "$CLUSTER"
-CLUSTER_STARTED=true
 if [[ $(jq -r '.image != null' "$WORK/chart-test.json") == true ]]; then
   repository=$(jq -r .image.repository "$WORK/chart-test.json")
   tag=$(jq -r .image.tag "$WORK/chart-test.json")

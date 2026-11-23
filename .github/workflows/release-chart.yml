@@ -27,7 +27,7 @@ jobs:
     with: {root: "${{ inputs.root }}", source-sha: "${{ inputs.source-sha }}"}
   publish:
     needs: [test, stack]
-    if: needs.test.outputs.status == 'success' && (inputs.standalone == false || needs.stack.outputs.status == 'success')
+    if: always() && needs.test.outputs.status == 'success' && (inputs.standalone == false || needs.stack.outputs.status == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}

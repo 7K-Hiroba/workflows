@@ -300,6 +300,11 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("releaseComponents", chart_release)
         self.assertIn('release_tag="$release_component-v$version"', chart_release)
 
+    def test_coordinated_chart_publish_runs_when_standalone_stack_is_skipped(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "release-chart.yml").read_text())
+        condition = workflow["jobs"]["publish"]["if"]
+        self.assertTrue(condition.startswith("always() &&"), condition)
+
     def test_stack_lifecycle_evidence_is_wired_through_release_and_repair(self) -> None:
         release_path = WORKFLOWS / "release.yml"
         release = yaml.safe_load(release_path.read_text())

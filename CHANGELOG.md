@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.0.0](https://github.com/7K-Hiroba/workflows/compare/v1.1.0...v2.0.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* consumers adopting workflows v2.0.0 must migrate to inari.hiroba.app.v2 and explicitly select archetype stack or non-stack. Stacks must declare and pass install plus same-cluster upgrade lifecycle coverage; consumers not yet migrating must retain their immutable v1.1.0 pin.
+
+### Features
+
+* standardize classified stack testing ([#39](https://github.com/7K-Hiroba/workflows/issues/39)) ([7e61f10](https://github.com/7K-Hiroba/workflows/commit/7e61f10f1f78ebf9470a6f9343dd86d71e4e6447))
+* support full-matrix release identities ([#37](https://github.com/7K-Hiroba/workflows/issues/37)) ([0c491e8](https://github.com/7K-Hiroba/workflows/commit/0c491e8811bc2b9688f8bb2a3eb6079fad955506))
+* support Mimir observability assets ([#38](https://github.com/7K-Hiroba/workflows/issues/38)) ([ba015f6](https://github.com/7K-Hiroba/workflows/commit/ba015f62e5b5ab4cfccd01e5468bbfb26a9ac2ae))
+
+
+### Bug Fixes
+
+* normalize setup-node cache paths ([#41](https://github.com/7K-Hiroba/workflows/issues/41)) ([4208216](https://github.com/7K-Hiroba/workflows/commit/420821655637244e1b14826de2188e4d657c5fb5))
+
+
+### Documentation
+
+* document app-config-v2 major migration ([#40](https://github.com/7K-Hiroba/workflows/issues/40)) ([90146fe](https://github.com/7K-Hiroba/workflows/commit/90146feb7f553ff51fa4d511c65f5602eaaaf0d4))
+
 ## [1.1.0](https://github.com/7K-Hiroba/workflows/compare/v1.0.0...v1.1.0) (2026-11-20)
 
 

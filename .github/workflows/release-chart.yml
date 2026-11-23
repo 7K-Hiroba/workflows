@@ -53,10 +53,10 @@ jobs:
             echo "has-stack=$(jq -r .hasStackTest evidence-plan.json)"
             echo "required-lanes=$(jq -r .requiredLanes evidence-plan.json)"
           } >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: "!inputs.standalone"
         with: {name: "${{ inputs.evidence-name }}", path: evidence}
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: inputs.standalone && steps.evidence-plan.outputs.has-stack == 'true'
         with: {name: stack-lifecycle-evidence, path: stack-lifecycle-evidence}
       - name: Add exact-source chart and stack test results

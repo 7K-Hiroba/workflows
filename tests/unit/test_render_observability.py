@@ -43,7 +43,12 @@ class RenderObservabilityTests(unittest.TestCase):
             self.assertIn("GENERATED", path.read_text())
         self.assertIn("workflows-scaffold-overview", dashboard_output.read_text())
         self.assertIn("DS_PROMETHEUS", dashboard_output.read_text())
+        self.assertIn("inari.dev/folder: workflows-scaffold", dashboard_output.read_text())
         self.assertNotIn("ServiceMonitor", dashboard_output.read_text() + rules_output.read_text())
+        chart_rules = rules_output.read_text()
+        self.assertIn("kind: ConfigMap", chart_rules)
+        self.assertIn("name: workflows-scaffold-central-rules", chart_rules)
+        self.assertIn("central.yaml:", chart_rules)
         pack = yaml.safe_load(pack_output.read_text())
         self.assertEqual(pack["kind"], "ResourceGraphDefinition")
         self.assertIn("render", pack["spec"]["schema"]["spec"])
@@ -52,6 +57,7 @@ class RenderObservabilityTests(unittest.TestCase):
         for resource in pack["spec"]["resources"]:
             self.assertRegex(resource["id"], re.compile(r"^[a-z][a-zA-Z0-9]*$"))
         dashboard = next(resource for resource in pack["spec"]["resources"] if resource["id"] == "dashboardWorkflowsScaffoldOverview")
+        self.assertEqual("${schema.spec.folder}", dashboard["template"]["metadata"]["annotations"]["inari.dev/folder"])
         payload = dashboard["template"]["data"]["workflows-scaffold-overview.json"]
         self.assertIn('${"${DS_PROMETHEUS}"}', payload)
         canonical = json.loads((self.root / "observability/dashboards/overview.json").read_text())
@@ -81,6 +87,19 @@ class RenderObservabilityTests(unittest.TestCase):
             resources["rulesLocal"]["includeWhen"][0],
             '${(schema.spec.render == "all" || schema.spec.render == "rules-local") && schema.spec.rulesLocal}',
         )
+        chart_rules = (self.root / "charts/workflows-scaffold/templates/observability/rules.yaml").read_text()
+        self.assertIn('if eq $topology "central"', chart_rules)
+        self.assertIn('if eq $topology "local"', chart_rules)
+        for evaluation, gate in (("Central", "rulesCentral"), ("Local", "rulesLocal")):
+            resource_id = "rulesConfig" + evaluation
+            self.assertIn(resource_id, resources)
+            config_map = resources[resource_id]
+            self.assertEqual("ConfigMap", config_map["template"]["kind"])
+            self.assertEqual(config_map["includeWhen"], resources["rules" + evaluation]["includeWhen"])
+            self.assertEqual("monitoring.coreos.com/v1", resources["rules" + evaluation]["template"]["apiVersion"])
+            self.assertEqual("${schema.spec.app}-" + evaluation.lower() + "-rules", config_map["template"]["metadata"]["name"])
+            self.assertEqual(evaluation.lower(), config_map["template"]["metadata"]["labels"]["inari.dev/rule-evaluation"])
+            self.assertIn("groups:", config_map["template"]["data"][evaluation.lower() + ".yaml"])
 
     def test_app_package_contains_full_signed_observability_manifest(self) -> None:
         package = self.root / "packages/app/package.yaml"

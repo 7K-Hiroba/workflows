@@ -110,6 +110,7 @@ kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --wait 120s
 if [[ "$MODE" == local ]]; then
   case "$ADAPTER" in
     helm)
+      python3 "$LIBRARY/scripts/prepare-chart.py" --chart "$ROOT/$CHART"
       python3 "$LIBRARY/scripts/chart-test-config.py" --root "$ROOT" --chart "$CHART" > "$WORK/chart-test.json"
       if [[ $(jq -r '.image != null' "$WORK/chart-test.json") == true ]]; then
         repository=$(jq -r .image.repository "$WORK/chart-test.json")
@@ -186,7 +187,9 @@ else
   if [[ "$ADAPTER" == helm ]]; then
     APP_REPOSITORY=${APP_REF%@*}
     crane digest "$APP_REPOSITORY:$APP_VERSION" | grep -Fx "${APP_REF#*@}"
-    helm upgrade --install "$RELEASE_NAME" "oci://$APP_REPOSITORY" --namespace default --version "$APP_VERSION" --wait --timeout 5m
+    value_args=()
+    if [[ -f "$SUITE_DIR/values.yaml" ]]; then value_args+=(--values "$SUITE_DIR/values.yaml"); fi
+    helm upgrade --install "$RELEASE_NAME" "oci://$APP_REPOSITORY" --namespace default --version "$APP_VERSION" "${value_args[@]}" --wait --timeout 5m
     crane digest "$APP_REPOSITORY:$APP_VERSION" | grep -Fx "${APP_REF#*@}"
   else
     mkdir -p "$WORK/app"
@@ -221,7 +224,13 @@ WORKFLOW_FILE=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[
 TEMPLATE_NAME=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["metadata"]["name"])' "$SUITE_DIR/$WORKFLOW_FILE")
 kubectl apply -f "$SUITE_DIR/$WORKFLOW_FILE"
 argo lint "$SUITE_DIR/$WORKFLOW_FILE"
-WORKFLOW_NAME=$(argo submit --from "workflowtemplate/$TEMPLATE_NAME" --namespace default -o name)
+CI_CONTEXT=$(python3 -c 'import sys,yaml; target=yaml.safe_load(open(sys.argv[1]))["target"]; print(target.get("adapter", {}).get("ciContext", ""))' "$SUITE_DIR/suite.yaml")
+submit_args=(--from "workflowtemplate/$TEMPLATE_NAME" --namespace default -o name)
+if [[ -n "$CI_CONTEXT" ]]; then
+  CONTEXT_PATH=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import confined_path; print(confined_path(Path(sys.argv[1]), sys.argv[3], "adapter.ciContext"))' "$SUITE_DIR" "$LIBRARY/scripts" "$CI_CONTEXT")
+  submit_args+=(--parameter "context=$(cat "$CONTEXT_PATH")")
+fi
+WORKFLOW_NAME=$(argo submit "${submit_args[@]}")
 TIMEOUT=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["timeout"])' "$SUITE_DIR/suite.yaml")
 timeout "$TIMEOUT" argo wait "$WORKFLOW_NAME" --namespace default
 argo get "$WORKFLOW_NAME" --namespace default -o json | jq -e '.status.phase == "Succeeded"' >/dev/null

@@ -213,6 +213,30 @@ class WorkflowContractTests(unittest.TestCase):
         result = next(step for step in release["jobs"]["result"]["steps"] if step.get("id") == "result")
         self.assertIn('[[ "$HAS_EXTENSION" != true && "$HAS_UI" != true || "$EXTENSION" == success ]]', result["run"])
 
+    def test_artifact_uploads_use_normalized_consumer_root(self) -> None:
+        for path in WORKFLOWS.glob("*.yml"):
+            document = yaml.safe_load(path.read_text())
+            for job in document.get("jobs", {}).values():
+                for step in job.get("steps", []):
+                    if not str(step.get("uses", "")).startswith("actions/upload-artifact@"):
+                        continue
+                    artifact_path = str(step.get("with", {}).get("path", ""))
+                    with self.subTest(workflow=path.name, step=step.get("name", step.get("id"))):
+                        self.assertNotIn("inputs.root", artifact_path)
+
+    def test_chart_lanes_fetch_only_exact_locked_dependencies(self) -> None:
+        for path in (WORKFLOWS / "ci-chart.yml", ROOT / "scripts/run-runtime-smoke.sh", ROOT / "scripts/release-chart.sh"):
+            with self.subTest(path=path.name):
+                self.assertIn("prepare-chart.py", path.read_text())
+
+    def test_chart_lint_reuses_prepared_locked_dependencies(self) -> None:
+        chart = yaml.safe_load((WORKFLOWS / "ci-chart.yml").read_text())
+        steps = chart["jobs"]["test"]["steps"]
+        prepare = next(step for step in steps if "prepare-chart.py" in step.get("run", ""))
+        lint = next(step for step in steps if step.get("name") == "Chart-testing lint")
+        self.assertLess(steps.index(prepare), steps.index(lint))
+        self.assertIn("--skip-helm-dependencies", lint["run"])
+
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
         chart = (WORKFLOWS / "ci-chart.yml").read_text()
         self.assertIn("scripts/chart-test-config.py", chart)
@@ -222,7 +246,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn('args+=(--helm-extra-args "--values', chart)
 
         packages = (WORKFLOWS / "test-packages.yml").read_text()
-        self.assertIn('path: "consumer/${{ inputs.root }}/diagnostics"', packages)
+        self.assertIn('path: "${{ needs.plan.outputs.consumer-root }}/diagnostics"', packages)
         self.assertNotIn("path: consumer/diagnostics", packages)
 
     def test_stable_release_and_chart_repair_callers_forward_exact_inputs(self) -> None:

@@ -10,6 +10,7 @@ metadata:
     grafana_dashboard: '1'
   annotations:
     inari.dev/dashboard-uid: workflows-scaffold-overview
+    inari.dev/folder: workflows-scaffold
 data:
   workflows-scaffold-overview.json: "{\n  \"panels\": [\n    {\n      \"datasource\"\
     : {\n        \"type\": \"prometheus\",\n        \"uid\": \"${DS_PROMETHEUS}\"\n\

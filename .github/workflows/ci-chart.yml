@@ -39,6 +39,8 @@ jobs:
         with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - name: Fetch exact locked chart dependencies
+        run: python3 .hiroba/workflows/scripts/prepare-chart.py --chart "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with: {go-version: "1.26.3", cache: false}
       - name: Install chart-testing at an immutable release
@@ -66,7 +68,7 @@ jobs:
             kubectl apply -f "consumer/${{ inputs.root }}/$dependency"
           done < <(jq -r '.dependencies[]' chart-test.json)
       - name: Chart-testing lint
-        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
+        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --skip-helm-dependencies --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
       - name: Chart-testing kind install
         run: |
           set -euo pipefail

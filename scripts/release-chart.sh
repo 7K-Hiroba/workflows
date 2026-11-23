@@ -27,8 +27,8 @@ done
 [[ -z "$CHANNEL" || "$CHANNEL" == edge ]] || { echo "chart channel may only be edge" >&2; exit 2; }
 [[ "$REPAIR" != true || -z "$CHANNEL" ]] || { echo "chart repair cannot move a channel" >&2; exit 2; }
 CHARTS_ROOT=charts
+LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
 if [[ -f "$ROOT/.hiroba.yaml" ]]; then
-  LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
   CHARTS_ROOT=$(${HIROBA_PYTHON:-python3} -c 'import sys,yaml; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from lib.paths import relative_path; data=yaml.safe_load(open(sys.argv[1])); print(relative_path(Path(sys.argv[3]), data["components"].get("chartsRoot", "charts"), "components.chartsRoot"))' "$ROOT/.hiroba.yaml" "$LIBRARY/scripts" "$ROOT")
   RELEASE_COMPONENT=$(${HIROBA_PYTHON:-python3} -c 'import sys,yaml; data=yaml.safe_load(open(sys.argv[1])); print(data.get("releaseComponents", {}).get(sys.argv[2], sys.argv[3]))' "$ROOT/.hiroba.yaml" "$CHARTS_ROOT/$CHART" "$CHART")
 fi
@@ -55,6 +55,7 @@ if [[ "$REPAIR" == true ]]; then
   [[ "$TAG_SHA" == "$HEAD_SHA" ]] || { echo "repair tag $TAG does not point at current source" >&2; exit 2; }
 fi
 mkdir -p "$WORK/new"
+${HIROBA_PYTHON:-python3} "$LIBRARY/scripts/prepare-chart.py" --chart "$CHART_DIR"
 helm package "$CHART_DIR" --destination "$WORK/new"
 PACKAGE="$WORK/new/$CHART-$VERSION.tgz"
 [[ -f "$PACKAGE" ]] || { echo "Helm package missing: $PACKAGE" >&2; exit 1; }

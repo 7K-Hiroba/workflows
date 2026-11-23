@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
+      consumer-root: ${{ steps.matrix.outputs.consumer-root }}
       kro: ${{ steps.matrix.outputs.kro }}
       policy: ${{ steps.matrix.outputs.policy }}
       app: ${{ steps.matrix.outputs.app }}
@@ -29,6 +30,7 @@ jobs:
         env: {BASE: "${{ github.base_ref }}", ALL: "${{ inputs.all }}", ROOT: "${{ inputs.root }}"}
         run: |
           set -euo pipefail
+          echo "consumer-root=$(python3 -c 'import os; print(os.path.normpath(os.path.join("consumer", os.environ["ROOT"])))')" >> "$GITHUB_OUTPUT"
           args=(--root "consumer/$ROOT")
           if [[ "$ALL" == true || "${GITHUB_EVENT_NAME}" != pull_request ]]; then
             args+=(--all)
@@ -65,7 +67,7 @@ jobs:
       - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type kro-rgd --package "${{ matrix.package.name }}" --package-path "${{ matrix.package.path }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
-        with: {name: "kro-diagnostics-${{ matrix.package.name }}", path: "consumer/${{ inputs.root }}/diagnostics", if-no-files-found: ignore}
+        with: {name: "kro-diagnostics-${{ matrix.package.name }}", path: "${{ needs.plan.outputs.consumer-root }}/diagnostics", if-no-files-found: ignore}
   policy:
     if: needs.plan.outputs.policy != '[]'
     needs: [plan]
@@ -82,7 +84,7 @@ jobs:
       - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type policy-pack --package "${{ matrix.package.name }}" --package-path "${{ matrix.package.path }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
-        with: {name: "policy-diagnostics-${{ matrix.package.name }}", path: "consumer/${{ inputs.root }}/diagnostics", if-no-files-found: ignore}
+        with: {name: "policy-diagnostics-${{ matrix.package.name }}", path: "${{ needs.plan.outputs.consumer-root }}/diagnostics", if-no-files-found: ignore}
   app:
     if: needs.plan.outputs.app != '[]'
     needs: [plan]
@@ -110,7 +112,7 @@ jobs:
       - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type manifests --package "${{ matrix.package.name }}" --package-path "${{ matrix.package.path }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
-        with: {name: "manifests-diagnostics-${{ matrix.package.name }}", path: 'consumer/${{ inputs.root }}/diagnostics', if-no-files-found: ignore}
+        with: {name: "manifests-diagnostics-${{ matrix.package.name }}", path: '${{ needs.plan.outputs.consumer-root }}/diagnostics', if-no-files-found: ignore}
   result:
     if: always()
     needs: [plan, kro, policy, app, manifests]

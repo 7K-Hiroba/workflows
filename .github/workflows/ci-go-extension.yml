@@ -11,7 +11,9 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs: {extension-path: "${{ steps.plan.outputs.extension-path }}"}
+    outputs:
+      consumer-root: "${{ steps.plan.outputs.consumer-root }}"
+      extension-path: "${{ steps.plan.outputs.extension-path }}"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {path: consumer, ref: "${{ inputs.source-sha }}"}
@@ -21,8 +23,10 @@ jobs:
         with: {python-version: "3.11"}
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
       - id: plan
+        env: {ROOT: "${{ inputs.root }}"}
         run: |
           set -euo pipefail
+          echo "consumer-root=$(python3 -c 'import os; print(os.path.normpath(os.path.join("consumer", os.environ["ROOT"])))')" >> "$GITHUB_OUTPUT"
           python3 .hiroba/workflows/scripts/discover-components.py --root "consumer/${{ inputs.root }}" --all > plan.json
           path=$(jq -r 'first(.components[] | select(.kind == "extension") | .path) // empty' plan.json)
           [[ -n "$path" ]] || { echo "extension component is not configured" >&2; exit 2; }
@@ -50,7 +54,7 @@ jobs:
         run: go build ./...
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
-        with: {name: go-extension-test-evidence, path: "consumer/${{ inputs.root }}/${{ needs.plan.outputs.extension-path }}/evidence/go-test.json", retention-days: 30}
+        with: {name: go-extension-test-evidence, path: "${{ needs.plan.outputs.consumer-root }}/${{ needs.plan.outputs.extension-path }}/evidence/go-test.json", retention-days: 30}
   image:
     needs: [plan]
     runs-on: ubuntu-latest

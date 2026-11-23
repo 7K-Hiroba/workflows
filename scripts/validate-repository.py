@@ -124,7 +124,8 @@ class Validator:
                         self.error(rgd_path, "must be a kro.run/v1alpha1 ResourceGraphDefinition")
                     metadata = rgd.get("metadata") if isinstance(rgd.get("metadata"), dict) else {}
                     annotations = metadata.get("annotations") if isinstance(metadata.get("annotations"), dict) else {}
-                    if annotations.get("inari.dev/observability-render-contract") != "inari.observability-pack/v2":
+                    is_observability_pack = name == "observability-pack" or "inari.dev/observability-render-contract" in annotations
+                    if is_observability_pack and annotations.get("inari.dev/observability-render-contract") != "inari.observability-pack/v2":
                         self.error(rgd_path, "metadata.annotations[inari.dev/observability-render-contract] must be inari.observability-pack/v2")
                     spec = rgd.get("spec") if isinstance(rgd.get("spec"), dict) else {}
                     if not isinstance(spec.get("schema"), dict) or not isinstance(spec.get("resources"), list):
@@ -381,6 +382,17 @@ class Validator:
                         self.error(suite_path, "adapter.artifactPath must exist in the target package")
         else:
             self.error(suite_path, "smoke target adapter kind must be helm or manifests")
+        ci_context = adapter.get("ciContext", "")
+        if ci_context:
+            context_path = self.safe_path(base_path, ci_context, suite_path)
+            if context_path is None or context_path.suffix != ".json" or not context_path.is_file():
+                self.error(suite_path, "adapter.ciContext must be an existing JSON file inside the suite")
+            else:
+                try:
+                    if not isinstance(json.loads(context_path.read_text(encoding="utf-8")), dict):
+                        self.error(context_path, "CI context must be a JSON object")
+                except (OSError, json.JSONDecodeError) as exc:
+                    self.error(context_path, f"invalid CI context JSON: {exc}")
         if fixture_only and suite.get("executableProfiles") != ["ci"]:
             self.error(suite_path, "fixtureOnly smoke requires executableProfiles: [ci]")
         if not SEMVER.fullmatch(str(target.get("version", ""))):
@@ -437,11 +449,14 @@ class Validator:
         if not isinstance(apps, list):
             self.error(self.registry, "registry must contain an apps list")
             return
-        names = [entry.get("name") for entry in apps if isinstance(entry, dict)]
-        duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
+        def app_name(entry: dict[str, Any]) -> str | None:
+            return entry.get("name") or entry.get("id")
+
+        names = [app_name(entry) for entry in apps if isinstance(entry, dict)]
+        duplicates = sorted(name for name, count in Counter(names).items() if name is not None and count > 1)
         for name in duplicates:
             self.error(self.registry, f"duplicate app ID {name!r}")
-        matches = [entry for entry in apps if isinstance(entry, dict) and entry.get("name") == app]
+        matches = [entry for entry in apps if isinstance(entry, dict) and app_name(entry) == app]
         if len(matches) == 1 and not matches[0].get("repository"):
             self.error(self.registry, f"app {app!r} has no owning repository")
         if not matches:

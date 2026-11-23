@@ -241,7 +241,7 @@ spec:
 
 
 class ValidateRepositoryTests(unittest.TestCase):
-    def run_validation(self, mutate=None, registry: bool = True) -> subprocess.CompletedProcess[str]:
+    def run_validation(self, mutate=None, registry: bool = True, community_registry: bool = False) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             make_valid_repo(root)
@@ -250,12 +250,30 @@ class ValidateRepositoryTests(unittest.TestCase):
             command = [str(PYTHON), str(SCRIPT), "--root", str(root)]
             if registry:
                 registry_path = root / "registry.yaml"
-                registry_path.write_text("apps:\n  - {name: workflows-scaffold, repository: 7K-Hiroba/workflows}\n")
+                identity = "id" if community_registry else "name"
+                registry_path.write_text(f"apps:\n  - {{{identity}: workflows-scaffold, repository: 7K-Hiroba/workflows}}\n")
                 command.extend(["--registry", str(registry_path)])
             return subprocess.run(command, text=True, capture_output=True, check=False)
 
     def test_valid_repository_passes(self) -> None:
         result = self.run_validation()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_generic_kro_rgd_does_not_need_observability_pack_annotation(self) -> None:
+        def generic(root: Path) -> None:
+            package = root / "packages/monitoring-stack"
+            package.mkdir()
+            (package / "package.yaml").write_text("version: 1.0.0\nchannel: incubating\ntype: kro-rgd\ncategory: observability\ndescription: Generic stack\n")
+            (package / "ui-hints.yaml").write_text("fields: []\n")
+            (package / "README.md").write_text("Generic stack\n")
+            (package / "tests").mkdir()
+            (package / "tests/run.sh").write_text("#!/bin/sh\nexit 0\n")
+            (package / "rgd.yaml").write_text("apiVersion: kro.run/v1alpha1\nkind: ResourceGraphDefinition\nspec:\n  schema: {kind: MonitoringStack}\n  resources: []\n")
+        result = self.run_validation(generic)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_registry_accepts_community_id_field(self) -> None:
+        result = self.run_validation(community_registry=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_rejects_legacy_observability_pack_contract(self) -> None:
@@ -391,6 +409,24 @@ class ValidateRepositoryTests(unittest.TestCase):
             suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
         result = self.run_validation(artifact_bound)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_ci_context_is_a_confined_json_file(self) -> None:
+        def with_context(root: Path) -> None:
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["adapter"] = {"kind": "helm", "readiness": [{"kind": "Deployment", "name": "web", "namespace": "default", "condition": "Available"}], "ciContext": "fixtures/ci-context.json"}
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+            write(root, "tests/smoke/fixtures/ci-context.json", "{}\n")
+        result = self.run_validation(with_context)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        def escape(root: Path) -> None:
+            suite_path = root / "tests/smoke/suite.yaml"
+            suite = yaml.safe_load(suite_path.read_text())
+            suite["target"]["adapter"] = {"kind": "helm", "readiness": [{"kind": "Deployment", "name": "web", "namespace": "default", "condition": "Available"}], "ciContext": "../../outside.json"}
+            suite_path.write_text(yaml.safe_dump(suite, sort_keys=False))
+        result = self.run_validation(escape)
+        self.assertNotEqual(result.returncode, 0)
 
     def test_fixture_only_smoke_rejects_stage_or_prod_execution(self) -> None:
         def stage_eligible(root: Path) -> None:

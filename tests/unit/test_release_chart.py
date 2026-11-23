@@ -255,7 +255,7 @@ fi
             crane = self.root / "hiroba-bin/crane"
         version = subprocess.run([str(crane), "version"], text=True, capture_output=True, check=False)
         self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
-        self.assertEqual(version.stdout.strip(), "v0.20.7")
+        self.assertEqual(version.stdout.strip(), "0.20.7")
         supported = subprocess.run([str(crane), "auth", "login", "--help"], text=True, capture_output=True, check=False)
         self.assertEqual(supported.returncode, 0, supported.stdout + supported.stderr)
         self.assertIn("crane auth login [OPTIONS] [SERVER]", supported.stdout)

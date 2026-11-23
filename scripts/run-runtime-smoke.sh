@@ -27,6 +27,8 @@ fi
 [[ -d "$ROOT" ]] || { echo "--root must be a consumer directory" >&2; exit 2; }
 ROOT=$(cd "$ROOT" && pwd)
 LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck disable=SC1091
+source "$LIBRARY/scripts/lib/stack-cluster.sh"
 SOURCE_SHA=$(git -C "$ROOT" rev-parse HEAD)
 python3 "$LIBRARY/scripts/validate-repository.py" --root "$ROOT"
 python3 "$LIBRARY/scripts/discover-components.py" --root "$ROOT" --all > "$ROOT/evidence-runtime-plan.json"
@@ -71,6 +73,8 @@ esac
 mkdir -p "$ROOT/diagnostics" "$ROOT/evidence"
 WORK=$(mktemp -d)
 CLUSTER="hiroba-smoke-${GITHUB_RUN_ID:-local}-$$"
+export HIROBA_STACK_WORK="$WORK"
+export HIROBA_STACK_CLUSTER="$CLUSTER"
 WORKFLOW_NAME=""
 TARGET_DIGEST=""
 if [[ "$MODE" == oci ]]; then TARGET_DIGEST=${APP_REF#*@}; fi
@@ -104,9 +108,7 @@ finish() {
 }
 trap finish EXIT
 
-KIND_IMAGE='kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32'
-ARGO_COMMIT='43021573c5a35cbafae009043c132dfcef43a112'
-kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --wait 120s
+create_kind_cluster "$CLUSTER"
 if [[ "$MODE" == local ]]; then
   case "$ADAPTER" in
     helm)
@@ -210,16 +212,7 @@ if [[ "$HAS_ADAPTER" == true ]]; then
 else
   kubectl wait --for=condition=Available deployment -l "app.kubernetes.io/name=$APP" --namespace default --timeout 120s
 fi
-kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
-kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start-minimal.yaml"
-# The workflow's default service account needs the canonical executor role in its own namespace.
-kubectl create --namespace default -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start/base/executor/emissary/executor-role.yaml"
-kubectl create --namespace default -f "https://raw.githubusercontent.com/argoproj/argo-workflows/$ARGO_COMMIT/manifests/quick-start/base/executor-default-rolebinding.yaml"
-# The pinned quick-start names a controller-test artifact plugin. This suite is artifactless.
-kubectl patch configmap workflow-controller-configmap --namespace argo --type=json \
-  --patch='[{"op":"remove","path":"/data/artifactRepository"}]'
-kubectl rollout restart deployment/workflow-controller --namespace argo
-kubectl wait --for=condition=Available deployment -n argo --all --timeout 180s
+setup_argo_workflows
 WORKFLOW_FILE=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["workflowTemplate"])' "$SUITE_DIR/suite.yaml")
 TEMPLATE_NAME=$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["metadata"]["name"])' "$SUITE_DIR/$WORKFLOW_FILE")
 kubectl apply -f "$SUITE_DIR/$WORKFLOW_FILE"

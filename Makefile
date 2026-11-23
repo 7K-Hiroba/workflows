@@ -3,7 +3,7 @@ ACTIONLINT ?= $(shell go env GOPATH)/bin/actionlint
 SHA ?=
 OUT ?= /tmp/hiroba-scaffold
 
-.PHONY: setup lint unit test-negative test-scaffold render-scaffold verify-evidence
+.PHONY: setup lint unit test-negative test-scaffold test-stack-contract render-scaffold verify-evidence
 setup:
 	python3 -m venv .venv
 	.venv/bin/pip install --disable-pip-version-check -r requirements-dev.txt
@@ -11,7 +11,7 @@ setup:
 lint:
 	$(ACTIONLINT) .github/workflows/*.yml
 	$(PYTHON) -m yamllint -c .yamllint.yaml .github/workflows scaffold/.github/workflows
-	find scripts scaffold/packages -type f -name '*.sh' -print0 | xargs -0 shellcheck
+	find scripts scaffold/packages scaffold/tests -type f -name '*.sh' -print0 | xargs -0 shellcheck
 	$(PYTHON) scripts/check-workflow-pins.py --root .
 	$(PYTHON) scripts/check-workflow-pins.py --root scaffold
 	$(PYTHON) -c 'import json,pathlib,jsonschema; [jsonschema.validators.validator_for(s).check_schema(s) for p in pathlib.Path("schemas").glob("*.json") for s in [json.loads(p.read_text())]]; print("JSON Schemas valid")'
@@ -27,6 +27,9 @@ test-scaffold:
 	$(PYTHON) scripts/build-indexes.py --root scaffold --check
 	$(PYTHON) scripts/sync-release-please-config.py --root scaffold --check
 	$(PYTHON) scripts/render-observability.py --root scaffold --check
+
+test-stack-contract:
+	$(PYTHON) -m unittest tests.unit.test_stack_testing tests.unit.test_stack_lifecycle_script tests.unit.test_stack_evidence
 
 render-scaffold:
 	@test -n "$(SHA)" || (echo 'SHA is required' >&2; exit 2)

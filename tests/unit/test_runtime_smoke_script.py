@@ -43,6 +43,13 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
             self.assertIn("delete cluster", kind_log.read_text())
             return json.loads((root / "evidence/runtime-smoke.json").read_text())
 
+    def test_driver_uses_lock_driven_shared_cluster_setup(self) -> None:
+        text = SCRIPT.read_text()
+        self.assertIn("scripts/lib/stack-cluster.sh", text)
+        self.assertIn("create_kind_cluster \"$CLUSTER\"", text)
+        self.assertNotIn("KIND_IMAGE=", text)
+        self.assertNotIn("ARGO_COMMIT=", text)
+
     def test_driver_uses_explicit_adapters_without_extension_assumption(self) -> None:
         text = SCRIPT.read_text()
         self.assertIn("chart-test-config.py", text)
@@ -170,10 +177,15 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         for expected in ("argo lint", "argo get", "kind delete cluster", "trap ", "kubectl get events"):
             self.assertIn(expected, text)
 
-    def test_argo_manifest_uses_server_side_create_without_apply_annotation(self) -> None:
+    def test_argo_manifest_uses_checksum_verified_shared_setup(self) -> None:
         text = SCRIPT.read_text()
-        self.assertIn('kubectl create -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
-        self.assertNotIn('kubectl apply -n argo -f "https://raw.githubusercontent.com/argoproj/argo-workflows/', text)
+        self.assertIn("setup_argo_workflows", text)
+        self.assertNotIn("ARGO_COMMIT", text)
+        helper = (ROOT / "scripts/lib/stack-cluster.sh").read_text()
+        self.assertIn('kubectl create -n argo -f "$HIROBA_STACK_WORK/argo-quickStart.yaml"', helper)
+        pins = (ROOT / "pins/stack-testing.json").read_text()
+        self.assertIn("43021573c5a35cbafae009043c132dfcef43a112", pins)
+        self.assertIn("ca4396c090919087fb19253a8b2d5b6e55062b34d1f77ebda9504fa230108a1e", pins)
 
     def test_argo_wait_uses_external_suite_timeout(self) -> None:
         text = SCRIPT.read_text()
@@ -181,7 +193,7 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertNotIn('argo wait "$WORKFLOW_NAME" --namespace default --timeout', text)
 
     def test_artifactless_smoke_disables_invalid_quick_start_driver(self) -> None:
-        text = SCRIPT.read_text()
+        text = (ROOT / "scripts/lib/stack-cluster.sh").read_text()
         self.assertIn('"path":"/data/artifactRepository"', text)
         self.assertIn('"op":"remove"', text)
         self.assertIn("rollout restart deployment/workflow-controller --namespace argo", text)
@@ -193,10 +205,13 @@ class RuntimeSmokeScriptTests(unittest.TestCase):
         self.assertNotIn("kubectl logs -A", text)
 
     def test_default_executor_uses_canonical_task_result_rbac(self) -> None:
-        text = SCRIPT.read_text()
-        self.assertIn("manifests/quick-start/base/executor/emissary/executor-role.yaml", text)
-        self.assertIn("manifests/quick-start/base/executor-default-rolebinding.yaml", text)
+        text = (ROOT / "scripts/lib/stack-cluster.sh").read_text()
+        self.assertIn("argo-executorRole.yaml", text)
+        self.assertIn("argo-executorRoleBinding.yaml", text)
         self.assertEqual(text.count("kubectl create --namespace default -f"), 2)
+        pins = (ROOT / "pins/stack-testing.json").read_text()
+        self.assertIn("28dfcc9f1851f97f8e38814bbcba1895794bfb0579eafeceb572cc7c5397ad65", pins)
+        self.assertIn("f7291f19cc64281ddaa63b92b365d9486a2cc92c531ebede4c3097ad689cdb44", pins)
 
 
 if __name__ == "__main__":

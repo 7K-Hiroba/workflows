@@ -28,15 +28,17 @@ if [[ ${#PROFILES[@]} -gt 0 ]]; then TOOLS+=(kind helm kubectl); fi
 if [[ ${#TOOLS[@]} -eq 0 ]]; then echo "at least one CI tool or setup profile is required" >&2; exit 2; fi
 mapfile -t TOOLS < <(printf '%s\n' "${TOOLS[@]}" | sort -u)
 
-CACHE_KEY=$(python3 - "$LIBRARY/scripts" "${PROFILES[@]}" -- "${TOOLS[@]}" <<'PY'
-import sys
+CACHE_KEY=$(python3 - "$LIBRARY/scripts" "$PINS" "${PROFILES[@]}" -- "${TOOLS[@]}" <<'PY'
+import json, sys
 sys.path.insert(0, sys.argv[1])
-from lib.stack_testing import tools_cache_key
-args = sys.argv[2:]
+from lib.pin_cache import cache_key
+with open(sys.argv[2]) as source:
+    pins = json.load(source)
+args = sys.argv[3:]
 separator = args.index("--")
 profiles = [item for item in args[:separator] if item]
 tools = args[separator + 1:]
-print(tools_cache_key(tools, profiles))
+print(cache_key(pins, tools, profiles))
 PY
 )
 if [[ "$MODE" == key ]]; then

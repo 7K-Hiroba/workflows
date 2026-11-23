@@ -35,6 +35,23 @@ class ScaffoldContractTests(unittest.TestCase):
         kinds = {component["kind"] for component in plan["components"]}
         self.assertEqual(kinds, {"extension", "ui", "chart", "package", "template", "smoke"})
 
+    def test_scaffold_stack_lifecycle_is_declared_and_hosted(self) -> None:
+        result = self.run_script("stack-test-config.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["archetype"], "stack")
+        self.assertTrue(plan["enabled"])
+        self.assertEqual(set(plan["covers"]), {"charts/workflows-scaffold", "packages/observability-pack"})
+        self.assertEqual(plan["setupProfiles"], ["kro"])
+        self.assertNotIn("argo", plan["setupProfiles"])
+        caller = SCAFFOLD / ".github/workflows/stack-test.yml.template"
+        self.assertTrue(caller.is_file())
+        self.assertIn("test-stack.yml@__WORKFLOWS_V1_SHA__", caller.read_text())
+        workflow = yaml.safe_load((ROOT / ".github/workflows/scaffold-ci.yml").read_text())
+        self.assertEqual(workflow["jobs"]["stack"]["uses"], "$/.github/workflows/test-stack.yml")
+        self.assertIn("stack", workflow["jobs"]["result"]["needs"])
+        self.assertIn("scaffold/tests", (ROOT / "Makefile").read_text())
+
     def test_full_matrix_fixtures_validate(self) -> None:
         fixtures = {
             "chartless-observability": {"package"},

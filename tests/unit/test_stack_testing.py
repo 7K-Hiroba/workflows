@@ -159,6 +159,32 @@ class StackTestingContractTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("charts/other", result.stdout + result.stderr)
 
+    def run_release_plan(self) -> subprocess.CompletedProcess[str]:
+        config = yaml.safe_load((self.root / ".hiroba.yaml").read_text())
+        config["releaseComponents"] = {"charts/example": "chart-example", "packages/example": "package-example"}
+        (self.root / ".hiroba.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+        if not (self.root / ".git").exists():
+            subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        return subprocess.run([
+            str(PYTHON), str(ROOT / "scripts/prepare-release-plan.py"),
+            "--root", str(self.root), "--source-sha", "a" * 40, "--rehearsal",
+        ], text=True, capture_output=True, check=False)
+
+    def test_stack_release_requires_lifecycle_evidence(self) -> None:
+        result = self.run_release_plan()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertTrue(plan["hasStackTest"])
+        self.assertIn("stack-lifecycle", plan["requiredLanes"])
+
+    def test_non_stack_release_does_not_require_lifecycle_evidence(self) -> None:
+        self.make_config("non-stack", with_stack=False)
+        result = self.run_release_plan()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertFalse(plan["hasStackTest"])
+        self.assertNotIn("stack-lifecycle", plan["requiredLanes"])
+
     def test_cache_key_changes_with_selected_pin_content(self) -> None:
         first = self.run_config()
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)

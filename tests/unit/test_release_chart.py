@@ -85,9 +85,15 @@ case \"$1\" in
   package)
     mkdir -p \"$4\"
     version=$($HIROBA_PYTHON -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["version"])' \"$2/Chart.yaml\")
+    mtime=$(stat -c %Y \"$2/Chart.yaml\")
     if [[ -n \"$CHART_CAPTURE\" ]]; then cp \"$2/Chart.yaml\" \"$CHART_CAPTURE\"; fi
     printf '%s' \"$version\" > \"$CHART_VERSION_STATE\"
-    cp \"$PACKAGE_SOURCE\" \"$4/example-$version.tgz\"
+    if [[ -f \"$CHART_MTIME_STATE\" ]] && [[ \"$(cat \"$CHART_MTIME_STATE\")\" != \"$mtime\" ]]; then
+      cp \"$OTHER_PACKAGE_SOURCE\" \"$4/example-$version.tgz\"
+    else
+      cp \"$PACKAGE_SOURCE\" \"$4/example-$version.tgz\"
+    fi
+    printf '%s' \"$mtime\" > \"$CHART_MTIME_STATE\"
     ;;
   push)
     printf '%s' \"$FAKE_DIGEST\" > \"$STATE\"
@@ -122,6 +128,8 @@ fi
         helm.chmod(0o755)
         oras.chmod(0o755)
         self.package.write_bytes(PACKAGE_CONTENT)
+        self.other_package = self.root / "other-package.tgz"
+        self.other_package.write_bytes(OTHER_CONTENT)
         self.env = {
             **os.environ,
             "PATH": str(self.bin) + ":" + os.environ["PATH"],
@@ -129,6 +137,8 @@ fi
             "STATE": str(self.state),
             "FAKE_DIGEST": self.digest,
             "PACKAGE_SOURCE": str(self.package),
+            "OTHER_PACKAGE_SOURCE": str(self.other_package),
+            "CHART_MTIME_STATE": str(self.root / "chart-mtime"),
             "OCI_SOURCE": str(self.oci_source),
             "CONTENT_DIGEST": CONTENT_DIGEST,
             "TAMPER": "",
@@ -310,6 +320,17 @@ fi
         self.assertIn("oras copy", self.log.read_text())
         self.assertFalse((self.root / "artifact.json").exists())
 
+    def test_repeated_package_is_byte_identical_across_source_mtimes(self) -> None:
+        first = self.run_chart()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        expected = json.loads((self.root / "artifact.json").read_text())["digest"]
+        os.utime(self.chart / "Chart.yaml", (1, 1))
+        self.state.unlink()
+        (self.root / "artifact.json").unlink()
+        second = self.run_chart()
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual(json.loads((self.root / "artifact.json").read_text())["digest"], expected)
+
     def test_existing_identical_chart_is_reused(self) -> None:
         self.state.write_text(DIGEST)
         result = self.run_chart()
@@ -338,7 +359,8 @@ fi
         (self.root / ".hiroba.yaml").write_text("components:\n  chartsRoot: helm\n")
         result = self.run_chart()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(f"helm package {configured}", self.log.read_text())
+        self.assertIn("helm package ", self.log.read_text())
+        self.assertIn("/helm/example", self.log.read_text())
 
     def test_uses_opt_in_chart_release_component(self) -> None:
         (self.root / ".hiroba.yaml").write_text("components:\n  chartsRoot: charts\nreleaseComponents:\n  charts/example: chart-example\n")

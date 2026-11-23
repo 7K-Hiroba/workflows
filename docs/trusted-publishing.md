@@ -8,6 +8,7 @@ Each publish performs: immutable build/push → registry digest capture and re-r
 - Test predicate: `https://inari.dev/attestations/test-evidence/v1`.
 - Test predicates bind source repository/SHA, release tag or release-set/CI identity, artifact repository/digest/media type, producer workflow/SHA/run/attempt, required lanes, evidence digest, and completion time.
 - Reviewed compat evidence must be passing, source-bound, and at most seven days old. Failed, skipped, missing, stale, or unrelated evidence fails publication.
+- Classified stacks additionally require source-bound stack-lifecycle evidence with one fresh cluster, ordered install+upgrade at distinct exact content identities, and cleanup. The release graph consumes the actual stack artifact; fixture-only stack evidence cannot authorize reviewed/official application runtime readiness.
 
 Verification uses cosign, `gh attestation verify`, and `verify-test-evidence.py`. Sibling admission work must consume the same OCI referrer and predicate contract. Any producer/admission mismatch stops finalization; never substitute unsigned files or weaken identity checks.
 

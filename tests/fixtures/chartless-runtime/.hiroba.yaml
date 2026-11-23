@@ -1,5 +1,6 @@
-schema: inari.hiroba.app.v1
+schema: inari.hiroba.app.v2
 app: hiroba-chartless-smoke
+archetype: non-stack
 trustTier: experimental
 components:
   chartsRoot: charts

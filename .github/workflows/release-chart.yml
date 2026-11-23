@@ -21,9 +21,13 @@ jobs:
   test:
     uses: $/.github/workflows/ci-chart.yml
     with: {root: "${{ inputs.root }}", source-sha: "${{ inputs.source-sha }}"}
+  stack:
+    if: inputs.standalone
+    uses: $/.github/workflows/test-stack.yml
+    with: {root: "${{ inputs.root }}", source-sha: "${{ inputs.source-sha }}"}
   publish:
-    needs: [test]
-    if: needs.test.outputs.status == 'success'
+    needs: [test, stack]
+    if: always() && needs.test.outputs.status == 'success' && (inputs.standalone == false || needs.stack.outputs.status == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
@@ -42,13 +46,27 @@ jobs:
       - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
       - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
+      - id: evidence-plan
+        run: |
+          python3 .hiroba/workflows/scripts/chart-release-evidence.py --root "consumer/${{ inputs.root }}" --standalone "${{ inputs.standalone }}" --required-lanes "${{ inputs.required-lanes }}" > evidence-plan.json
+          {
+            echo "has-stack=$(jq -r .hasStackTest evidence-plan.json)"
+            echo "required-lanes=$(jq -r .requiredLanes evidence-plan.json)"
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         if: "!inputs.standalone"
         with: {name: "${{ inputs.evidence-name }}", path: evidence}
-      - name: Add exact-source chart test result
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: inputs.standalone && steps.evidence-plan.outputs.has-stack == 'true'
+        with: {name: stack-lifecycle-evidence, path: stack-lifecycle-evidence}
+      - name: Add exact-source chart and stack test results
+        env: {REQUIRED_LANES: "${{ steps.evidence-plan.outputs.required-lanes }}"}
         run: |
           mkdir -p evidence
           jq -n --arg sourceSha "${{ inputs.source-sha }}" '{schema:"inari.lane-result.v1",lane:"chart",status:"passed",sourceSha:$sourceSha}' > evidence/chart.json
+          if [[ " $REQUIRED_LANES " == *" stack-lifecycle "* ]]; then
+            cp stack-lifecycle-evidence/evidence/stack-lifecycle.json evidence/stack-lifecycle.json
+          fi
       - name: Log in to GHCR
         env: {TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
         run: echo "$TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -104,7 +122,7 @@ jobs:
           RUN_ATTEMPT: "${{ github.run_attempt }}"
           RELEASE_TAG: "${{ steps.publish.outputs.release-tag }}"
           EVIDENCE_DIR: evidence
-          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          REQUIRED_LANES: "${{ steps.evidence-plan.outputs.required-lanes }}"
           PREDICATE_OUT: "evidence/test-chart-${{ inputs.chart }}.json"
         run: .hiroba/workflows/scripts/sign-and-attest.sh
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
@@ -122,7 +140,7 @@ jobs:
           SOURCE_REPOSITORY: "${{ github.repository }}"
           SOURCE_SHA: "${{ inputs.source-sha }}"
           WORKFLOW_SHA: "${{ job.workflow_sha }}"
-          REQUIRED_LANES: "${{ inputs.required-lanes }}"
+          REQUIRED_LANES: "${{ steps.evidence-plan.outputs.required-lanes }}"
           EXPECTED_PUBLISHER: "^https://github\\.com/7K-Hiroba/workflows/\\.github/workflows/release-chart\\.yml@${{ github.ref }}$"
           WORKFLOW_PATH: "${{ job.workflow_file_path }}"
           RELEASE_TAG: "${{ steps.publish.outputs.release-tag }}"
@@ -137,14 +155,15 @@ jobs:
         with: {name: "artifact-chart-${{ inputs.chart }}", path: "evidence/artifact-chart-${{ inputs.chart }}.json", retention-days: 30}
   result:
     if: always()
-    needs: [test, publish]
+    needs: [test, stack, publish]
     runs-on: ubuntu-latest
     outputs: {status: "${{ steps.result.outputs.status }}"}
     steps:
       - id: result
-        env: {TEST: "${{ needs.test.outputs.status }}", PUBLISH: "${{ needs.publish.result }}"}
+        env: {TEST: "${{ needs.test.outputs.status }}", STACK: "${{ needs.stack.outputs.status }}", PUBLISH: "${{ needs.publish.result }}", STANDALONE: "${{ inputs.standalone }}"}
         run: |
           status=success
           [[ "$TEST" == success && "$PUBLISH" == success ]] || status=failure
+          [[ "$STANDALONE" != true || "$STACK" == success ]] || status=failure
           echo "status=$status" >> "$GITHUB_OUTPUT"
           [[ "$status" == success ]] || exit 1

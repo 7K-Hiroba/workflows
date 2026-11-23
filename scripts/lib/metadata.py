@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from lib.paths import relative_path
+from lib.stack_testing import load_stack_plan, validate_app_config
 
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
@@ -23,12 +24,13 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_config(root: Path) -> dict[str, Any]:
-    return load_yaml(root / ".hiroba.yaml")
+    return validate_app_config(root)
 
 
 def discover(root: Path) -> dict[str, Any]:
     root = root.resolve()
     config = load_config(root)
+    stack_test = load_stack_plan(root)
     app = config["app"]
     configured = config["components"]
     components: list[dict[str, Any]] = []
@@ -130,8 +132,19 @@ def discover(root: Path) -> dict[str, Any]:
         if target is not None and target.get("releaseComponent"):
             component["releaseComponent"] = target["releaseComponent"]
 
+    covered = set(stack_test["covers"])
+    for component in components:
+        component["stackCovered"] = component["path"] in covered
     components.sort(key=lambda item: (item["name"], item["kind"], item["path"]))
-    return {"schema": "inari.release-plan.v1", "app": app, "trustTier": config.get("trustTier", "experimental"), "components": components}
+    return {
+        "schema": "inari.release-plan.v1",
+        "app": app,
+        "archetype": config["archetype"],
+        "trustTier": config.get("trustTier", "experimental"),
+        "hasStackTest": stack_test["enabled"],
+        "stackTest": stack_test,
+        "components": components,
+    }
 
 
 def filter_changed(plan: dict[str, Any], changed_files: list[str]) -> dict[str, Any]:

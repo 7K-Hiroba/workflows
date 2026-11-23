@@ -30,8 +30,9 @@ def make_matrix_repo(root: Path, kind: str, mask: int) -> dict:
     observability = bool(mask & 8)
     smoke = bool(mask & 16)
     config = {
-        "schema": "inari.hiroba.app.v1",
+        "schema": "inari.hiroba.app.v2",
         "app": name,
+        "archetype": "non-stack",
         "trustTier": "experimental",
         "components": {"chartsRoot": "charts", "packagesRoot": "packages", "templatesRoot": "templates"},
     }

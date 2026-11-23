@@ -22,6 +22,10 @@ jobs:
       - id: paths
         env: {INPUT_ROOT: "${{ inputs.root }}"}
         run: echo "consumer-root=$(python3 -c 'import os; print(os.path.normpath(os.path.join("consumer", os.environ["INPUT_ROOT"])))')" >> "$GITHUB_OUTPUT"
+      - id: tools-key
+        run: echo "key=$(.hiroba/workflows/scripts/install-ci-tools.sh --cache-key promtool gcx alloy)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with: {path: .hiroba-cache, key: "hiroba-observability-${{ steps.tools-key.outputs.key }}"}
       - name: Install pinned offline observability tools
         run: .hiroba/workflows/scripts/install-ci-tools.sh promtool gcx alloy
       - name: Validate observability and generated drift

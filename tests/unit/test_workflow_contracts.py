@@ -16,6 +16,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 PUBLIC = [
     "validate-packages.yml",
     "test-packages.yml",
+    "test-stack.yml",
     "test-runtime-smoke.yml",
     "release-smoke-suite.yml",
     "ci-go-extension.yml",
@@ -53,7 +54,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("result", data["jobs"])
 
     def test_reusable_test_lanes_check_out_the_requested_exact_source(self) -> None:
-        names = ("validate-packages.yml", "test-packages.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml", "test-runtime-smoke.yml")
+        names = ("validate-packages.yml", "test-packages.yml", "test-stack.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml", "test-runtime-smoke.yml")
         for name in names:
             with self.subTest(name=name):
                 data = yaml.safe_load((WORKFLOWS / name).read_text())
@@ -68,7 +69,7 @@ class WorkflowContractTests(unittest.TestCase):
                 for checkout in checkouts:
                     self.assertEqual(checkout["with"].get("ref"), "${{ inputs.source-sha }}")
         release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
-        for name in ("validate", "packages", "go", "ui", "chart", "observability", "compat", "runtime"):
+        for name in ("validate", "packages", "go", "ui", "chart", "observability", "compat", "runtime", "stack"):
             self.assertEqual(release["jobs"][name]["with"]["source-sha"], "${{ needs.plan.outputs.source-sha }}")
         for name in ("release-chart.yml", "release-smoke-suite.yml"):
             data = yaml.safe_load((WORKFLOWS / name).read_text())
@@ -86,7 +87,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("path: consumer", text)
 
     def test_ci_lanes_have_no_publish_permissions(self) -> None:
-        for name in ("validate-packages.yml", "test-packages.yml", "test-runtime-smoke.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml"):
+        for name in ("validate-packages.yml", "test-packages.yml", "test-stack.yml", "test-runtime-smoke.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml"):
             with self.subTest(name=name):
                 text = (WORKFLOWS / name).read_text()
                 self.assertNotIn("id-token: write", text)
@@ -225,20 +226,50 @@ class WorkflowContractTests(unittest.TestCase):
                         self.assertNotIn("inputs.root", artifact_path)
 
     def test_chart_lanes_fetch_only_exact_locked_dependencies(self) -> None:
-        for path in (WORKFLOWS / "ci-chart.yml", ROOT / "scripts/run-runtime-smoke.sh", ROOT / "scripts/release-chart.sh"):
+        for path in (ROOT / "scripts/run-chart-tests.sh", ROOT / "scripts/run-runtime-smoke.sh", ROOT / "scripts/release-chart.sh"):
             with self.subTest(path=path.name):
                 self.assertIn("prepare-chart.py", path.read_text())
+        self.assertIn("run-chart-tests.sh", (WORKFLOWS / "ci-chart.yml").read_text())
 
     def test_chart_lint_reuses_prepared_locked_dependencies(self) -> None:
-        chart = yaml.safe_load((WORKFLOWS / "ci-chart.yml").read_text())
-        steps = chart["jobs"]["test"]["steps"]
-        prepare = next(step for step in steps if "prepare-chart.py" in step.get("run", ""))
-        lint = next(step for step in steps if step.get("name") == "Chart-testing lint")
-        self.assertLess(steps.index(prepare), steps.index(lint))
-        self.assertIn("--skip-helm-dependencies", lint["run"])
+        script = (ROOT / "scripts/run-chart-tests.sh").read_text()
+        self.assertLess(script.index("prepare-chart.py"), script.index("ct lint"))
+        self.assertIn("--skip-helm-dependencies", script)
+
+    def test_existing_kind_lanes_use_shared_pins_and_skip_covered_stack_components(self) -> None:
+        packages_path = WORKFLOWS / "test-packages.yml"
+        packages = packages_path.read_text()
+        chart_path = WORKFLOWS / "ci-chart.yml"
+        chart = chart_path.read_text()
+        for text in (packages, chart):
+            self.assertNotIn("helm/kind-action", text)
+            self.assertNotIn("kindest/node:", text)
+            self.assertIn("install-ci-tools.sh", text)
+            self.assertIn("actions/cache@", text)
+            self.assertNotIn("restore-keys", text)
+        self.assertIn('select(.kind == "package" and .packageType == "kro-rgd" and .stackCovered != true)', packages)
+        script = (ROOT / "scripts/test-packages.sh").read_text()
+        self.assertIn("scripts/lib/stack-cluster.sh", script)
+        self.assertIn("setup_kro", script)
+        self.assertIn("kind delete cluster", script)
+        chart_script = ROOT / "scripts/run-chart-tests.sh"
+        self.assertTrue(chart_script.is_file())
+        chart_text = chart_script.read_text()
+        self.assertIn("scripts/lib/stack-cluster.sh", chart_text)
+        self.assertIn("STACK_COVERED", chart_text)
+
+    def test_tool_based_ci_lanes_cache_only_exact_content(self) -> None:
+        for name in ("test-runtime-smoke.yml", "test-observability.yml", "library-ci.yml"):
+            text = (WORKFLOWS / name).read_text()
+            with self.subTest(name=name):
+                self.assertIn("install-ci-tools.sh", text)
+                self.assertIn("actions/cache@", text)
+                self.assertIn("--cache-key", text)
+                self.assertNotIn("restore-keys", text)
+                self.assertNotIn("helm/kind-action", text)
 
     def test_chart_install_uses_validated_consumer_declarations(self) -> None:
-        chart = (WORKFLOWS / "ci-chart.yml").read_text()
+        chart = (WORKFLOWS / "ci-chart.yml").read_text() + (ROOT / "scripts/run-chart-tests.sh").read_text()
         self.assertIn("scripts/chart-test-config.py", chart)
         self.assertNotIn("workflows-scaffold", chart)
         self.assertNotIn("prometheusrule-crd.yaml", chart)
@@ -268,6 +299,60 @@ class WorkflowContractTests(unittest.TestCase):
         chart_release = (WORKFLOWS / "release-chart.yml").read_text()
         self.assertIn("releaseComponents", chart_release)
         self.assertIn('release_tag="$release_component-v$version"', chart_release)
+
+    def test_coordinated_chart_publish_runs_when_standalone_stack_is_skipped(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "release-chart.yml").read_text())
+        condition = workflow["jobs"]["publish"]["if"]
+        self.assertTrue(condition.startswith("always() &&"), condition)
+
+    def test_standalone_chart_release_derives_stack_evidence_from_exact_source(self) -> None:
+        text = (WORKFLOWS / "release-chart.yml").read_text()
+        self.assertIn("scripts/chart-release-evidence.py", text)
+        self.assertIn('has-stack=$(jq -r .hasStackTest evidence-plan.json)', text)
+        self.assertIn('required-lanes=$(jq -r .requiredLanes evidence-plan.json)', text)
+        self.assertIn("steps.evidence-plan.outputs.has-stack == 'true'", text)
+        self.assertNotIn("contains(inputs.required-lanes, 'stack-lifecycle')", text)
+        self.assertGreaterEqual(text.count("steps.evidence-plan.outputs.required-lanes"), 3)
+
+    def test_chart_repair_derives_lifecycle_from_tagged_source(self) -> None:
+        text = (ROOT / "scaffold/.github/workflows/chart-repair.yml.template").read_text()
+        first_plan = text.index("discover-components.py")
+        detach = text.index('git -C consumer checkout --detach "$sha"')
+        tagged_plan = text.index("discover-components.py", detach)
+        required = text.index("required_lanes=chart", tagged_plan)
+        self.assertLess(first_plan, detach)
+        self.assertLess(detach, tagged_plan)
+        self.assertLess(tagged_plan, required)
+        self.assertIn("tagged_release_component", text)
+        self.assertIn("tagged_version", text)
+        self.assertIn('[[ "$tagged_release_component" == "$release_component" ]]', text)
+        self.assertIn('[[ "$tagged_version" == "$VERSION" ]]', text)
+
+    def test_stack_lifecycle_evidence_is_wired_through_release_and_repair(self) -> None:
+        release_path = WORKFLOWS / "release.yml"
+        release = yaml.safe_load(release_path.read_text())
+        self.assertIn("has-stack-test", release["jobs"]["plan"]["outputs"])
+        stack = release["jobs"]["stack"]
+        self.assertEqual(stack["uses"], "$/.github/workflows/test-stack.yml")
+        self.assertEqual(stack["with"]["source-sha"], "${{ needs.plan.outputs.source-sha }}")
+        self.assertIn("stack", release["jobs"]["evidence"]["needs"])
+        release_text = release_path.read_text()
+        self.assertIn('name: stack-lifecycle-evidence', release_text)
+        self.assertIn('cp stack-lifecycle-evidence/evidence/stack-lifecycle.json evidence/stack-lifecycle.json', release_text)
+        self.assertNotIn('--lane "stack-lifecycle=', release_text)
+
+        repair_path = WORKFLOWS / "release-chart.yml"
+        repair = yaml.safe_load(repair_path.read_text())
+        self.assertEqual(repair["jobs"]["stack"]["uses"], "$/.github/workflows/test-stack.yml")
+        self.assertEqual(repair["jobs"]["stack"]["if"], "inputs.standalone")
+        self.assertEqual(repair["jobs"]["publish"]["needs"], ["test", "stack"])
+        self.assertIn("stack", repair["jobs"]["result"]["needs"])
+
+        rehearsal = (WORKFLOWS / "publish-rehearsal.yml").read_text()
+        self.assertIn("required-lanes: chart stack-lifecycle", rehearsal)
+        caller = (ROOT / "scaffold/.github/workflows/chart-repair.yml.template").read_text()
+        self.assertIn('required-lanes: "${{ needs.resolve.outputs.required-lanes }}"', caller)
+        self.assertIn("required-lanes", yaml.safe_load(caller)["jobs"]["resolve"]["outputs"])
 
     def test_smoke_release_and_runtime_verification_share_opt_in_target_identity(self) -> None:
         smoke_release = (WORKFLOWS / "release-smoke-suite.yml").read_text()
@@ -512,6 +597,7 @@ class WorkflowContractTests(unittest.TestCase):
             ("release.yml", "observability", "test-observability.yml"),
             ("release.yml", "compat", "compat-check.yml"),
             ("release.yml", "runtime", "test-runtime-smoke.yml"),
+            ("release.yml", "stack", "test-stack.yml"),
             ("release.yml", "publish-packages", "release-oci.yml"),
             ("release.yml", "publish-templates", "release-oci.yml"),
             ("release.yml", "publish-charts", "release-chart.yml"),
@@ -519,6 +605,7 @@ class WorkflowContractTests(unittest.TestCase):
             ("release.yml", "publish-smoke", "release-smoke-suite.yml"),
             ("release.yml", "indexes", "release-oci.yml"),
             ("release-chart.yml", "test", "ci-chart.yml"),
+            ("release-chart.yml", "stack", "test-stack.yml"),
             ("release-smoke-suite.yml", "test", "test-runtime-smoke.yml"),
         }
         self.assertEqual(checked_edges, expected_edges)

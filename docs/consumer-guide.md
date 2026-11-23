@@ -1,7 +1,7 @@
 # Consumer guide
 
 1. Generate the app through the CLI scaffold after the workflow release is approved.
-2. Keep `.hiroba.yaml`, extension/package/template manifests, values schemas, canonical observability, generated outputs, and optional `tests/smoke/` synchronized. Chartless observability omits `observability.chart`; runtime smoke declares an explicit `helm` or `manifests` adapter and its allowed `executableProfiles`.
+2. Migrate to app config v2 with explicit `archetype: stack|non-stack`. Every stack declares complete `tests/stack` install+upgrade coverage and its immutable caller; non-stack sources never emit them. Follow `docs/stack-testing.md`. Keep `.hiroba.yaml`, extension/package/template manifests, values schemas, canonical observability, generated outputs, and optional `tests/smoke/` synchronized. Chartless observability omits `observability.chart`; runtime smoke declares an explicit `helm` or `manifests` adapter and its allowed `executableProfiles`.
 3. Use thin callers from `scaffold/.github/workflows/*.template`. The renderer replaces `__WORKFLOWS_V1_SHA__` with the full approved commit SHA and preserves the version comment. Placeholders, `@v1`, `@main`, and short SHAs fail policy.
 4. Use only explicit App credentials for release-please/finalization; never `secrets: inherit`. PR lanes require contents-read only.
 

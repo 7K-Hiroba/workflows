@@ -21,6 +21,8 @@ Schema, repository validation, the runtime driver, release planning, and signed 
 
 ## Execution contexts
 
+Runtime smoke is distinct from the stack-lifecycle lane in `docs/stack-testing.md`. Each uses its own fresh cluster; neither shares etcd, kubeconfig, or workloads with the other. Stack install/upgrade proves convergence, while runtime smoke executes the declared Argo suite.
+
 PR CI uses local packaging, pinned kind and Argo Workflows, `argo lint`, the selected entrypoint, wait/assertions, diagnostics, and guaranteed cluster deletion. Stable OCI mode requires exact app and suite digests and verifies signature/SLSA/test evidence before use. The driver rejects a profile excluded by `executableProfiles` before applying application fixtures.
 
 Only `profile=ci` executes in this repository. Stage/prod declarations are validated but never run here. Real rendering, policy, triggers, promotion, and outbound agent status belong to the environment-verification task and its multi-repo gate. Failure never triggers automatic rollback.

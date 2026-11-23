@@ -32,6 +32,7 @@ jobs:
       has-packages: "${{ steps.plan.outputs.has-packages }}"
       has-templates: "${{ steps.plan.outputs.has-templates }}"
       has-smoke: "${{ steps.plan.outputs.has-smoke }}"
+      has-stack-test: "${{ steps.plan.outputs.has-stack-test }}"
       has-observability: "${{ steps.plan.outputs.has-observability }}"
       required-lanes: "${{ steps.plan.outputs.required-lanes }}"
       extension-version: "${{ steps.plan.outputs.extension-version }}"
@@ -104,6 +105,7 @@ jobs:
             echo "has-packages=$(jq -r .hasPackages plan.json)"
             echo "has-templates=$(jq -r .hasTemplates plan.json)"
             echo "has-smoke=$(jq -r .hasSmoke plan.json)"
+            echo "has-stack-test=$(jq -r .hasStackTest plan.json)"
             echo "has-observability=$(jq -r .hasObservability plan.json)"
             echo "required-lanes=$(jq -r '.requiredLanes | join(" ")' plan.json)"
             echo "extension-version=$(jq -r 'first(.publishComponents[] | select(.kind == "extension") | .version) // ""' plan.json)"
@@ -154,9 +156,14 @@ jobs:
     needs: [plan]
     uses: $/.github/workflows/test-runtime-smoke.yml
     with: {root: "${{ inputs.root }}", mode: local, profile: ci, source-sha: "${{ needs.plan.outputs.source-sha }}"}
+  stack:
+    if: needs.plan.outputs.should-publish == 'true' && needs.plan.outputs.has-stack-test == 'true'
+    needs: [plan]
+    uses: $/.github/workflows/test-stack.yml
+    with: {root: "${{ inputs.root }}", source-sha: "${{ needs.plan.outputs.source-sha }}"}
   evidence:
     if: always() && needs.plan.outputs.should-publish == 'true'
-    needs: [plan, validate, packages, go, ui, chart, observability, compat, runtime]
+    needs: [plan, validate, packages, go, ui, chart, observability, compat, runtime, stack]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs: {status: "${{ steps.result.outputs.status }}"}
@@ -171,6 +178,9 @@ jobs:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         if: needs.plan.outputs.has-smoke == 'true'
         with: {name: runtime-smoke-evidence, path: runtime-smoke-evidence}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: needs.plan.outputs.has-stack-test == 'true'
+        with: {name: stack-lifecycle-evidence, path: stack-lifecycle-evidence}
       - id: collect
         if: always()
         name: Normalize and validate required release evidence
@@ -188,6 +198,7 @@ jobs:
           HAS_CHART: "${{ needs.plan.outputs.has-chart }}"
           HAS_OBSERVABILITY: "${{ needs.plan.outputs.has-observability }}"
           HAS_SMOKE: "${{ needs.plan.outputs.has-smoke }}"
+          HAS_STACK: "${{ needs.plan.outputs.has-stack-test }}"
         run: |
           set -euo pipefail
           mkdir -p evidence
@@ -199,6 +210,9 @@ jobs:
           [[ "$HAS_OBSERVABILITY" != true ]] || args+=(--lane "observability=${OBSERVABILITY:-failure}")
           if [[ "$HAS_SMOKE" == true ]]; then
             cp runtime-smoke-evidence/evidence/runtime-smoke.json evidence/runtime-smoke.json
+          fi
+          if [[ "$HAS_STACK" == true ]]; then
+            cp stack-lifecycle-evidence/evidence/stack-lifecycle.json evidence/stack-lifecycle.json
           fi
           python3 .hiroba/workflows/scripts/collect-release-evidence.py "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

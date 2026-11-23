@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/stack-pins-v1.json",
+  "type": "object",
+  "required": ["schema", "kind", "kro", "argoCd", "argoWorkflows", "registryImage", "tools", "profiles"],
+  "properties": {
+    "schema": {"const": "inari.stack-pins.v1"},
+    "kind": {
+      "type": "object",
+      "required": ["version", "nodeImage"],
+      "properties": {
+        "version": {"type": "string"},
+        "nodeImage": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "kro": {
+      "type": "object",
+      "required": ["repository", "version", "digest"],
+      "properties": {"digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+    },
+    "argoCd": {"$ref": "#/$defs/argoCd"},
+    "argoWorkflows": {"$ref": "#/$defs/argoWorkflows"},
+    "registryImage": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+    "tools": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/tool"}
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+    }
+  },
+  "$defs": {
+    "download": {
+      "type": "object",
+      "required": ["url", "sha256"],
+      "properties": {
+        "url": {"type": "string", "pattern": "^https://"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "tool": {
+      "allOf": [{"$ref": "#/$defs/download"}],
+      "type": "object",
+      "required": ["version", "format"],
+      "properties": {
+        "version": {"type": "string", "not": {"const": "latest"}},
+        "format": {"enum": ["binary", "gzip", "tar", "zip"]},
+        "path": {"type": "string"}
+      }
+    },
+    "argoCd": {
+      "type": "object",
+      "required": ["commit", "coreInstall", "redisImage"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "coreInstall": {"$ref": "#/$defs/download"},
+        "redisImage": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "argoWorkflows": {
+      "type": "object",
+      "required": ["commit", "manifests"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "manifests": {
+          "type": "object",
+          "required": ["quickStart", "executorRole", "executorRoleBinding"],
+          "additionalProperties": {"$ref": "#/$defs/download"}
+        }
+      }
+    }
+  }
+}

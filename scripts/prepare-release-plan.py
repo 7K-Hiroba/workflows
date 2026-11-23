@@ -134,6 +134,8 @@ def main() -> int:
         required.append("browser")
     if "smoke" in kinds:
         required.append("runtime-smoke")
+    if plan.get("hasStackTest") and publish_components:
+        required.append("stack-lifecycle")
     output = {
         **plan,
         "sourceSha": args.source_sha.lower(),
@@ -150,6 +152,7 @@ def main() -> int:
         "hasPackages": "package" in kinds,
         "hasTemplates": "template" in kinds,
         "hasSmoke": "smoke" in kinds,
+        "hasStackTest": bool(plan.get("hasStackTest")),
         "hasObservability": has_observability,
         "requiredLanes": required,
     }

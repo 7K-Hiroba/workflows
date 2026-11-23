@@ -1,0 +1,8 @@
+schema: inari.stack-test.v1
+setupProfiles: [kro]
+covers:
+  - charts/workflows-scaffold
+  - packages/observability-pack
+install: {script: install.sh, timeout: 10m}
+upgrade: {script: upgrade.sh, timeout: 10m}
+diagnostics: diagnostics.sh

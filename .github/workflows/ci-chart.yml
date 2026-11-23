@@ -22,7 +22,7 @@ jobs:
       - id: plan
         run: |
           python3 .hiroba/workflows/scripts/discover-components.py --root "consumer/${{ inputs.root }}" --all > plan.json
-          charts=$(jq -c '[.components[] | select(.kind == "chart") | {name,path}]' plan.json)
+          charts=$(jq -c '[.components[] | select(.kind == "chart") | {name,path,stackCovered}]' plan.json)
           echo "charts=$charts" >> "$GITHUB_OUTPUT"
   test:
     if: needs.plan.result == 'success' && needs.plan.outputs.charts != '[]'
@@ -35,52 +35,14 @@ jobs:
         with: {path: consumer, ref: "${{ inputs.source-sha }}", fetch-depth: 0}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
-      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
-        with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
-      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
       - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
-      - name: Fetch exact locked chart dependencies
-        run: python3 .hiroba/workflows/scripts/prepare-chart.py --chart "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with: {go-version: "1.26.3", cache: false}
-      - name: Install chart-testing at an immutable release
-        run: go install github.com/helm/chart-testing/v3/ct@v3.14.0
-      - id: config
-        name: Validate consumer chart test declaration
-        run: |
-          python3 .hiroba/workflows/scripts/chart-test-config.py --root "consumer/${{ inputs.root }}" --chart "${{ matrix.chart.path }}" > chart-test.json
-          echo "has-image=$(jq -r '.image != null' chart-test.json)" >> "$GITHUB_OUTPUT"
-      - name: Build and load declared test image
-        if: steps.config.outputs.has-image == 'true'
-        run: |
-          set -euo pipefail
-          repository=$(jq -r .image.repository chart-test.json)
-          tag=$(jq -r .image.tag chart-test.json)
-          context=$(jq -r .image.context chart-test.json)
-          docker build -t "$repository:$tag" "consumer/${{ inputs.root }}/$context"
-          cluster=$(kind get clusters | head -n 1)
-          kind load docker-image "$repository:$tag" --name "$cluster"
-      - name: Install declared chart test dependencies
-        run: |
-          set -euo pipefail
-          while read -r dependency; do
-            [[ -n "$dependency" ]] || continue
-            kubectl apply -f "consumer/${{ inputs.root }}/$dependency"
-          done < <(jq -r '.dependencies[]' chart-test.json)
-      - name: Chart-testing lint
-        run: ct lint --config "consumer/${{ inputs.root }}/ci/ct.yaml" --chart-yaml-schema "consumer/${{ inputs.root }}/ci/chart_schema.yaml" --lint-conf "consumer/${{ inputs.root }}/ci/lintconf.yaml" --skip-helm-dependencies --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}"
-      - name: Chart-testing kind install
-        run: |
-          set -euo pipefail
-          timeout=$(jq -r .install.timeout chart-test.json)
-          ct install --config "consumer/${{ inputs.root }}/ci/ct.yaml" \
-            --charts "consumer/${{ inputs.root }}/${{ matrix.chart.path }}" \
-            --helm-extra-args "--timeout $timeout"
-      - name: Collect chart diagnostics
-        if: failure()
-        run: |
-          mkdir -p consumer/diagnostics
-          kubectl get all,events -A -o wide > consumer/diagnostics/chart-${{ matrix.chart.name }}.txt 2>&1 || true
+      - id: tools-key
+        run: echo "key=$(.hiroba/workflows/scripts/install-ci-tools.sh --cache-key kind helm kubectl ct)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with: {path: .hiroba-cache, key: "hiroba-chart-${{ steps.tools-key.outputs.key }}"}
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh kind helm kubectl ct
+      - name: Run locked chart lint and applicable kind install
+        run: .hiroba/workflows/scripts/run-chart-tests.sh --root "consumer/${{ inputs.root }}" --chart "${{ matrix.chart.path }}" --stack-covered "${{ matrix.chart.stackCovered }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with: {name: "chart-diagnostics-${{ matrix.chart.name }}", path: consumer/diagnostics, if-no-files-found: ignore}

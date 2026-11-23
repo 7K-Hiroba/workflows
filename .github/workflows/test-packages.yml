@@ -40,7 +40,7 @@ jobs:
             args+=(--changed-files changed.txt)
           fi
           python3 .hiroba/workflows/scripts/discover-components.py "${args[@]}" > plan.json
-          jq -c '[.components[] | select(.kind == "package" and .packageType == "kro-rgd") | {name,path}]' plan.json > kro.json
+          jq -c '[.components[] | select(.kind == "package" and .packageType == "kro-rgd" and .stackCovered != true) | {name,path}]' plan.json > kro.json
           jq -c '[.components[] | select(.kind == "package" and .packageType == "policy-pack") | {name,path}]' plan.json > policy.json
           jq -c '[.components[] | select(.kind == "package" and .packageType == "platform-app") | {name,path}]' plan.json > app.json
           jq -c '[.components[] | select(.kind == "package" and .packageType == "manifests") | {name,path}]' plan.json > manifests.json
@@ -61,9 +61,15 @@ jobs:
         with: {path: consumer, ref: "${{ inputs.source-sha }}"}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
-      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
-        with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
-      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: tools-key
+        run: echo "key=$(.hiroba/workflows/scripts/install-ci-tools.sh --cache-key kind helm kubectl crane)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with: {path: .hiroba-cache, key: "hiroba-package-${{ steps.tools-key.outputs.key }}"}
+      - id: tools
+        run: .hiroba/workflows/scripts/install-ci-tools.sh kind helm kubectl crane
       - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type kro-rgd --package "${{ matrix.package.name }}" --package-path "${{ matrix.package.path }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
@@ -79,8 +85,14 @@ jobs:
         with: {path: consumer, ref: "${{ inputs.source-sha }}"}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
-      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
-        with: {node_image: kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: tools-key
+        run: echo "key=$(.hiroba/workflows/scripts/install-ci-tools.sh --cache-key kind kubectl)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with: {path: .hiroba-cache, key: "hiroba-policy-${{ steps.tools-key.outputs.key }}"}
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh kind kubectl
       - run: .hiroba/workflows/scripts/test-packages.sh --root "consumer/${{ inputs.root }}" --type policy-pack --package "${{ matrix.package.name }}" --package-path "${{ matrix.package.path }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()

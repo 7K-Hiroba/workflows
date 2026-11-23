@@ -16,6 +16,7 @@ import jsonschema
 import yaml
 
 from lib.paths import confined_path
+from lib.stack_testing import load_stack_plan
 
 LIBRARY_ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = LIBRARY_ROOT / "schemas"
@@ -468,8 +469,12 @@ class Validator:
         if not isinstance(config, dict):
             self.error(config_path, "missing or invalid application configuration")
         else:
-            self.validate_schema(config, "app-config-v1.schema.json", config_path)
+            self.validate_schema(config, "app-config-v2.schema.json", config_path)
             if isinstance(config.get("app"), str) and isinstance(config.get("components"), dict):
+                try:
+                    load_stack_plan(self.root)
+                except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError, jsonschema.ValidationError) as exc:
+                    self.error(config_path, str(exc))
                 self.validate_symlinks()
                 packages = self.validate_packages(config["components"].get("packagesRoot", "packages"))
                 self.validate_templates(config["components"].get("templatesRoot", "templates"), config["app"])

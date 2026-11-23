@@ -27,8 +27,9 @@ def make_valid_repo(root: Path) -> None:
     write(
         root,
         ".hiroba.yaml",
-        """schema: inari.hiroba.app.v1
+        """schema: inari.hiroba.app.v2
 app: workflows-scaffold
+archetype: non-stack
 trustTier: reviewed
 components:
   extension: {path: extension, version: 0.1.0}

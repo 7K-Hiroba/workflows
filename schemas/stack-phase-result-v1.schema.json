@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/stack-phase-result-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "phase", "version", "contentDigest", "converged"],
+  "properties": {
+    "schema": {"const": "inari.stack-phase-result.v1"},
+    "phase": {"enum": ["install", "upgrade"]},
+    "version": {"type": "string", "minLength": 1},
+    "contentDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "converged": {"const": true},
+    "evidence": {"type": "object"}
+  }
+}

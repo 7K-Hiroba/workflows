@@ -1,5 +1,7 @@
-schema: inari.hiroba.app.v1
+schema: inari.hiroba.app.v2
 app: workflows-scaffold
+archetype: stack
+stackTest: {path: tests/stack}
 trustTier: reviewed
 components:
   extension: {path: extension, version: 0.1.0}

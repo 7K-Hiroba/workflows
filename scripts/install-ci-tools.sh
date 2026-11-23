@@ -1,69 +1,106 @@
 #!/usr/bin/env bash
 set -euo pipefail
-INSTALL_DIR=${RUNNER_TEMP:-/tmp}/hiroba-bin
-mkdir -p "$INSTALL_DIR"
-if [[ -n "${GITHUB_PATH:-}" ]]; then echo "$INSTALL_DIR" >> "$GITHUB_PATH"; fi
-export PATH="$INSTALL_DIR:$PATH"
-for tool in "$@"; do
-  case "$tool" in
-    kind)
-      url='https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64'
-      expected='517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889'
-      curl -fsSL "$url" -o "$INSTALL_DIR/kind"
-      echo "$expected  $INSTALL_DIR/kind" | sha256sum -c -
-      chmod +x "$INSTALL_DIR/kind"
+
+LIBRARY=$(cd "$(dirname "$0")/.." && pwd)
+PINS="$LIBRARY/pins/stack-testing.json"
+INSTALL_DIR=${HIROBA_INSTALL_DIR:-${RUNNER_TEMP:-/tmp}/hiroba-bin}
+CACHE_DIR=${HIROBA_CACHE_DIR:-${GITHUB_WORKSPACE:-$PWD}/.hiroba-cache}
+MODE=install
+TOOLS=()
+PROFILES=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profiles)
+      IFS=',' read -ra supplied <<< "$2"
+      for profile in "${supplied[@]}"; do
+        [[ -n "$profile" ]] || continue
+        [[ $(jq -r --arg profile "$profile" '.profiles | has($profile)' "$PINS") == true ]] || { echo "unknown stack setup profile: $profile" >&2; exit 2; }
+        PROFILES+=("$profile")
+        while read -r tool; do [[ -n "$tool" ]] && TOOLS+=("$tool"); done < <(jq -r --arg profile "$profile" '.profiles[$profile][]' "$PINS")
+      done
+      shift 2
       ;;
-    argo)
-      url='https://github.com/argoproj/argo-workflows/releases/download/v4.1.6/argo-linux-amd64.gz'
-      expected='885f886a338d7e7c0fd4a681152770fb54df1847f8fc55eaed788d661c0304e0'
-      curl -fsSL "$url" -o "$INSTALL_DIR/argo.gz"
-      echo "$expected  $INSTALL_DIR/argo.gz" | sha256sum -c -
-      gunzip -f "$INSTALL_DIR/argo.gz"
-      chmod +x "$INSTALL_DIR/argo"
-      ;;
-    crane)
-      GOBIN="$INSTALL_DIR" go install github.com/google/go-containerregistry/cmd/crane@v0.20.7
-      ;;
-    promtool)
-      url='https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz'
-      expected='e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a'
-      archive="$INSTALL_DIR/prometheus.tar.gz"
-      curl -fsSL "$url" -o "$archive"
-      echo "$expected  $archive" | sha256sum -c -
-      tar -xzf "$archive" -C "$INSTALL_DIR" prometheus-3.5.0.linux-amd64/promtool --strip-components=1
-      chmod +x "$INSTALL_DIR/promtool"
-      ;;
-    gcx)
-      url='https://github.com/grafana/gcx/releases/download/v1.7.1/gcx_1.7.1_linux_amd64.tar.gz'
-      expected='5f1601feac13d850017064a9b556f11983de6def2986ba0bee402a947659c3e9'
-      archive="$INSTALL_DIR/gcx.tar.gz"
-      curl -fsSL "$url" -o "$archive"
-      echo "$expected  $archive" | sha256sum -c -
-      tar -xzf "$archive" -C "$INSTALL_DIR" gcx
-      chmod +x "$INSTALL_DIR/gcx"
-      ;;
-    alloy)
-      url='https://github.com/grafana/alloy/releases/download/v1.13.0/alloy-linux-amd64.zip'
-      expected='1e4e809917e2a0395b7027012379103fc9112731832508b03ff8aeffa041c977'
-      archive="$INSTALL_DIR/alloy.zip"
-      curl -fsSL "$url" -o "$archive"
-      echo "$expected  $archive" | sha256sum -c -
-      python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$archive" "$INSTALL_DIR"
-      mv -f "$INSTALL_DIR/alloy-linux-amd64" "$INSTALL_DIR/alloy"
-      chmod +x "$INSTALL_DIR/alloy"
-      ;;
-    shellcheck)
-      url='https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz'
-      expected='8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198'
-      archive="$INSTALL_DIR/shellcheck.tar.xz"
-      curl -fsSL "$url" -o "$archive"
-      echo "$expected  $archive" | sha256sum -c -
-      tar -xJf "$archive" -C "$INSTALL_DIR" shellcheck-v0.11.0/shellcheck --strip-components=1
-      chmod +x "$INSTALL_DIR/shellcheck"
-      ;;
-    ct)
-      GOBIN="$INSTALL_DIR" go install github.com/helm/chart-testing/v3/ct@v3.14.0
-      ;;
-    *) echo "unsupported CI tool: $tool" >&2; exit 2 ;;
+    --cache-key) MODE=key; shift ;;
+    *) TOOLS+=("$1"); shift ;;
   esac
 done
+if [[ ${#PROFILES[@]} -gt 0 ]]; then TOOLS+=(kind helm kubectl); fi
+if [[ ${#TOOLS[@]} -eq 0 ]]; then echo "at least one CI tool or setup profile is required" >&2; exit 2; fi
+mapfile -t TOOLS < <(printf '%s\n' "${TOOLS[@]}" | sort -u)
+
+CACHE_KEY=$(python3 - "$LIBRARY/scripts" "$PINS" "${PROFILES[@]}" -- "${TOOLS[@]}" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from lib.pin_cache import cache_key
+with open(sys.argv[2]) as source:
+    pins = json.load(source)
+args = sys.argv[3:]
+separator = args.index("--")
+profiles = [item for item in args[:separator] if item]
+tools = args[separator + 1:]
+print(cache_key(pins, tools, profiles))
+PY
+)
+if [[ "$MODE" == key ]]; then
+  printf '%s\n' "$CACHE_KEY"
+  exit 0
+fi
+
+mkdir -p "$INSTALL_DIR" "$CACHE_DIR"
+if [[ -n "${GITHUB_PATH:-}" ]]; then echo "$INSTALL_DIR" >> "$GITHUB_PATH"; fi
+export PATH="$INSTALL_DIR:$PATH"
+
+for tool in "${TOOLS[@]}"; do
+  record=$(jq -e --arg tool "$tool" '.tools[$tool]' "$PINS") || { echo "unsupported CI tool: $tool" >&2; exit 2; }
+  url=$(jq -r .url <<< "$record")
+  expected=$(jq -r .sha256 <<< "$record")
+  format=$(jq -r .format <<< "$record")
+  member=$(jq -r '.path // ""' <<< "$record")
+  archive="$CACHE_DIR/$tool-$expected.archive"
+  if [[ -f "$archive" ]] && ! printf '%s  %s\n' "$expected" "$archive" | sha256sum -c - >/dev/null 2>&1; then
+    rm -f "$archive"
+  fi
+  if [[ ! -f "$archive" ]]; then
+    temporary="$archive.tmp.$$"
+    curl -fsSL --retry 3 "$url" -o "$temporary"
+    printf '%s  %s\n' "$expected" "$temporary" | sha256sum -c -
+    mv "$temporary" "$archive"
+  fi
+  printf '%s  %s\n' "$expected" "$archive" | sha256sum -c - >/dev/null
+
+  work=$(mktemp -d)
+  case "$format" in
+    binary)
+      install -m 0755 "$archive" "$work/$tool"
+      ;;
+    gzip)
+      gunzip -c "$archive" > "$work/$tool"
+      chmod 0755 "$work/$tool"
+      ;;
+    tar)
+      tar -xf "$archive" -C "$work" "$member"
+      install -m 0755 "$work/$member" "$INSTALL_DIR/$tool"
+      rm -rf "$work"
+      continue
+      ;;
+    zip)
+      python3 - "$archive" "$work" "$member" <<'PY'
+import sys, zipfile
+archive, work, member = sys.argv[1:]
+with zipfile.ZipFile(archive) as source:
+    source.extract(member, work)
+PY
+      install -m 0755 "$work/$member" "$INSTALL_DIR/$tool"
+      rm -rf "$work"
+      continue
+      ;;
+    *) echo "unsupported tool archive format: $format" >&2; rm -rf "$work"; exit 2 ;;
+  esac
+  install -m 0755 "$work/$tool" "$INSTALL_DIR/$tool"
+  rm -rf "$work"
+done
+
+REPORT=${HIROBA_TOOL_CACHE_REPORT:-${RUNNER_TEMP:-/tmp}/hiroba-tool-cache.json}
+jq -n --arg cacheKey "$CACHE_KEY" --arg cacheHit "${HIROBA_CACHE_HIT:-false}" \
+  --arg cacheDir "$CACHE_DIR" --argjson tools "$(printf '%s\n' "${TOOLS[@]}" | jq -R . | jq -s .)" \
+  '{schema:"inari.tool-cache.v1",cacheKey:$cacheKey,cacheHit:($cacheHit == "true"),cacheDir:$cacheDir,tools:$tools,clusterState:false}' > "$REPORT"

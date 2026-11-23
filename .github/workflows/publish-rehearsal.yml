@@ -56,7 +56,7 @@ jobs:
       standalone: true
       registry-prefix: ghcr.io/7k-hiroba/workflows/ci
       environment: ci-publish
-      required-lanes: chart
+      required-lanes: chart stack-lifecycle
     permissions: {contents: read, packages: write, id-token: write, attestations: write, actions: read, artifact-metadata: write}
   result:
     if: always()

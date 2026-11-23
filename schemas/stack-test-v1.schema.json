@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/hiroba/stack-test-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "setupProfiles", "covers", "install", "upgrade"],
+  "properties": {
+    "schema": {"const": "inari.stack-test.v1"},
+    "setupProfiles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["kro", "argocd", "argo-workflows", "oci-registry"]}
+    },
+    "covers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-zA-Z0-9._/-]+$"}
+    },
+    "fixtureOnly": {"type": "boolean"},
+    "install": {"$ref": "#/$defs/phase"},
+    "upgrade": {"$ref": "#/$defs/phase"},
+    "diagnostics": {"type": "string", "pattern": "^[a-zA-Z0-9._/-]+$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"fixtureOnly": {"const": true}}, "required": ["fixtureOnly"]},
+      "then": {"properties": {"covers": {"maxItems": 0}}},
+      "else": {"properties": {"covers": {"minItems": 1}}}
+    }
+  ],
+  "$defs": {
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script", "timeout"],
+      "properties": {
+        "script": {"type": "string", "pattern": "^[a-zA-Z0-9._/-]+$"},
+        "timeout": {"type": "string", "pattern": "^[1-9][0-9]*(s|m)$"}
+      }
+    }
+  }
+}

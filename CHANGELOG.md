@@ -5,8 +5,9 @@
 
 ### Recovery context
 
-* Supersedes quarantined v2.0.0, which was published before required rehearsals, and unpublished/quarantined v2.0.1, whose standalone chart qualification failed. Both remain immutable and unadopted. Consumers may use only the exact v2.0.2 signed commit after the complete pre-release same-SHA rehearsal matrix and protected signing have succeeded.
-* The earlier #46 v2.0.2 candidate was invalidated when main advanced through the download-artifact v8 update (#6); it was not tagged and must not be reused. This Release PR is the new candidate and includes that update.
+* Supersedes quarantined v2.0.0, which was published before required rehearsals, and unpublished/quarantined v2.0.1, whose standalone chart qualification failed. Both remain immutable and unadopted. No consumer adoption was authorized before the complete pre-release same-SHA rehearsal matrix and protected signing succeeded.
+* The earlier #46 v2.0.2 candidate was invalidated when main advanced through the download-artifact v8 update (#6); it was not tagged and must not be reused. Release PR #47 replaced that candidate and included the update.
+* v2.0.2 was never tagged and no GitHub Release was created; it is unpublished, quarantined, and unadopted. All five full rehearsals passed at `1ae0c537a525e9375d6d6d850eca7cc932c749e2`, and standalone chart run [45274871189](https://github.com/7K-Hiroba/workflows/actions/runs/45274871189) reproduced the exact scaffold chart digest `sha256:44170dc3b2f4afe267b2e03e948f7c54c72b22c04acce9ede3603ef281bccb99`, but evidence verification failed when Cosign returned concatenated full and standalone predicate documents. The next recovery version must be v2.0.3 at a new reviewed SHA after complete same-SHA qualification; v2.0.2 must not be reused.
 
 ### Bug Fixes
 

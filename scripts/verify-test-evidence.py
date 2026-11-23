@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.evidence import StaleEvidenceError, load_json, predicates_from_document, verify  # noqa: E402
+from lib.evidence import StaleEvidenceError, load_json_documents, predicates_from_document, verify  # noqa: E402
 
 
 def main() -> int:
@@ -27,7 +27,11 @@ def main() -> int:
     parser.add_argument("--required-lane", action="append", required=True)
     args = parser.parse_args()
     try:
-        predicates = predicates_from_document(load_json(args.predicate))
+        predicates = [
+            predicate
+            for document in load_json_documents(args.predicate)
+            for predicate in predicates_from_document(document)
+        ]
         # Exact duplicates are idempotent. Every distinct predicate must satisfy the
         # same binding and freshness policy; a conflicting signed member fails closed.
         unique: dict[str, dict] = {}

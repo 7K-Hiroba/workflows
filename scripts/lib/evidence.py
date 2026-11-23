@@ -29,6 +29,24 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_json_documents(path: Path) -> list[Any]:
+    """Load every whitespace-separated JSON value, rejecting empty or trailing junk."""
+    text = path.read_text(encoding="utf-8")
+    decoder = json.JSONDecoder()
+    documents = []
+    offset = 0
+    while True:
+        while offset < len(text) and text[offset].isspace():
+            offset += 1
+        if offset == len(text):
+            break
+        document, offset = decoder.raw_decode(text, offset)
+        documents.append(document)
+    if not documents:
+        raise ValueError("expected at least one JSON document")
+    return documents
+
+
 def parse_time(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:

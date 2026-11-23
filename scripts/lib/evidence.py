@@ -69,6 +69,19 @@ def validate_stack_lane(lane: dict[str, Any]) -> None:
         raise ValueError("stack-lifecycle total duration is invalid")
 
 
+def validate_stack_lane_binding(lanes: list[dict[str, Any]], workflow_sha: str, run_id: str, run_attempt: str) -> None:
+    """Bind lifecycle evidence to the workflow run that is signing it."""
+    stack = next((lane for lane in lanes if lane.get("lane") == "stack-lifecycle"), None)
+    if stack is None:
+        return
+    if str(stack.get("workflowSha", "")).lower() != workflow_sha.lower():
+        raise ValueError("stack-lifecycle workflowSha does not match evidence producer")
+    if str(stack.get("runId", "")) != str(run_id):
+        raise ValueError("stack-lifecycle runId does not match evidence producer")
+    if str(stack.get("runAttempt", "")) != str(run_attempt):
+        raise ValueError("stack-lifecycle runAttempt does not match evidence producer")
+
+
 def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str) -> list[dict[str, Any]]:
     """Load one passing, source-bound representation of each required lane."""
     if not SHA_RE.fullmatch(source_sha):
@@ -155,6 +168,7 @@ def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
     if args.workflow_path not in PRODUCERS:
         raise ValueError(f"unexpected test-evidence producer: {args.workflow_path}")
     ordered = collect_lanes(evidence_dir, set(args.required_lane or []), args.source_sha)
+    validate_stack_lane_binding(ordered, args.workflow_sha, str(args.run_id), str(args.run_attempt))
     validate_stack_fixture_eligibility(ordered, args.trust_tier, args.media_type)
     policy = runtime_evidence_policy(ordered)
     if policy.get("fixtureOnly") and args.trust_tier in {"reviewed", "official"} and args.media_type != "application/vnd.inari.smoke.suite.v1+yaml":
@@ -279,6 +293,7 @@ def verify(
             raise ValueError(f"{name} lane sourceSha mismatch")
         if name == "stack-lifecycle":
             validate_stack_lane(lane)
+    validate_stack_lane_binding(lanes, workflow_sha, str(producer["runId"]), str(producer["runAttempt"]))
     policy = runtime_evidence_policy(lanes)
     for field, expected in policy.items():
         if predicate.get(field) != expected:

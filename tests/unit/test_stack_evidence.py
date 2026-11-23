@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from scripts.lib.evidence import build, collect_lanes
+from scripts.lib.evidence import build, collect_lanes, verify
 
 
 class StackEvidenceTests(unittest.TestCase):
@@ -88,6 +89,48 @@ class StackEvidenceTests(unittest.TestCase):
             run_id="123",
             run_attempt="1",
         )
+
+    def valid_predicate(self) -> dict:
+        (self.root / "stack-lifecycle.json").write_text(json.dumps(self.lane))
+        return build(self.root, self.build_args("experimental"))
+
+    def verify_predicate(self, predicate: dict) -> None:
+        verify(
+            predicate,
+            source_repository="7K-Hiroba/example",
+            source_sha=self.source_sha,
+            workflow_repository="7K-Hiroba/workflows",
+            workflow_path=".github/workflows/release-chart.yml",
+            workflow_sha="b" * 40,
+            artifact_repository="ghcr.io/7k-hiroba/example/charts/example",
+            artifact_digest="sha256:" + "3" * 64,
+            media_type="application/vnd.cncf.helm.chart.v1",
+            release_tag="example-v0.1.0",
+            required_lanes={"stack-lifecycle"},
+        )
+
+    def test_valid_stack_evidence_builds_and_verifies_bound_producer(self) -> None:
+        self.verify_predicate(self.valid_predicate())
+
+    def test_build_rejects_stack_producer_identity_mismatch(self) -> None:
+        original = self.lane.copy()
+        for field, value in (("workflowSha", "d" * 40), ("runId", "999"), ("runAttempt", "2")):
+            with self.subTest(field=field):
+                self.lane = original.copy()
+                self.lane[field] = value
+                (self.root / "stack-lifecycle.json").write_text(json.dumps(self.lane))
+                with self.assertRaisesRegex(ValueError, field):
+                    build(self.root, self.build_args("experimental"))
+
+    def test_verifier_rejects_stack_producer_identity_mismatch(self) -> None:
+        for field, value in (("workflowSha", "d" * 40), ("runId", "999"), ("runAttempt", "2")):
+            with self.subTest(field=field):
+                predicate = self.valid_predicate()
+                lane = next(item for item in predicate["lanes"] if item["lane"] == "stack-lifecycle")
+                lane[field] = value
+                predicate["evidenceDigest"] = hashlib.sha256(json.dumps(predicate["lanes"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                with self.assertRaisesRegex(ValueError, field):
+                    self.verify_predicate(predicate)
 
     def test_fixture_only_stack_cannot_authorize_reviewed_application(self) -> None:
         self.lane["fixtureOnly"] = True

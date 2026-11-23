@@ -47,6 +47,10 @@ class ScaffoldContractTests(unittest.TestCase):
         caller = SCAFFOLD / ".github/workflows/stack-test.yml.template"
         self.assertTrue(caller.is_file())
         self.assertIn("test-stack.yml@__WORKFLOWS_V1_SHA__", caller.read_text())
+        self.assertIn("merge tree", caller.read_text())
+        evidence_doc = (ROOT / "docs/stack-testing.md").read_text()
+        self.assertIn("head_sha", evidence_doc)
+        self.assertIn("merge tree", evidence_doc)
         workflow = yaml.safe_load((ROOT / ".github/workflows/scaffold-ci.yml").read_text())
         self.assertEqual(workflow["jobs"]["stack"]["uses"], "$/.github/workflows/test-stack.yml")
         self.assertIn("stack", workflow["jobs"]["result"]["needs"])

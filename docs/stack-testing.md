@@ -55,6 +55,8 @@ Covered charts still run lint/schema/locked-dependency/render checks but skip du
 
 `stack-lifecycle-evidence` contains the actual lane result and phase results, source/workflow SHAs, run ID/attempt, covered components, pin/cache identity and hit state, fresh/create/delete/cleanup fields, per-phase and total durations, and timestamps. It explicitly records `functionalE2E: false` and `deployedReadiness: not-tested`.
 
+For a pull-request caller that leaves `source-sha` empty, the check's `head_sha` remains associated with the reviewed PR head while Actions checks out the exact merge tree. The artifact's `sourceSha` (and a nested reusable call's `workflowSha`) records that tested merge tree, not a different or unreviewed change. Record both identities when presenting PR evidence. Release and repair callers pass their exact release/tag source explicitly, so signed evidence remains bound to the published commit.
+
 Release planning adds `stack-lifecycle` to required signed evidence for every classified stack being published. Release and standalone chart repair consume the actual artifact; they never fabricate a passing lane. Missing, failed, wrong-SHA, incomplete, multi-cluster, reused, or same-content upgrade evidence fails closed.
 
 For rollout, record a cold cache-miss run and a same-source warm cache-hit run with run IDs/attempts. Compare setup, install, upgrade, cleanup, and total durations against the previous consumer baseline. A cache hit is a timing measurement, never evidence of cluster reuse.

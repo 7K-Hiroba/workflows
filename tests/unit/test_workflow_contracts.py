@@ -305,6 +305,15 @@ class WorkflowContractTests(unittest.TestCase):
         condition = workflow["jobs"]["publish"]["if"]
         self.assertTrue(condition.startswith("always() &&"), condition)
 
+    def test_standalone_chart_release_derives_stack_evidence_from_exact_source(self) -> None:
+        text = (WORKFLOWS / "release-chart.yml").read_text()
+        self.assertIn("scripts/chart-release-evidence.py", text)
+        self.assertIn('has-stack=$(jq -r .hasStackTest evidence-plan.json)', text)
+        self.assertIn('required-lanes=$(jq -r .requiredLanes evidence-plan.json)', text)
+        self.assertIn("steps.evidence-plan.outputs.has-stack == 'true'", text)
+        self.assertNotIn("contains(inputs.required-lanes, 'stack-lifecycle')", text)
+        self.assertGreaterEqual(text.count("steps.evidence-plan.outputs.required-lanes"), 3)
+
     def test_stack_lifecycle_evidence_is_wired_through_release_and_repair(self) -> None:
         release_path = WORKFLOWS / "release.yml"
         release = yaml.safe_load(release_path.read_text())

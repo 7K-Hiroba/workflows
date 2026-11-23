@@ -1,0 +1,17 @@
+{
+  "schema": "inari.stack-pins.v1",
+  "kind": {
+    "version": "0.30.0",
+    "nodeImage": "kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32"
+  },
+  "kro": {
+    "version": "0.6.1",
+    "digest": "sha256:2a569f7b4d327733b71042b5a178cfe4b6f9fe8542c04f666f393786c8dec872"
+  },
+  "profiles": {
+    "kro": ["kind", "helm", "kubectl", "crane"],
+    "argocd": ["kind", "helm", "kubectl"],
+    "argo-workflows": ["kind", "kubectl", "argo"],
+    "oci-registry": ["kubectl"]
+  }
+}

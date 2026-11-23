@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +11,7 @@ import jsonschema
 import yaml
 
 from lib.paths import confined_path, relative_path
+from lib.pin_cache import cache_key as pin_cache_key
 
 LIBRARY_ROOT = Path(__file__).resolve().parents[2]
 APP_SCHEMA = LIBRARY_ROOT / "schemas/app-config-v2.schema.json"
@@ -61,21 +61,7 @@ def load_pins() -> dict[str, Any]:
 
 
 def tools_cache_key(tools: list[str], profiles: list[str] | None = None) -> str:
-    pins = load_pins()
-    selected_tools = set(tools)
-    for profile in profiles or []:
-        selected_tools.update(pins["profiles"].get(profile, []))
-    unknown = sorted(selected_tools - set(pins["tools"]))
-    if unknown:
-        raise ValueError(f"unknown CI tools: {', '.join(unknown)}")
-    selected = {
-        "kind": pins["kind"],
-        "kro": pins["kro"],
-        "profiles": {profile: pins["profiles"].get(profile) for profile in sorted(profiles or [])},
-        "tools": {name: pins["tools"][name] for name in sorted(selected_tools)},
-    }
-    encoded = json.dumps(selected, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return pin_cache_key(load_pins(), tools, profiles or [])
 
 
 def cache_key(profiles: list[str]) -> str:

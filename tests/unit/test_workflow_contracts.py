@@ -16,6 +16,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 PUBLIC = [
     "validate-packages.yml",
     "test-packages.yml",
+    "test-stack.yml",
     "test-runtime-smoke.yml",
     "release-smoke-suite.yml",
     "ci-go-extension.yml",
@@ -53,7 +54,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("result", data["jobs"])
 
     def test_reusable_test_lanes_check_out_the_requested_exact_source(self) -> None:
-        names = ("validate-packages.yml", "test-packages.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml", "test-runtime-smoke.yml")
+        names = ("validate-packages.yml", "test-packages.yml", "test-stack.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml", "test-runtime-smoke.yml")
         for name in names:
             with self.subTest(name=name):
                 data = yaml.safe_load((WORKFLOWS / name).read_text())
@@ -86,7 +87,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("path: consumer", text)
 
     def test_ci_lanes_have_no_publish_permissions(self) -> None:
-        for name in ("validate-packages.yml", "test-packages.yml", "test-runtime-smoke.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml"):
+        for name in ("validate-packages.yml", "test-packages.yml", "test-stack.yml", "test-runtime-smoke.yml", "ci-go-extension.yml", "ci-ui-extension.yml", "ci-chart.yml", "test-observability.yml", "compat-check.yml"):
             with self.subTest(name=name):
                 text = (WORKFLOWS / name).read_text()
                 self.assertNotIn("id-token: write", text)

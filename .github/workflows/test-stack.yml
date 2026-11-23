@@ -1,0 +1,91 @@
+name: Hiroba stack install and upgrade
+on:
+  workflow_call:
+    inputs:
+      root: {type: string, default: .}
+      source-sha: {type: string, default: ""}
+    outputs:
+      status: {value: "${{ jobs.result.outputs.status }}"}
+permissions: {contents: read}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      enabled: ${{ steps.plan.outputs.enabled }}
+      plan: ${{ steps.plan.outputs.plan }}
+      cache-key: ${{ steps.plan.outputs.cache-key }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: plan
+        run: |
+          python3 .hiroba/workflows/scripts/stack-test-config.py --root "consumer/${{ inputs.root }}" > stack-plan.json
+          {
+            echo "enabled=$(jq -r .enabled stack-plan.json)"
+            echo "plan=$(jq -c . stack-plan.json)"
+            echo "cache-key=$(jq -r .cacheKey stack-plan.json)"
+          } >> "$GITHUB_OUTPUT"
+  test:
+    if: needs.plan.result == 'success' && needs.plan.outputs.enabled == 'true'
+    needs: [plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {path: consumer, ref: "${{ inputs.source-sha }}"}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {repository: "${{ job.workflow_repository }}", ref: "${{ job.workflow_sha }}", path: .hiroba/workflows}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - name: Restore exact-content tool cache
+        id: cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .hiroba-cache
+          key: hiroba-stack-${{ needs.plan.outputs.cache-key }}
+      - name: Install only declared stack tools
+        env:
+          HIROBA_CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: |
+          profiles=$(jq -r '.setupProfiles | join(",")' <<< "$PLAN")
+          args=()
+          if [[ -n "$profiles" ]]; then args+=(--profiles "$profiles"); else args+=(kind helm kubectl); fi
+          .hiroba/workflows/scripts/install-ci-tools.sh "${args[@]}"
+      - name: Run one-cluster install and upgrade
+        env:
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
+          HIROBA_CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: .hiroba/workflows/scripts/run-stack-lifecycle.sh --root "consumer/${{ inputs.root }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: stack-lifecycle-evidence
+          path: |
+            consumer/${{ inputs.root }}/evidence
+            consumer/${{ inputs.root }}/diagnostics
+          if-no-files-found: ignore
+          retention-days: 30
+  result:
+    if: always()
+    needs: [plan, test]
+    runs-on: ubuntu-latest
+    outputs: {status: "${{ steps.result.outputs.status }}"}
+    steps:
+      - id: result
+        env:
+          PLAN: "${{ needs.plan.result }}"
+          ENABLED: "${{ needs.plan.outputs.enabled }}"
+          TEST: "${{ needs.test.result }}"
+        run: |
+          status=success
+          if [[ "$PLAN" != success || "$ENABLED" == true && "$TEST" != success ]]; then status=failure; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          [[ "$status" == success ]] || exit 1

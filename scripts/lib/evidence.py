@@ -36,6 +36,39 @@ def parse_time(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def validate_stack_lane(lane: dict[str, Any]) -> None:
+    """Reject lifecycle evidence that omits the one-cluster install/upgrade proof."""
+    if lane.get("clusterCreateCount") != 1 or lane.get("clusterDeleteCount") != 1:
+        raise ValueError("stack-lifecycle evidence must create and delete exactly one cluster")
+    if lane.get("freshState") is not True or lane.get("cleanedUp") is not True:
+        raise ValueError("stack-lifecycle cluster must be fresh and cleaned up")
+    if lane.get("functionalE2E") is not False or lane.get("deployedReadiness") != "not-tested":
+        raise ValueError("stack-lifecycle cannot claim functional E2E or deployed readiness")
+    if not SHA_RE.fullmatch(str(lane.get("workflowSha", ""))):
+        raise ValueError("stack-lifecycle workflowSha is missing or invalid")
+    if not str(lane.get("runId", "")) or not str(lane.get("runAttempt", "")):
+        raise ValueError("stack-lifecycle run identity is required")
+    cache = lane.get("cache")
+    if not isinstance(cache, dict) or not re.fullmatch(r"[0-9a-f]{64}", str(cache.get("cacheKey", ""))) or not isinstance(cache.get("cacheHit"), bool):
+        raise ValueError("stack-lifecycle exact cache identity is required")
+    phases = lane.get("phases")
+    if not isinstance(phases, list) or [phase.get("phase") for phase in phases if isinstance(phase, dict)] != ["install", "upgrade"]:
+        raise ValueError("stack-lifecycle requires ordered install and upgrade phases")
+    digests = []
+    for phase in phases:
+        if phase.get("converged") is not True or not DIGEST_RE.fullmatch(str(phase.get("contentDigest", ""))):
+            raise ValueError("stack-lifecycle phase must converge at an exact content digest")
+        if not isinstance(phase.get("durationSeconds"), int) or phase["durationSeconds"] < 0:
+            raise ValueError("stack-lifecycle phase duration is invalid")
+        digests.append(phase["contentDigest"])
+    if digests[0] == digests[1]:
+        raise ValueError("stack-lifecycle install and upgrade content identities must be distinct")
+    if not isinstance(lane.get("fixtureOnly"), bool):
+        raise ValueError("stack-lifecycle fixtureOnly must be boolean")
+    if not isinstance(lane.get("totalDurationSeconds"), int) or lane["totalDurationSeconds"] < 0:
+        raise ValueError("stack-lifecycle total duration is invalid")
+
+
 def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str) -> list[dict[str, Any]]:
     """Load one passing, source-bound representation of each required lane."""
     if not SHA_RE.fullmatch(source_sha):
@@ -70,6 +103,8 @@ def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str)
                 raise ValueError("compat evidence is future-dated or older than 7 days")
         if name in {"browser", "runtime-smoke"} and lane.get("sourceSha") != source_sha:
             raise ValueError(f"{name} evidence sourceSha does not match artifact source")
+        if name == "stack-lifecycle":
+            validate_stack_lane(lane)
         lane["required"] = name in required_lanes
         lanes[name] = lane
     missing = sorted(required_lanes - set(lanes))
@@ -235,6 +270,8 @@ def verify(
                 raise StaleEvidenceError("compat evidence is historical")
         if name in {"browser", "runtime-smoke"} and lane.get("sourceSha", "").lower() != source_sha.lower():
             raise ValueError(f"{name} lane sourceSha mismatch")
+        if name == "stack-lifecycle":
+            validate_stack_lane(lane)
     policy = runtime_evidence_policy(lanes)
     for field, expected in policy.items():
         if predicate.get(field) != expected:

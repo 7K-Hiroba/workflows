@@ -5,13 +5,52 @@
     "nodeImage": "kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32"
   },
   "kro": {
+    "repository": "registry.k8s.io/kro/charts/kro",
     "version": "0.6.1",
     "digest": "sha256:2a569f7b4d327733b71042b5a178cfe4b6f9fe8542c04f666f393786c8dec872"
   },
+  "argoCd": {
+    "commit": "03c4ad854c1e6d922a121cd40f505d9bc6e402da",
+    "coreInstall": {
+      "url": "https://raw.githubusercontent.com/argoproj/argo-cd/03c4ad854c1e6d922a121cd40f505d9bc6e402da/manifests/core-install.yaml",
+      "sha256": "1282d6ffb0bca80c2ac66aacfed6bf1be15249b32126cb02e877655646faef17"
+    },
+    "redisImage": "redis@sha256:ddd16a9b1575a774c7e62956be8daa1de5b32cfb5c25b7a216aefed8e0919f9b"
+  },
+  "argoWorkflows": {
+    "commit": "43021573c5a35cbafae009043c132dfcef43a112",
+    "manifests": {
+      "quickStart": {
+        "url": "https://raw.githubusercontent.com/argoproj/argo-workflows/43021573c5a35cbafae009043c132dfcef43a112/manifests/quick-start-minimal.yaml",
+        "sha256": "ca4396c090919087fb19253a8b2d5b6e55062b34d1f77ebda9504fa230108a1e"
+      },
+      "executorRole": {
+        "url": "https://raw.githubusercontent.com/argoproj/argo-workflows/43021573c5a35cbafae009043c132dfcef43a112/manifests/quick-start/base/executor/emissary/executor-role.yaml",
+        "sha256": "28dfcc9f1851f97f8e38814bbcba1895794bfb0579eafeceb572cc7c5397ad65"
+      },
+      "executorRoleBinding": {
+        "url": "https://raw.githubusercontent.com/argoproj/argo-workflows/43021573c5a35cbafae009043c132dfcef43a112/manifests/quick-start/base/executor-default-rolebinding.yaml",
+        "sha256": "f7291f19cc64281ddaa63b92b365d9486a2cc92c531ebede4c3097ad689cdb44"
+      }
+    }
+  },
+  "registryImage": "registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373",
+  "tools": {
+    "kind": {"version": "0.30.0", "format": "binary", "url": "https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64", "sha256": "517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889"},
+    "kubectl": {"version": "1.31.2", "format": "binary", "url": "https://dl.k8s.io/release/v1.31.2/bin/linux/amd64/kubectl", "sha256": "399e9d1995da80b64d2ef3606c1a239018660d8b35209fba3f7b0bc11c631c68"},
+    "helm": {"version": "3.17.3", "format": "tar", "path": "linux-amd64/helm", "url": "https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz", "sha256": "ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd"},
+    "argo": {"version": "4.1.6", "format": "gzip", "url": "https://github.com/argoproj/argo-workflows/releases/download/v4.1.6/argo-linux-amd64.gz", "sha256": "885f886a338d7e7c0fd4a681152770fb54df1847f8fc55eaed788d661c0304e0"},
+    "crane": {"version": "0.20.7", "format": "tar", "path": "crane", "url": "https://github.com/google/go-containerregistry/releases/download/v0.20.7/go-containerregistry_Linux_x86_64.tar.gz", "sha256": "8ef3564d264e6b5ca93f7b7f5652704c4dd29d33935aff6947dd5adefd05953e"},
+    "promtool": {"version": "3.5.0", "format": "tar", "path": "prometheus-3.5.0.linux-amd64/promtool", "url": "https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz", "sha256": "e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a"},
+    "gcx": {"version": "1.7.1", "format": "tar", "path": "gcx", "url": "https://github.com/grafana/gcx/releases/download/v1.7.1/gcx_1.7.1_linux_amd64.tar.gz", "sha256": "5f1601feac13d850017064a9b556f11983de6def2986ba0bee402a947659c3e9"},
+    "alloy": {"version": "1.13.0", "format": "zip", "path": "alloy-linux-amd64", "url": "https://github.com/grafana/alloy/releases/download/v1.13.0/alloy-linux-amd64.zip", "sha256": "1e4e809917e2a0395b7027012379103fc9112731832508b03ff8aeffa041c977"},
+    "shellcheck": {"version": "0.11.0", "format": "tar", "path": "shellcheck-v0.11.0/shellcheck", "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz", "sha256": "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"},
+    "ct": {"version": "3.14.0", "format": "tar", "path": "ct", "url": "https://github.com/helm/chart-testing/releases/download/v3.14.0/chart-testing_3.14.0_linux_amd64.tar.gz", "sha256": "d16f0583616885423826241164ce1f6589c6fe5332fa74f374ebd2bd3cb3fe1f"}
+  },
   "profiles": {
-    "kro": ["kind", "helm", "kubectl", "crane"],
-    "argocd": ["kind", "helm", "kubectl"],
-    "argo-workflows": ["kind", "kubectl", "argo"],
-    "oci-registry": ["kubectl"]
+    "kro": ["crane"],
+    "argocd": [],
+    "argo-workflows": ["argo"],
+    "oci-registry": []
   }
 }

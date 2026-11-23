@@ -20,6 +20,38 @@
       "items": {"enum": ["ci", "stage", "prod"]}
     },
     "evidenceScope": {"enum": ["application", "fixture"]},
-    "appEvidenceEligible": {"type": "boolean"}
-  }
+    "appEvidenceEligible": {"type": "boolean"},
+    "workflowSha": {"type": "string", "pattern": "^[0-9a-fA-F]{40}$"},
+    "runId": {"type": "string", "minLength": 1},
+    "runAttempt": {"type": "string", "minLength": 1},
+    "startedAt": {"type": "string", "format": "date-time"},
+    "finishedAt": {"type": "string", "format": "date-time"},
+    "setupProfiles": {"type": "array", "items": {"type": "string"}},
+    "covers": {"type": "array", "items": {"type": "string"}},
+    "cache": {
+      "type": "object",
+      "required": ["cacheKey", "cacheHit"],
+      "properties": {
+        "cacheKey": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "cacheHit": {"type": "boolean"},
+        "tools": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "phases": {"type": "array", "items": {"type": "object"}},
+    "clusterCreateCount": {"type": "integer", "minimum": 0},
+    "clusterDeleteCount": {"type": "integer", "minimum": 0},
+    "freshState": {"type": "boolean"},
+    "cleanedUp": {"type": "boolean"},
+    "functionalE2E": {"type": "boolean"},
+    "deployedReadiness": {"const": "not-tested"},
+    "totalDurationSeconds": {"type": "integer", "minimum": 0}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"lane": {"const": "stack-lifecycle"}}},
+      "then": {
+        "required": ["workflowSha", "runId", "runAttempt", "startedAt", "finishedAt", "setupProfiles", "covers", "fixtureOnly", "cache", "phases", "clusterCreateCount", "clusterDeleteCount", "freshState", "cleanedUp", "functionalE2E", "deployedReadiness", "totalDurationSeconds"]
+      }
+    }
+  ]
 }

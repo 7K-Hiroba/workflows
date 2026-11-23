@@ -18,6 +18,7 @@ APP_SCHEMA = LIBRARY_ROOT / "schemas/app-config-v2.schema.json"
 STACK_SCHEMA = LIBRARY_ROOT / "schemas/stack-test-v1.schema.json"
 PHASE_SCHEMA = LIBRARY_ROOT / "schemas/stack-phase-result-v1.schema.json"
 PINS_PATH = LIBRARY_ROOT / "pins/stack-testing.json"
+PINS_SCHEMA = LIBRARY_ROOT / "schemas/stack-pins-v1.schema.json"
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -49,20 +50,36 @@ def validate_app_config(root: Path) -> dict[str, Any]:
 
 def load_pins() -> dict[str, Any]:
     pins = json.loads(PINS_PATH.read_text(encoding="utf-8"))
-    if not isinstance(pins, dict) or pins.get("schema") != "inari.stack-pins.v1":
-        raise ValueError("central stack pins must use inari.stack-pins.v1")
+    if not isinstance(pins, dict):
+        raise ValueError("central stack pins must be an object")
+    validate_document(pins, PINS_SCHEMA)
+    for profile, tools in pins["profiles"].items():
+        unknown = sorted(set(tools) - set(pins["tools"]))
+        if unknown:
+            raise ValueError(f"profile {profile} references unknown tools: {', '.join(unknown)}")
     return pins
 
 
-def cache_key(profiles: list[str]) -> str:
+def tools_cache_key(tools: list[str], profiles: list[str] | None = None) -> str:
     pins = load_pins()
+    selected_tools = set(tools)
+    for profile in profiles or []:
+        selected_tools.update(pins["profiles"].get(profile, []))
+    unknown = sorted(selected_tools - set(pins["tools"]))
+    if unknown:
+        raise ValueError(f"unknown CI tools: {', '.join(unknown)}")
     selected = {
         "kind": pins["kind"],
         "kro": pins["kro"],
-        "profiles": {profile: pins["profiles"].get(profile) for profile in sorted(profiles)},
+        "profiles": {profile: pins["profiles"].get(profile) for profile in sorted(profiles or [])},
+        "tools": {name: pins["tools"][name] for name in sorted(selected_tools)},
     }
     encoded = json.dumps(selected, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def cache_key(profiles: list[str]) -> str:
+    return tools_cache_key(["kind", "helm", "kubectl"], profiles)
 
 
 def expected_components(root: Path, config: dict[str, Any]) -> set[str]:

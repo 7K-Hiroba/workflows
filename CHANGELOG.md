@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/7K-Hiroba/workflows/compare/v2.0.0...v2.0.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* consume aggregated chart stack evidence ([#43](https://github.com/7K-Hiroba/workflows/issues/43)) ([ee2ec5a](https://github.com/7K-Hiroba/workflows/commit/ee2ec5ab5724b8e24f6eb65d9e43f1658f20a087))
+
 ## [2.0.0](https://github.com/7K-Hiroba/workflows/compare/v1.1.0...v2.0.0) (2026-11-23)
 
 

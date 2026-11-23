@@ -180,6 +180,23 @@ class WorkflowContractTests(unittest.TestCase):
             if uses.startswith("actions/setup-node@"):
                 self.assertEqual(step.get("if"), "needs.plan.outputs.ui-path != ''")
 
+    def test_setup_node_cache_uses_normalized_consumer_root(self) -> None:
+        expected = "${{ needs.plan.outputs.consumer-root }}/${{ needs.plan.outputs.ui-path }}/package-lock.json"
+        for name in ("ci-ui-extension.yml", "compat-check.yml"):
+            workflow = yaml.safe_load((WORKFLOWS / name).read_text())
+            steps = [step for step in workflow["jobs"]["test"]["steps"] if str(step.get("uses", "")).startswith("actions/setup-node@")]
+            self.assertEqual(len(steps), 1, name)
+            self.assertEqual(steps[0]["with"]["cache-dependency-path"], expected, name)
+            plan = next(step for step in workflow["jobs"]["plan"]["steps"] if step.get("id") == "plan")
+            self.assertIn("os.path.normpath", plan["run"], name)
+        for root, consumer_root in ((".", "consumer"), ("apps/argocd", "consumer/apps/argocd")):
+            with self.subTest(root=root):
+                normalized = os.path.normpath(os.path.join("consumer", root))
+                self.assertEqual(normalized, consumer_root)
+                cache_path = os.path.join(normalized, "ui/package-lock.json")
+                self.assertNotIn("/./", cache_path)
+                self.assertTrue(cache_path.endswith("/ui/package-lock.json"))
+
     def test_extension_ui_setup_node_uses_default_no_cache_behavior(self) -> None:
         workflow = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         steps = [step for step in workflow["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/setup-node@")]

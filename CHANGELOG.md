@@ -6,11 +6,16 @@
 ### Recovery context
 
 * Supersedes quarantined v2.0.0, which was published before required rehearsals, and unpublished/quarantined v2.0.1, whose standalone chart qualification failed. Both remain immutable and unadopted. Consumers may use only the exact v2.0.2 signed commit after the complete pre-release same-SHA rehearsal matrix and protected signing have succeeded.
+* The earlier #46 v2.0.2 candidate was invalidated when main advanced through the download-artifact v8 update (#6); it was not tagged and must not be reused. This Release PR is the new candidate and includes that update.
 
 ### Bug Fixes
 
 * make chart packaging reproducible ([#45](https://github.com/7K-Hiroba/workflows/issues/45)) ([3883213](https://github.com/7K-Hiroba/workflows/commit/388321348b6886c3e1675cfcb0190ffd5ee49c40))
 * consume aggregated chart stack evidence ([#43](https://github.com/7K-Hiroba/workflows/issues/43)) ([ee2ec5a](https://github.com/7K-Hiroba/workflows/commit/ee2ec5ab5724b8e24f6eb65d9e43f1658f20a087))
+
+### Dependency Updates
+
+* update actions/download-artifact action to v8 ([#6](https://github.com/7K-Hiroba/workflows/issues/6)) ([b1d1e41](https://github.com/7K-Hiroba/workflows/commit/b1d1e417cd15ccfe2cf2b93b41b13d4111c248b0))
 
 ## [2.0.1](https://github.com/7K-Hiroba/workflows/compare/v2.0.0...v2.0.1) (2026-11-23)
 

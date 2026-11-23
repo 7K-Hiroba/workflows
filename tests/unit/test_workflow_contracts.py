@@ -314,6 +314,20 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("contains(inputs.required-lanes, 'stack-lifecycle')", text)
         self.assertGreaterEqual(text.count("steps.evidence-plan.outputs.required-lanes"), 3)
 
+    def test_chart_repair_derives_lifecycle_from_tagged_source(self) -> None:
+        text = (ROOT / "scaffold/.github/workflows/chart-repair.yml.template").read_text()
+        first_plan = text.index("discover-components.py")
+        detach = text.index('git -C consumer checkout --detach "$sha"')
+        tagged_plan = text.index("discover-components.py", detach)
+        required = text.index("required_lanes=chart", tagged_plan)
+        self.assertLess(first_plan, detach)
+        self.assertLess(detach, tagged_plan)
+        self.assertLess(tagged_plan, required)
+        self.assertIn("tagged_release_component", text)
+        self.assertIn("tagged_version", text)
+        self.assertIn('[[ "$tagged_release_component" == "$release_component" ]]', text)
+        self.assertIn('[[ "$tagged_version" == "$VERSION" ]]', text)
+
     def test_stack_lifecycle_evidence_is_wired_through_release_and_repair(self) -> None:
         release_path = WORKFLOWS / "release.yml"
         release = yaml.safe_load(release_path.read_text())

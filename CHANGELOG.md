@@ -1,7 +1,13 @@
 # Changelog
 
-## [3.0.0](https://github.com/7K-Hiroba/workflows/compare/v2.0.2...v3.0.0) (2026-11-23)
+## [2.0.3](https://github.com/7K-Hiroba/workflows/compare/v2.0.0...v2.0.3) (2026-11-23)
 
+
+### Recovery context
+
+* v2.0.0 remains published but quarantined; v2.0.1 and v2.0.2 remain unpublished, quarantined, and unadopted. No v1/v2 alias or consumer adoption is authorized by this candidate.
+* v2.0.2 was never tagged and no GitHub Release was created. Its five full rehearsals passed at `1ae0c537a525e9375d6d6d850eca7cc932c749e2`, but standalone chart run [45274871189](https://github.com/7K-Hiroba/workflows/actions/runs/45274871189) failed evidence verification on concatenated Cosign JSON documents after exactly reproducing chart digest `sha256:44170dc3b2f4afe267b2e03e948f7c54c72b22c04acce9ede3603ef281bccb99`.
+* This v2.0.3 candidate includes the reviewed all-member JSON-stream verification fix from #48. The #48 merge commit `43ae83163c6bb58ef4d342dde9ec9c4bd8fdf53c` is not a qualification R. R must be this corrected Release PR's merge commit after independent review and strict checks, followed by the complete local and sequential five-full-plus-standalone matrix at that unchanged R before protected signing.
 
 ### ⚠ BREAKING CHANGES
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -13,6 +15,10 @@ VERIFY = ROOT / "scripts/verify-test-evidence.py"
 SOURCE = "a" * 40
 WORKFLOW = "b" * 40
 DIGEST = "sha256:" + "c" * 64
+FULL_STANDALONE_STREAM = ROOT / "tests/fixtures/trusted-evidence/full-standalone-chart-stream.ndjson"
+CHART_SOURCE = "1ae0c537a525e9375d6d6d850eca7cc932c749e2"
+CHART_DIGEST = "sha256:44170dc3b2f4afe267b2e03e948f7c54c72b22c04acce9ede3603ef281bccb99"
+CHART_REPOSITORY = "ghcr.io/7k-hiroba/workflows/ci/workflows-scaffold/charts/workflows-scaffold"
 
 
 class TrustedEvidenceTests(unittest.TestCase):
@@ -300,6 +306,98 @@ class TrustedEvidenceTests(unittest.TestCase):
         stale["sourceSha"] = "d" * 40
         self.output.write_text(json.dumps([{"predicate": stale}, {"predicate": fresh}]))
         self.assertNotEqual(self.verify_output().returncode, 0)
+
+    def read_full_standalone_statements(self) -> list[dict]:
+        statements = []
+        for line in FULL_STANDALONE_STREAM.read_text().splitlines():
+            envelope = json.loads(line)
+            statements.append(json.loads(base64.b64decode(envelope["payload"])))
+        self.assertEqual(len(statements), 2)
+        full = statements[0]["predicate"]
+        standalone = statements[1]["predicate"]
+        self.assertEqual(full["producer"]["runId"], "45265231020")
+        self.assertEqual(standalone["producer"]["runId"], "45274871189")
+        self.assertEqual(full["evidenceDigest"], "3f482374fb34ed88a8c7cdad8fe196a23fa0fbcff0f7c6052a1100db73bb5d98")
+        self.assertEqual(standalone["evidenceDigest"], "db684dc3cdcc88fdf1cd7d14288f46a62165d617f52ca28afde8295af52f2bbd")
+        for predicate in (full, standalone):
+            self.assertEqual(predicate["sourceSha"], CHART_SOURCE)
+            self.assertEqual(predicate["producer"]["workflowSha"], CHART_SOURCE)
+            self.assertEqual(predicate["artifact"]["digest"], CHART_DIGEST)
+            self.assertEqual(predicate["releaseTag"], "ci-1ae0c537a525")
+        return statements
+
+    def normalized_full_standalone_statements(self) -> list[dict]:
+        statements = self.read_full_standalone_statements()
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        for statement in statements:
+            predicate = statement["predicate"]
+            predicate["finishedAt"] = now
+            for lane in predicate["lanes"]:
+                if lane["lane"] == "compat":
+                    lane["completedAt"] = now
+            predicate["evidenceDigest"] = hashlib.sha256(json.dumps(predicate["lanes"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        return statements
+
+    def encode_statements(self, statements: list[dict]) -> str:
+        documents = []
+        for statement in statements:
+            payload = base64.b64encode(json.dumps(statement, sort_keys=True, separators=(",", ":")).encode()).decode()
+            documents.append(json.dumps({"payloadType": "application/vnd.in-toto+json", "payload": payload}, sort_keys=True, separators=(",", ":")))
+        return "\n".join(documents) + "\n"
+
+    def verify_chart_stream(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([
+            "python3", str(VERIFY), "--predicate", str(self.output),
+            "--source-repository", "7K-Hiroba/workflows", "--source-sha", CHART_SOURCE,
+            "--workflow-path", ".github/workflows/release-chart.yml", "--workflow-sha", CHART_SOURCE,
+            "--artifact-repository", CHART_REPOSITORY, "--artifact-digest", CHART_DIGEST,
+            "--media-type", "application/vnd.cncf.helm.chart.v1", "--release-tag", "ci-1ae0c537a525",
+            "--required-lane", "chart", "--required-lane", "stack-lifecycle",
+        ], text=True, capture_output=True, check=False)
+
+    def test_full_and_standalone_concatenated_cosign_stream_verifies_every_member(self) -> None:
+        statements = self.normalized_full_standalone_statements()
+        self.output.write_text(self.encode_statements(statements))
+        result = self.verify_chart_stream()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("verified 2 fresh and 0 historical fully bound test evidence predicate(s)", result.stdout)
+
+    def test_concatenated_cosign_stream_rejects_conflicting_second_member(self) -> None:
+        for claim, expected in (
+            ("source", "predicate source repository/SHA mismatch"),
+            ("digest", "predicate artifact repository/digest/media type mismatch"),
+            ("test", "lane chart did not pass"),
+        ):
+            with self.subTest(claim=claim):
+                statements = self.normalized_full_standalone_statements()
+                second = statements[1]["predicate"]
+                if claim == "source":
+                    second["sourceSha"] = "d" * 40
+                elif claim == "digest":
+                    second["artifact"]["digest"] = "sha256:" + "d" * 64
+                else:
+                    chart = next(lane for lane in second["lanes"] if lane["lane"] == "chart")
+                    chart["status"] = "failed"
+                self.output.write_text(self.encode_statements(statements))
+                result = self.verify_chart_stream()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stdout + result.stderr)
+
+    def test_concatenated_cosign_stream_rejects_malformed_empty_and_unusable_documents(self) -> None:
+        valid = self.encode_statements(self.normalized_full_standalone_statements()).splitlines()[0]
+        for case, content, expected in (
+            ("empty", "", "expected at least one JSON document"),
+            ("whitespace", " \n\t", "expected at least one JSON document"),
+            ("malformed-concatenation", valid + "\n{\"payload\":", "Expecting"),
+            ("trailing-junk", valid + "\ntrailing-junk", "Expecting"),
+            ("no-usable-predicate", "{}", "no test-evidence predicate found"),
+            ("valid-then-unusable", valid + "\n{}", "no test-evidence predicate found"),
+        ):
+            with self.subTest(case=case):
+                self.output.write_text(content)
+                result = self.verify_chart_stream()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

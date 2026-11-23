@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -86,6 +87,27 @@ class SignAndVerifyTests(unittest.TestCase):
         self.predicate_doc.write_text(json.dumps({"schema": "inari.test-evidence.v1", "sourceSha": "d" * 40, "producer": {"workflowPath": ".github/workflows/release-oci.yml"}, "artifact": {"digest": DIGEST}, "releaseTag": "app-v0.1.0", "lanes": [{"lane": "validate", "status": "passed"}]}))
         result = subprocess.run(["bash", str(ROOT / "scripts/verify-release.sh")], env=verify_env, text=True, capture_output=True, check=False)
         self.assertNotEqual(result.returncode, 0)
+
+    def test_verify_concatenated_cosign_stream_checks_every_member(self) -> None:
+        self.assertEqual(subprocess.run(["bash", str(ROOT / "scripts/sign-and-attest.sh")], env=self.env, text=True, capture_output=True, check=False).returncode, 0)
+        first = json.loads((self.root / "built.json").read_text())
+        second = json.loads(json.dumps(first))
+        second["producer"]["runAttempt"] = "2"
+        documents = []
+        for predicate in (first, second):
+            payload = base64.b64encode(json.dumps({"predicate": predicate}).encode()).decode()
+            documents.append(json.dumps({"payload": payload}))
+        self.predicate_doc.write_text("\n".join(documents) + "\n")
+        verify_env = {**self.env, "EXPECTED_PUBLISHER": "https://github.com/7K-Hiroba/workflows/.github/workflows/release-oci.yml@"}
+        result = subprocess.run(["bash", str(ROOT / "scripts/verify-release.sh")], env=verify_env, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("verified 2 fresh and 0 historical", result.stdout)
+        second["sourceSha"] = "d" * 40
+        payload = base64.b64encode(json.dumps({"predicate": second}).encode()).decode()
+        self.predicate_doc.write_text(documents[0] + "\n" + json.dumps({"payload": payload}) + "\n")
+        result = subprocess.run(["bash", str(ROOT / "scripts/verify-release.sh")], env=verify_env, text=True, capture_output=True, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("predicate source repository/SHA mismatch", result.stdout + result.stderr)
 
     def test_mark_verified_requires_matching_receipt(self) -> None:
         self.assertEqual(subprocess.run(["bash", str(ROOT / "scripts/sign-and-attest.sh")], env=self.env, text=True, capture_output=True, check=False).returncode, 0)

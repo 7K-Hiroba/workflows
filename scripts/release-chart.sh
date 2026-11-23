@@ -40,11 +40,11 @@ CHART_YAML="$CHART_DIR/Chart.yaml"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 ${HIROBA_PYTHON:-python3} -c 'import re,sys,yaml; data=yaml.safe_load(open(sys.argv[1])); assert data["name"] == sys.argv[2]; assert re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?", str(data["version"]))' "$CHART_YAML" "$CHART"
+mkdir -p "$WORK/$CHARTS_ROOT"
+cp -R "$CHART_DIR" "$WORK/$CHARTS_ROOT/"
+CHART_DIR="$WORK/$CHARTS_ROOT/$CHART"
+CHART_YAML="$CHART_DIR/Chart.yaml"
 if [[ "$CHANNEL" == edge ]]; then
-  mkdir -p "$WORK/chart"
-  cp -R "$CHART_DIR/." "$WORK/chart/"
-  CHART_DIR="$WORK/chart"
-  CHART_YAML="$CHART_DIR/Chart.yaml"
   ${HIROBA_PYTHON:-python3} -c 'import sys,yaml; p=sys.argv[1]; data=yaml.safe_load(open(p)); data["version"]=sys.argv[2]; open(p,"w").write(yaml.safe_dump(data, sort_keys=False))' "$CHART_YAML" "$VERSION"
 fi
 ${HIROBA_PYTHON:-python3} -c 'import sys,yaml; data=yaml.safe_load(open(sys.argv[1])); assert data["name"] == sys.argv[2]; assert str(data["version"]) == sys.argv[3]' "$CHART_YAML" "$CHART" "$VERSION"
@@ -56,6 +56,7 @@ if [[ "$REPAIR" == true ]]; then
 fi
 mkdir -p "$WORK/new"
 ${HIROBA_PYTHON:-python3} "$LIBRARY/scripts/prepare-chart.py" --chart "$CHART_DIR"
+find "$CHART_DIR" -type f -exec touch -d '@0' {} +
 helm package "$CHART_DIR" --destination "$WORK/new"
 PACKAGE="$WORK/new/$CHART-$VERSION.tgz"
 [[ -f "$PACKAGE" ]] || { echo "Helm package missing: $PACKAGE" >&2; exit 1; }

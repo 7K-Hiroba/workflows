@@ -140,6 +140,12 @@ def runtime_evidence_policy(lanes: list[dict[str, Any]]) -> dict[str, Any]:
     return {field: runtime[field] for field in fields}
 
 
+def validate_stack_fixture_eligibility(lanes: list[dict[str, Any]], trust_tier: str, media_type: str) -> None:
+    stack = next((lane for lane in lanes if lane.get("lane") == "stack-lifecycle"), None)
+    if stack and stack.get("fixtureOnly") and trust_tier in {"reviewed", "official"} and media_type != "application/vnd.inari.smoke.suite.v1+yaml":
+        raise ValueError("fixtureOnly stack evidence cannot authorize a reviewed or official application artifact")
+
+
 def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
     for value in (args.source_sha, args.workflow_sha):
         if not SHA_RE.fullmatch(value):
@@ -149,6 +155,7 @@ def build(evidence_dir: Path, args: Any) -> dict[str, Any]:
     if args.workflow_path not in PRODUCERS:
         raise ValueError(f"unexpected test-evidence producer: {args.workflow_path}")
     ordered = collect_lanes(evidence_dir, set(args.required_lane or []), args.source_sha)
+    validate_stack_fixture_eligibility(ordered, args.trust_tier, args.media_type)
     policy = runtime_evidence_policy(ordered)
     if policy.get("fixtureOnly") and args.trust_tier in {"reviewed", "official"} and args.media_type != "application/vnd.inari.smoke.suite.v1+yaml":
         raise ValueError("fixtureOnly runtime evidence cannot authorize a reviewed or official application artifact")
@@ -281,6 +288,7 @@ def verify(
     missing = sorted(required_lanes - seen)
     if missing:
         raise ValueError(f"missing required predicate lanes: {missing}")
+    validate_stack_fixture_eligibility(lanes, str(predicate.get("trustTier", "")), media_type)
     finished = parse_time(str(predicate.get("finishedAt", "")))
     if finished > current + timedelta(minutes=5):
         raise ValueError("test evidence is future-dated")

@@ -4,8 +4,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from scripts.lib.evidence import collect_lanes
+from scripts.lib.evidence import build, collect_lanes
 
 
 class StackEvidenceTests(unittest.TestCase):
@@ -69,6 +70,36 @@ class StackEvidenceTests(unittest.TestCase):
         self.lane["phases"] = self.lane["phases"][:1]
         with self.assertRaisesRegex(ValueError, "install.*upgrade|upgrade.*install"):
             self.collect()
+
+    def build_args(self, tier: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            source_sha=self.source_sha,
+            workflow_sha="b" * 40,
+            artifact_digest="sha256:" + "3" * 64,
+            workflow_path=".github/workflows/release-chart.yml",
+            required_lane=["stack-lifecycle"],
+            app="example",
+            component="example",
+            trust_tier=tier,
+            source_repository="7K-Hiroba/example",
+            artifact_repository="ghcr.io/7k-hiroba/example/charts/example",
+            media_type="application/vnd.cncf.helm.chart.v1",
+            release_tag="example-v0.1.0",
+            run_id="123",
+            run_attempt="1",
+        )
+
+    def test_fixture_only_stack_cannot_authorize_reviewed_application(self) -> None:
+        self.lane["fixtureOnly"] = True
+        (self.root / "stack-lifecycle.json").write_text(json.dumps(self.lane))
+        with self.assertRaisesRegex(ValueError, "fixtureOnly"):
+            build(self.root, self.build_args("reviewed"))
+
+    def test_fixture_only_stack_remains_valid_for_experimental_fixture(self) -> None:
+        self.lane["fixtureOnly"] = True
+        (self.root / "stack-lifecycle.json").write_text(json.dumps(self.lane))
+        predicate = build(self.root, self.build_args("experimental"))
+        self.assertEqual(predicate["trustTier"], "experimental")
 
 
 if __name__ == "__main__":

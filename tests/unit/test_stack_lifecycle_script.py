@@ -126,6 +126,11 @@ EOF
         self.assertIn("distinct", result.stdout + result.stderr)
         self.assertEqual(self.evidence()["status"], "failed")
 
+    def test_kro_install_reuses_the_verified_digest(self) -> None:
+        script = (ROOT / "scripts/lib/stack-cluster.sh").read_text()
+        self.assertIn('helm upgrade --install kro "oci://$repository@$expected"', script)
+        self.assertNotIn('--version "$version"', script)
+
     def test_workflow_and_installer_use_exact_cache_and_read_only_permissions(self) -> None:
         workflow_path = ROOT / ".github/workflows/test-stack.yml"
         self.assertTrue(workflow_path.is_file())

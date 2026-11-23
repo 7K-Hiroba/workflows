@@ -30,8 +30,8 @@ setup_kro() {
   expected=$(stack_pin .kro.digest)
   actual=$(crane digest "$repository:$version")
   [[ "$actual" == "$expected" ]] || { echo "KRO chart digest mismatch" >&2; return 1; }
-  helm upgrade --install kro "oci://$repository" --namespace kro-system --create-namespace \
-    --version "$version" --wait --timeout 180s
+  helm upgrade --install kro "oci://$repository@$expected" --namespace kro-system --create-namespace \
+    --wait --timeout 180s
 }
 
 setup_argocd() {

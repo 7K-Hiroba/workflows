@@ -1,11 +1,23 @@
 # Changelog
 
+## [2.0.2](https://github.com/7K-Hiroba/workflows/compare/v2.0.0...v2.0.2) (2026-11-23)
+
+
+### Recovery context
+
+* Supersedes quarantined v2.0.0, which was published before required rehearsals, and unpublished/quarantined v2.0.1, whose standalone chart qualification failed. Both remain immutable and unadopted. Consumers may use only the exact v2.0.2 signed commit after the complete pre-release same-SHA rehearsal matrix and protected signing have succeeded.
+
+### Bug Fixes
+
+* make chart packaging reproducible ([#45](https://github.com/7K-Hiroba/workflows/issues/45)) ([3883213](https://github.com/7K-Hiroba/workflows/commit/388321348b6886c3e1675cfcb0190ffd5ee49c40))
+* consume aggregated chart stack evidence ([#43](https://github.com/7K-Hiroba/workflows/issues/43)) ([ee2ec5a](https://github.com/7K-Hiroba/workflows/commit/ee2ec5ab5724b8e24f6eb65d9e43f1658f20a087))
+
 ## [2.0.1](https://github.com/7K-Hiroba/workflows/compare/v2.0.0...v2.0.1) (2026-11-23)
 
 
 ### Recovery context
 
-* Supersedes quarantined v2.0.0, which was published before its required rehearsals and remains immutable and unadopted. Consumers must not use v2.0.0; they may adopt only the exact v2.0.1 signed commit after the complete pre-release same-SHA rehearsal matrix and protected signing have succeeded.
+* Unpublished and unadopted. The standalone chart rehearsal exposed non-deterministic package bytes, so v2.0.1 was never tagged and must not be used. It is superseded by v2.0.2.
 
 ### Bug Fixes
 

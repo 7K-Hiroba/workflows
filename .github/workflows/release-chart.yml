@@ -60,12 +60,20 @@ jobs:
         if: inputs.standalone && steps.evidence-plan.outputs.has-stack == 'true'
         with: {name: stack-lifecycle-evidence, path: stack-lifecycle-evidence}
       - name: Add exact-source chart and stack test results
-        env: {REQUIRED_LANES: "${{ steps.evidence-plan.outputs.required-lanes }}"}
+        env:
+          REQUIRED_LANES: "${{ steps.evidence-plan.outputs.required-lanes }}"
+          STANDALONE: "${{ inputs.standalone }}"
         run: |
           mkdir -p evidence
           jq -n --arg sourceSha "${{ inputs.source-sha }}" '{schema:"inari.lane-result.v1",lane:"chart",status:"passed",sourceSha:$sourceSha}' > evidence/chart.json
           if [[ " $REQUIRED_LANES " == *" stack-lifecycle "* ]]; then
-            cp stack-lifecycle-evidence/evidence/stack-lifecycle.json evidence/stack-lifecycle.json
+            if [[ "$STANDALONE" == true ]]; then
+              source=stack-lifecycle-evidence/evidence/stack-lifecycle.json
+              [[ -f "$source" ]] || { echo "missing standalone stack evidence: $source" >&2; exit 2; }
+              cp "$source" evidence/stack-lifecycle.json
+            else
+              [[ -f evidence/stack-lifecycle.json ]] || { echo "missing aggregated release stack evidence: evidence/stack-lifecycle.json" >&2; exit 2; }
+            fi
           fi
       - name: Log in to GHCR
         env: {TOKEN: "${{ secrets.GITHUB_TOKEN }}"}

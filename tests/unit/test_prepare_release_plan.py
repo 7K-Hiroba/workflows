@@ -273,7 +273,8 @@ class NonPluginRehearsalPlanTests(unittest.TestCase):
         self.assertTrue(plan["hasChart"])
         self.assertTrue(plan["hasPackages"])
         self.assertTrue(plan["hasSmoke"])
-        self.assertEqual(plan["requiredLanes"], ["validate", "package", "chart", "runtime-smoke"])
+        self.assertEqual(plan["requiredLanes"], ["validate", "package", "chart", "runtime-smoke", "chart-lifecycle-hiroba-nonplugin-smoke"])
+        self.assertTrue(plan["hasChartLifecycle"])
 
         config = json.loads((root / "release-please-config.json").read_text())
         manifest = json.loads((root / ".release-please-manifest.json").read_text())

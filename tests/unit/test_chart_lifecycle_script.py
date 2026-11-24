@@ -114,6 +114,7 @@ if [[ "$1" == export ]]; then printf 'kind logs\\n'; fi
         kubectl = self.fake_bin / "kubectl"
         kubectl.write_text("""#!/usr/bin/env bash
 printf 'kubectl:%s\\n' "$*" >> "$COMMAND_LOG"
+if [[ "${FAIL_KUBECTL:-false}" == true ]]; then exit 1; fi
 printf 'kubectl diagnostic\\n'
 """)
         ct = self.fake_bin / "ct"
@@ -261,6 +262,14 @@ esac
                 result = self.run_runner(**extra)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(1, sum(line.startswith("kind:delete cluster") for line in self.commands()))
+
+    def test_diagnostics_failure_cannot_abort_cleanup(self) -> None:
+        result = self.run_runner(FAIL_ASSERT="upgrade", FAIL_KUBECTL="true")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(1, sum(line.startswith("kind:delete cluster") for line in self.commands()))
+        evidence = self.evidence()
+        self.assertEqual(evidence["status"], "failed")
+        self.assertTrue(evidence["cleanedUp"])
 
     def test_package_tampering_after_preflight_fails(self) -> None:
         result = self.run_runner(TAMPER_CURRENT="true")

@@ -61,7 +61,7 @@ finish() {
           cat "$ROOT/diagnostics/chart-$(basename "$CHART")-assertions.txt"
         fi
         if [[ "$CLUSTER_CREATE_ATTEMPTED" == true ]]; then kind export logs "$WORK/kind-logs" --name "$CLUSTER" || true; fi
-      } >> "$ROOT/diagnostics/chart-$(basename "$CHART").txt" 2>&1
+      } >> "$ROOT/diagnostics/chart-$(basename "$CHART").txt" 2>&1 || true
     fi
   fi
   delete_rc=0

@@ -100,6 +100,11 @@ class ChartLifecycleEvidenceTests(unittest.TestCase):
         self.assertEqual(lanes[0]["lane"], self.lane_name)
         self.verify_predicate(self.valid_predicate())
 
+    def test_rejects_reversed_lane_timestamps(self) -> None:
+        self.lane["finishedAt"] = "2026-11-23T23:59:59Z"
+        with self.assertRaisesRegex(ValueError, "finishedAt.*startedAt"):
+            self.collect()
+
     def test_requires_distinct_versions_and_package_digests(self) -> None:
         original = json.loads(json.dumps(self.lane))
         for field in ("version", "packageDigest"):

@@ -263,6 +263,35 @@ esac
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(1, sum(line.startswith("kind:delete cluster") for line in self.commands()))
 
+    def test_failure_diagnostics_redact_secret_manifest_data(self) -> None:
+        helm = self.fake_bin / "helm"
+        original = "status|history|get) printf 'helm diagnostic\\n' ;;"
+        replacement = """status|history) printf 'helm diagnostic\\n' ;;
+  get) cat <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: example
+data:
+  password: c3VwZXItc2VjcmV0
+stringData:
+  token: plaintext-secret
+---
+apiVersion: v1
+kind: ConfigMap
+data:
+  visible: retained
+EOF
+    ;;"""
+        helm.write_text(helm.read_text().replace(original, replacement))
+        result = self.run_runner(FAIL_ASSERT="upgrade")
+        self.assertNotEqual(result.returncode, 0)
+        diagnostic = (self.root / "diagnostics/chart-example.txt").read_text()
+        self.assertIn("kind: Secret", diagnostic)
+        self.assertIn("visible: retained", diagnostic)
+        self.assertNotIn("c3VwZXItc2VjcmV0", diagnostic)
+        self.assertNotIn("plaintext-secret", diagnostic)
+
     def test_diagnostics_failure_cannot_abort_cleanup(self) -> None:
         result = self.run_runner(FAIL_ASSERT="upgrade", FAIL_KUBECTL="true")
         self.assertNotEqual(result.returncode, 0)

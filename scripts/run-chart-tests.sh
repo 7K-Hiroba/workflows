@@ -51,7 +51,9 @@ finish() {
         if [[ -n "$RELEASE_NAME" ]]; then
           helm status "$RELEASE_NAME" --namespace default || true
           helm history "$RELEASE_NAME" --namespace default || true
-          helm get manifest "$RELEASE_NAME" --namespace default || true
+          if helm get manifest "$RELEASE_NAME" --namespace default > "$WORK/helm-manifest.yaml"; then
+            lifecycle_py redact-manifest --input "$WORK/helm-manifest.yaml"
+          fi
         fi
         kubectl get events -A --sort-by=.lastTimestamp || true
         kubectl get pods -n default -o name | while read -r pod; do

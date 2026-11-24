@@ -120,8 +120,10 @@ def validate_chart_lifecycle_lane(lane: dict[str, Any]) -> None:
         raise ValueError("chart lifecycle prHeadSha is invalid")
     if not str(lane.get("runId", "")) or not str(lane.get("runAttempt", "")):
         raise ValueError("chart lifecycle run identity is required")
-    parse_time(str(lane.get("startedAt", "")))
-    parse_time(str(lane.get("finishedAt", "")))
+    started = parse_time(str(lane.get("startedAt", "")))
+    finished = parse_time(str(lane.get("finishedAt", "")))
+    if finished < started:
+        raise ValueError("chart lifecycle finishedAt must not precede startedAt")
     if not isinstance(lane.get("totalDurationSeconds"), int) or lane["totalDurationSeconds"] < 0:
         raise ValueError("chart lifecycle total duration is invalid")
     phases = lane.get("phases")

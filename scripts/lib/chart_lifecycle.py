@@ -58,6 +58,20 @@ def canonicalize_package(source: Path, destination: Path) -> None:
                         archive.addfile(member, io.BytesIO(data))
 
 
+def redact_manifest(path: Path) -> str:
+    """Preserve useful rendered manifests without exposing Kubernetes Secret data."""
+    documents = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+    for document in documents:
+        if not isinstance(document, dict) or document.get("kind") != "Secret":
+            continue
+        for field in ("data", "stringData"):
+            if field not in document:
+                continue
+            value = document[field]
+            document[field] = {key: "<redacted>" for key in value} if isinstance(value, dict) else "<redacted>"
+    return yaml.safe_dump_all(documents, sort_keys=False, explicit_start=True)
+
+
 def package_metadata(path: Path) -> dict[str, Any]:
     result = subprocess.run(["helm", "show", "chart", str(path)], check=True, text=True, capture_output=True)
     document = yaml.safe_load(result.stdout)
@@ -209,6 +223,8 @@ def parser() -> argparse.ArgumentParser:
     canonical = commands.add_parser("canonicalize-package")
     canonical.add_argument("--input", type=Path, required=True)
     canonical.add_argument("--output", type=Path, required=True)
+    redact = commands.add_parser("redact-manifest")
+    redact.add_argument("--input", type=Path, required=True)
     preflight_parser = commands.add_parser("preflight")
     preflight_parser.add_argument("--root", type=Path, required=True)
     preflight_parser.add_argument("--chart", required=True)
@@ -252,6 +268,8 @@ def main() -> int:
     try:
         if args.command == "canonicalize-package":
             canonicalize_package(args.input, args.output)
+        elif args.command == "redact-manifest":
+            sys.stdout.write(redact_manifest(args.input))
         elif args.command == "preflight":
             config = json.loads(args.config.read_text(encoding="utf-8"))
             packages = preflight(args.root, args.chart, config, args.work)

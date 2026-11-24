@@ -48,7 +48,18 @@ class BackendReleaseTests(unittest.TestCase):
         self.log = self.root / "calls.log"
         self.state = self.root / "state"
         docker = self.bin / "docker"
-        docker.write_text("#!/usr/bin/env bash\nset -e\necho docker \"$@\" >> \"$CALL_LOG\"\nout=\"\"\nwhile [[ $# -gt 0 ]]; do if [[ \"$1\" == --output ]]; then out=${2#type=oci,dest=}; shift 2; else shift; fi; done\ncp \"$CANDIDATE\" \"$out\"\n")
+        docker.write_text("#!/usr/bin/env bash\nset -e\necho docker \"$@\" >> \"$CALL_LOG\"\nout=\"\"\nwhile [[ $# -gt 0 ]]; do if [[ \"$1\" == --output ]]; then out=${2#type=oci,dest=}; out=${out%%,*}; shift 2; else shift; fi; done\ncp \"$CANDIDATE\" \"$out\"\n")
+        git = self.bin / "git"
+        git.write_text("""#!/usr/bin/env bash
+set -e
+echo git "$@" >> "$CALL_LOG"
+if [[ "${FAKE_GIT_FAIL:-}" == 1 ]]; then exit 1; fi
+if [[ "$1" == -C && "$3" == log && "$4" == -1 && "$5" == --format=%ct ]]; then
+  printf '%s\n' "$FAKE_EPOCH"
+  exit 0
+fi
+exit 1
+""")
         crane = self.bin / "crane"
         crane.write_text("""#!/usr/bin/env bash
 set -e
@@ -80,6 +91,7 @@ esac
 """)
         docker.chmod(0o755)
         crane.chmod(0o755)
+        git.chmod(0o755)
         self.env = {
             **os.environ,
             "PATH": str(self.bin) + ":" + os.environ["PATH"],
@@ -88,7 +100,9 @@ esac
             "CANDIDATE": str(self.candidate),
             "EXPECTED_DIGEST": DIGEST,
             "PUSH_CAPTURE": str(self.pushed),
+            "FAKE_EPOCH": "1700000000",
         }
+        self.env.pop("SOURCE_DATE_EPOCH", None)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -144,6 +158,43 @@ esac
         calls = self.log.read_text()
         self.assertIn("docker buildx build", calls)
         self.assertNotIn("crane push", calls)
+        self.assertFalse((self.root / "artifact.json").exists())
+
+    def test_build_uses_source_epoch_and_rewritten_timestamps(self) -> None:
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.log.read_text()
+        build = next(line for line in calls.splitlines() if line.startswith("docker buildx build "))
+        self.assertIn("--build-arg SOURCE_DATE_EPOCH=1700000000", build)
+        output = next(arg for arg in build.split() if arg.startswith("type=oci,dest="))
+        self.assertIn("rewrite-timestamp=true", output)
+        git_call = next(line for line in calls.splitlines() if line.startswith("git "))
+        self.assertIn("--format=%ct", git_call)
+        self.assertIn("a" * 40, git_call)
+
+    def test_source_date_epoch_override_wins(self) -> None:
+        self.env["SOURCE_DATE_EPOCH"] = "1800000000"
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.log.read_text()
+        build = next(line for line in calls.splitlines() if line.startswith("docker buildx build "))
+        self.assertIn("--build-arg SOURCE_DATE_EPOCH=1800000000", build)
+        self.assertNotIn("git ", calls)
+
+    def test_epoch_derivation_failure_fails_closed(self) -> None:
+        self.env["FAKE_GIT_FAIL"] = "1"
+        result = self.publish()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("SOURCE_DATE_EPOCH", result.stdout + result.stderr)
+        self.assertNotIn("docker buildx build", self.log.read_text() if self.log.exists() else "")
+        self.assertFalse((self.root / "artifact.json").exists())
+
+    def test_invalid_epoch_rejected(self) -> None:
+        self.env["SOURCE_DATE_EPOCH"] = "not-an-epoch"
+        result = self.publish()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("SOURCE_DATE_EPOCH", result.stdout + result.stderr)
+        self.assertNotIn("docker buildx build", self.log.read_text() if self.log.exists() else "")
         self.assertFalse((self.root / "artifact.json").exists())
 
 

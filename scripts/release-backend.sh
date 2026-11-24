@@ -24,8 +24,14 @@ done
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 CANDIDATE_ARCHIVE="$WORK/candidate.tar"
+# Reproducible builds: pin all image timestamps to the source commit so identical
+# source bytes produce an identical digest and reruns satisfy the immutability check.
+if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+  SOURCE_DATE_EPOCH=$(git -C "$CONTEXT" log -1 --format=%ct "$SOURCE_SHA" 2>/dev/null || true)
+fi
+[[ "$SOURCE_DATE_EPOCH" =~ ^[1-9][0-9]*$ ]] || { echo "SOURCE_DATE_EPOCH could not be derived from source $SOURCE_SHA; set it explicitly" >&2; exit 2; }
 # Always build the exact checked-out source. Never attest an existing tag without a candidate comparison.
-docker buildx build --output "type=oci,dest=$CANDIDATE_ARCHIVE" --tag "$REPOSITORY:$TAG" --provenance=false --sbom=false "$CONTEXT"
+docker buildx build --build-arg "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" --output "type=oci,dest=$CANDIDATE_ARCHIVE,rewrite-timestamp=true" --tag "$REPOSITORY:$TAG" --provenance=false --sbom=false "$CONTEXT"
 DESCRIPTOR=$(python3 - "$CANDIDATE_ARCHIVE" <<'PY'
 import json, sys, tarfile
 with tarfile.open(sys.argv[1]) as archive:

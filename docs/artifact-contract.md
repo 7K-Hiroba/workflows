@@ -13,6 +13,8 @@
 
 Deployable artifacts have no `latest`. Packages/templates may move `stable`/`incubating` only after verification. Indexes use immutable source-SHA plus `latest` after all entries verify; edge uses `edge`. Rehearsal uses CI-only source-SHA/prerelease tags and no stable channel.
 
+Backend images build reproducibly: every build pins `SOURCE_DATE_EPOCH` to the exact source commit timestamp (overridable only explicitly) and exports with rewritten layer timestamps, so identical source bytes yield an identical digest and a rerun of the same source satisfies the immutable-digest check instead of colliding with it. Changed source always yields a different digest and still fails closed.
+
 Signed Git Release identities default to the legacy component name (`NAME-vVERSION`, `extension-vVERSION`, or `ui-vVERSION`). New repositories may declare `releaseComponents` to use identities such as `package-NAME-vVERSION`, `template-NAME-vVERSION`, `chart-NAME-vVERSION`, and `smoke-NAME-vVERSION`. Release-please, OCI descriptors, signed evidence, repair, finalization, and runtime verification all enforce the same identity. Standalone fixture-only smoke finalizes its own Release; artifact-bound smoke shares only its target's Release.
 
 Release indexes contain exact `repository@sha256:digest`, media type, source SHA, signature/SLSA verification, and test evidence for every entry. Source `catalog.yaml`/`templates.yaml` remain generated projections and are not rewritten after tagging.

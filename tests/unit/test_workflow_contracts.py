@@ -370,6 +370,21 @@ class WorkflowContractTests(unittest.TestCase):
         tagged_plan = repair.index("discover-components.py", repair.index('git -C consumer checkout --detach "$sha"'))
         self.assertIn("chart-release-evidence.py", repair[tagged_plan:])
 
+    def test_coordinated_chart_retest_does_not_reupload_immutable_lifecycle_artifacts(self) -> None:
+        chart_ci = yaml.safe_load((WORKFLOWS / "ci-chart.yml").read_text())
+        inputs = chart_ci.get("on", chart_ci.get(True))["workflow_call"]["inputs"]
+        self.assertEqual(inputs["upload-lifecycle-evidence"], {"type": "boolean", "default": True})
+        uploads = [
+            step for step in chart_ci["jobs"]["test"]["steps"]
+            if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+            and step.get("with", {}).get("name") == "chart-lifecycle-evidence-${{ matrix.chart.name }}"
+        ]
+        self.assertEqual(len(uploads), 1)
+        self.assertEqual(uploads[0]["if"], "always() && inputs.upload-lifecycle-evidence")
+
+        chart_release = yaml.safe_load((WORKFLOWS / "release-chart.yml").read_text())
+        self.assertEqual(chart_release["jobs"]["test"]["with"]["upload-lifecycle-evidence"], "${{ inputs.standalone }}")
+
     def test_stack_lifecycle_evidence_is_wired_through_release_and_repair(self) -> None:
         release_path = WORKFLOWS / "release.yml"
         release = yaml.safe_load(release_path.read_text())

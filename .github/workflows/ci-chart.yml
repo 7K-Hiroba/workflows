@@ -4,6 +4,7 @@ on:
     inputs:
       root: {type: string, default: .}
       source-sha: {type: string, default: ""}
+      upload-lifecycle-evidence: {type: boolean, default: true}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
@@ -49,7 +50,7 @@ jobs:
           WORKFLOW_SHA: "${{ job.workflow_sha }}"
         run: .hiroba/workflows/scripts/run-chart-tests.sh --root "consumer/${{ inputs.root }}" --chart "${{ matrix.chart.path }}" --stack-covered "${{ matrix.chart.stackCovered }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
+        if: always() && inputs.upload-lifecycle-evidence
         with:
           name: "chart-lifecycle-evidence-${{ matrix.chart.name }}"
           path: "${{ steps.paths.outputs.consumer-root }}/evidence/chart-lifecycle-${{ matrix.chart.name }}.json"

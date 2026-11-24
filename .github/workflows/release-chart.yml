@@ -20,7 +20,7 @@ permissions: {contents: read}
 jobs:
   test:
     uses: $/.github/workflows/ci-chart.yml
-    with: {root: "${{ inputs.root }}", source-sha: "${{ inputs.source-sha }}"}
+    with: {root: "${{ inputs.root }}", source-sha: "${{ inputs.source-sha }}", upload-lifecycle-evidence: "${{ inputs.standalone }}"}
   stack:
     if: inputs.standalone
     uses: $/.github/workflows/test-stack.yml

@@ -17,6 +17,7 @@ class ChartReleaseEvidenceTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.make_config("stack")
         self.make_fixture_suite()
+        self.write("charts/example/.gitkeep", "")
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -50,11 +51,40 @@ upgrade: {script: upgrade.sh, timeout: 5m}
 
     def run_policy(self, standalone: str = "true", lanes: str = "chart") -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(PYTHON), str(SCRIPT), "--root", str(self.root), "--standalone", standalone, "--required-lanes", lanes],
+            [str(PYTHON), str(SCRIPT), "--root", str(self.root), "--chart", "example", "--standalone", standalone, "--required-lanes", lanes],
             text=True,
             capture_output=True,
             check=False,
         )
+
+    def enable_chart_lifecycle(self) -> None:
+        for name in ("previous.tgz", "current.tgz"):
+            self.write(f"tests/chart-lifecycle/example/{name}", name)
+        self.write("tests/chart-lifecycle/example/assert.sh", "#!/usr/bin/env bash\nexit 0\n", executable=True)
+        self.write("charts/example/ci/test.yaml", """schema: inari.chart-test.v1
+upgrade:
+  previousPackage: tests/chart-lifecycle/example/previous.tgz
+  currentPackage: tests/chart-lifecycle/example/current.tgz
+  timeout: 5m
+  assertions: tests/chart-lifecycle/example/assert.sh
+""")
+
+    def test_selected_chart_adds_its_actual_lifecycle_artifact_requirement(self) -> None:
+        self.make_config("non-stack", declaration=False)
+        self.enable_chart_lifecycle()
+        result = self.run_policy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertTrue(plan["hasChartLifecycle"])
+        self.assertEqual(plan["chartLifecycleLane"], "chart-lifecycle-example")
+        self.assertEqual(plan["chartLifecycleArtifact"], "chart-lifecycle-evidence-example")
+        self.assertEqual(plan["requiredLanes"], "chart chart-lifecycle-example")
+
+    def test_coordinated_release_deduplicates_selected_chart_lane(self) -> None:
+        self.enable_chart_lifecycle()
+        result = self.run_policy(standalone="false", lanes="chart chart-lifecycle-example")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["requiredLanes"], "chart chart-lifecycle-example")
 
     def test_standalone_stack_adds_mandatory_lifecycle_lane(self) -> None:
         result = self.run_policy()

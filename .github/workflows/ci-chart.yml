@@ -4,6 +4,7 @@ on:
     inputs:
       root: {type: string, default: .}
       source-sha: {type: string, default: ""}
+      upload-lifecycle-evidence: {type: boolean, default: true}
     outputs:
       status: {value: "${{ jobs.result.outputs.status }}"}
 permissions: {contents: read}
@@ -41,11 +42,23 @@ jobs:
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with: {path: .hiroba-cache, key: "hiroba-chart-${{ steps.tools-key.outputs.key }}"}
       - run: .hiroba/workflows/scripts/install-ci-tools.sh kind helm kubectl ct
-      - name: Run locked chart lint and applicable kind install
+      - id: paths
+        env: {INPUT_ROOT: "${{ inputs.root }}"}
+        run: echo "consumer-root=$(python3 -c 'import os; print(os.path.normpath(os.path.join("consumer", os.environ["INPUT_ROOT"])))')" >> "$GITHUB_OUTPUT"
+      - name: Run locked chart lint and applicable kind lifecycle
+        env:
+          WORKFLOW_SHA: "${{ job.workflow_sha }}"
         run: .hiroba/workflows/scripts/run-chart-tests.sh --root "consumer/${{ inputs.root }}" --chart "${{ matrix.chart.path }}" --stack-covered "${{ matrix.chart.stackCovered }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always() && inputs.upload-lifecycle-evidence
+        with:
+          name: "chart-lifecycle-evidence-${{ matrix.chart.name }}"
+          path: "${{ steps.paths.outputs.consumer-root }}/evidence/chart-lifecycle-${{ matrix.chart.name }}.json"
+          if-no-files-found: ignore
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
-        with: {name: "chart-diagnostics-${{ matrix.chart.name }}", path: consumer/diagnostics, if-no-files-found: ignore}
+        with: {name: "chart-diagnostics-${{ matrix.chart.name }}", path: "${{ steps.paths.outputs.consumer-root }}/diagnostics", if-no-files-found: ignore}
   result:
     if: always()
     needs: [plan, test]

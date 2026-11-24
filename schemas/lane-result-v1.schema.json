@@ -21,6 +21,12 @@
     },
     "evidenceScope": {"enum": ["application", "fixture"]},
     "appEvidenceEligible": {"type": "boolean"},
+    "prHeadSha": {"type": "string", "pattern": "^[0-9a-fA-F]{40}$"},
+    "chartName": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "chartPath": {"type": "string", "minLength": 1},
+    "releaseName": {"type": "string", "minLength": 1},
+    "namespace": {"type": "string", "minLength": 1},
+    "clusterName": {"type": "string", "minLength": 1},
     "workflowSha": {"type": "string", "pattern": "^[0-9a-fA-F]{40}$"},
     "runId": {"type": "string", "minLength": 1},
     "runAttempt": {"type": "string", "minLength": 1},
@@ -51,6 +57,41 @@
       "if": {"properties": {"lane": {"const": "stack-lifecycle"}}},
       "then": {
         "required": ["workflowSha", "runId", "runAttempt", "startedAt", "finishedAt", "setupProfiles", "covers", "fixtureOnly", "cache", "phases", "clusterCreateCount", "clusterDeleteCount", "freshState", "cleanedUp", "functionalE2E", "deployedReadiness", "totalDurationSeconds"]
+      }
+    },
+    {
+      "if": {"properties": {"lane": {"pattern": "^chart-lifecycle-"}}},
+      "then": {
+        "required": ["workflowSha", "runId", "runAttempt", "startedAt", "finishedAt", "chartName", "chartPath", "releaseName", "namespace", "clusterName", "phases", "clusterCreateCount", "clusterDeleteCount", "freshState", "cleanedUp", "fixtureOnly", "evidenceScope", "appEvidenceEligible", "functionalE2E", "deployedReadiness", "totalDurationSeconds"],
+        "properties": {
+          "fixtureOnly": {"const": false},
+          "evidenceScope": {"const": "application"},
+          "appEvidenceEligible": {"const": true},
+          "functionalE2E": {"const": false},
+          "phases": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "version", "packageDigest", "status", "converged", "assertions", "revision", "releaseName", "namespace", "clusterName", "durationSeconds"],
+              "properties": {
+                "phase": {"enum": ["install", "upgrade"]},
+                "version": {"type": "string", "minLength": 1},
+                "packageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+                "status": {"enum": ["passed", "failed", "not-run"]},
+                "converged": {"type": "boolean"},
+                "assertions": {"enum": ["passed", "failed", "not-run"]},
+                "revision": {"type": "integer", "minimum": 0},
+                "releaseName": {"type": "string", "minLength": 1},
+                "namespace": {"type": "string", "minLength": 1},
+                "clusterName": {"type": "string", "minLength": 1},
+                "durationSeconds": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        }
       }
     }
   ]

@@ -336,14 +336,54 @@ class WorkflowContractTests(unittest.TestCase):
         first_plan = text.index("discover-components.py")
         detach = text.index('git -C consumer checkout --detach "$sha"')
         tagged_plan = text.index("discover-components.py", detach)
-        required = text.index("required_lanes=chart", tagged_plan)
+        required = text.index("chart-release-evidence.py --root consumer --chart", tagged_plan)
         self.assertLess(first_plan, detach)
         self.assertLess(detach, tagged_plan)
         self.assertLess(tagged_plan, required)
+        self.assertIn("--standalone true --required-lanes chart", text[required:])
         self.assertIn("tagged_release_component", text)
         self.assertIn("tagged_version", text)
         self.assertIn('[[ "$tagged_release_component" == "$release_component" ]]', text)
         self.assertIn('[[ "$tagged_version" == "$VERSION" ]]', text)
+
+    def test_chart_lifecycle_evidence_is_wired_through_ci_release_and_repair(self) -> None:
+        chart_ci = (WORKFLOWS / "ci-chart.yml").read_text()
+        self.assertIn('WORKFLOW_SHA: "${{ job.workflow_sha }}"', chart_ci)
+        self.assertIn("chart-lifecycle-evidence-${{ matrix.chart.name }}", chart_ci)
+        self.assertIn("if: always()", chart_ci)
+        self.assertIn("steps.paths.outputs.consumer-root", chart_ci)
+
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+        self.assertIn("has-chart-lifecycle", release["jobs"]["plan"]["outputs"])
+        release_text = (WORKFLOWS / "release.yml").read_text()
+        self.assertIn("pattern: chart-lifecycle-evidence-*", release_text)
+        self.assertIn("merge-multiple: true", release_text)
+        self.assertNotIn('--lane "chart-lifecycle-', release_text)
+
+        chart_release = (WORKFLOWS / "release-chart.yml").read_text()
+        self.assertIn("chart-release-evidence.py --root", chart_release)
+        self.assertIn('--chart "${{ inputs.chart }}"', chart_release)
+        self.assertIn("chart-lifecycle-lane", chart_release)
+        self.assertIn("chart-lifecycle-artifact", chart_release)
+        self.assertIn("chart-lifecycle-evidence/${CHART_LIFECYCLE_LANE}.json", chart_release)
+        repair = (ROOT / "scaffold/.github/workflows/chart-repair.yml.template").read_text()
+        tagged_plan = repair.index("discover-components.py", repair.index('git -C consumer checkout --detach "$sha"'))
+        self.assertIn("chart-release-evidence.py", repair[tagged_plan:])
+
+    def test_coordinated_chart_retest_does_not_reupload_immutable_lifecycle_artifacts(self) -> None:
+        chart_ci = yaml.safe_load((WORKFLOWS / "ci-chart.yml").read_text())
+        inputs = chart_ci.get("on", chart_ci.get(True))["workflow_call"]["inputs"]
+        self.assertEqual(inputs["upload-lifecycle-evidence"], {"type": "boolean", "default": True})
+        uploads = [
+            step for step in chart_ci["jobs"]["test"]["steps"]
+            if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+            and step.get("with", {}).get("name") == "chart-lifecycle-evidence-${{ matrix.chart.name }}"
+        ]
+        self.assertEqual(len(uploads), 1)
+        self.assertEqual(uploads[0]["if"], "always() && inputs.upload-lifecycle-evidence")
+
+        chart_release = yaml.safe_load((WORKFLOWS / "release-chart.yml").read_text())
+        self.assertEqual(chart_release["jobs"]["test"]["with"]["upload-lifecycle-evidence"], "${{ inputs.standalone }}")
 
     def test_stack_lifecycle_evidence_is_wired_through_release_and_repair(self) -> None:
         release_path = WORKFLOWS / "release.yml"

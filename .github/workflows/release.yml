@@ -33,6 +33,7 @@ jobs:
       has-templates: "${{ steps.plan.outputs.has-templates }}"
       has-smoke: "${{ steps.plan.outputs.has-smoke }}"
       has-stack-test: "${{ steps.plan.outputs.has-stack-test }}"
+      has-chart-lifecycle: "${{ steps.plan.outputs.has-chart-lifecycle }}"
       has-observability: "${{ steps.plan.outputs.has-observability }}"
       required-lanes: "${{ steps.plan.outputs.required-lanes }}"
       extension-version: "${{ steps.plan.outputs.extension-version }}"
@@ -106,6 +107,7 @@ jobs:
             echo "has-templates=$(jq -r .hasTemplates plan.json)"
             echo "has-smoke=$(jq -r .hasSmoke plan.json)"
             echo "has-stack-test=$(jq -r .hasStackTest plan.json)"
+            echo "has-chart-lifecycle=$(jq -r .hasChartLifecycle plan.json)"
             echo "has-observability=$(jq -r .hasObservability plan.json)"
             echo "required-lanes=$(jq -r '.requiredLanes | join(" ")' plan.json)"
             echo "extension-version=$(jq -r 'first(.publishComponents[] | select(.kind == "extension") | .version) // ""' plan.json)"
@@ -181,6 +183,9 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.plan.outputs.has-stack-test == 'true'
         with: {name: stack-lifecycle-evidence, path: stack-lifecycle-evidence}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: needs.plan.outputs.has-chart-lifecycle == 'true'
+        with: {pattern: chart-lifecycle-evidence-*, path: evidence, merge-multiple: true}
       - id: collect
         if: always()
         name: Normalize and validate required release evidence

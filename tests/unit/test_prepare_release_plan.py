@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -31,6 +32,53 @@ class PrepareReleasePlanTests(unittest.TestCase):
 
     def run_plan(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([str(ROOT / ".venv/bin/python"), str(SCRIPT), "--root", str(self.root), "--source-sha", self.sha, *args], text=True, capture_output=True, check=False)
+
+    def enable_chart_lifecycle(self, chart: str = "charts/workflows-scaffold") -> None:
+        name = Path(chart).name
+        fixture = self.root / f"tests/chart-lifecycle/{name}"
+        fixture.mkdir(parents=True, exist_ok=True)
+        (fixture / "previous.tgz").write_bytes(b"previous")
+        (fixture / "current.tgz").write_bytes(b"current")
+        assertion = fixture / "assert.sh"
+        assertion.write_text("#!/usr/bin/env bash\nexit 0\n")
+        assertion.chmod(0o755)
+        declaration = {
+            "schema": "inari.chart-test.v1",
+            "upgrade": {
+                "previousPackage": f"tests/chart-lifecycle/{name}/previous.tgz",
+                "currentPackage": f"tests/chart-lifecycle/{name}/current.tgz",
+                "timeout": "5m",
+                "assertions": f"tests/chart-lifecycle/{name}/assert.sh",
+            },
+        }
+        path = self.root / chart / "ci/test.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(declaration, sort_keys=False))
+
+    def test_chart_upgrade_adds_only_its_derived_required_lane(self) -> None:
+        result = self.run_plan("--rehearsal")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertFalse(plan.get("hasChartLifecycle", False))
+        self.assertFalse(any(lane.startswith("chart-lifecycle-") for lane in plan["requiredLanes"]))
+        self.enable_chart_lifecycle()
+        result = self.run_plan("--rehearsal")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertTrue(plan.get("hasChartLifecycle", False))
+        self.assertIn("chart-lifecycle-workflows-scaffold", plan["requiredLanes"])
+
+    def test_multiple_chart_upgrades_have_distinct_required_lanes(self) -> None:
+        self.enable_chart_lifecycle()
+        second = self.root / "charts/second"
+        shutil.copytree(self.root / "charts/workflows-scaffold", second)
+        (second / "Chart.yaml").write_text("apiVersion: v2\nname: second\nversion: 0.1.0\n")
+        self.enable_chart_lifecycle("charts/second")
+        result = self.run_plan("--rehearsal")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lanes = json.loads(result.stdout)["requiredLanes"]
+        self.assertIn("chart-lifecycle-workflows-scaffold", lanes)
+        self.assertIn("chart-lifecycle-second", lanes)
 
     def test_untagged_release_includes_all_components_and_lanes(self) -> None:
         result = self.run_plan()
@@ -225,7 +273,8 @@ class NonPluginRehearsalPlanTests(unittest.TestCase):
         self.assertTrue(plan["hasChart"])
         self.assertTrue(plan["hasPackages"])
         self.assertTrue(plan["hasSmoke"])
-        self.assertEqual(plan["requiredLanes"], ["validate", "package", "chart", "runtime-smoke"])
+        self.assertEqual(plan["requiredLanes"], ["validate", "package", "chart", "runtime-smoke", "chart-lifecycle-hiroba-nonplugin-smoke"])
+        self.assertTrue(plan["hasChartLifecycle"])
 
         config = json.loads((root / "release-please-config.json").read_text())
         manifest = json.loads((root / ".release-please-manifest.json").read_text())

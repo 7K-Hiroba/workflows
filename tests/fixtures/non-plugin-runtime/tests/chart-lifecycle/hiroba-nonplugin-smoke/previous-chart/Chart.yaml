@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hiroba-nonplugin-smoke
+description: Reviewed previous source for the CI-only chart lifecycle fixture
+type: application
+version: 0.0.9
+appVersion: "0.1.0"

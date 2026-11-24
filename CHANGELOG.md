@@ -1,12 +1,5 @@
 # Changelog
 
-## [2.1.0](https://github.com/7K-Hiroba/workflows/compare/v2.0.3...v2.1.0) (2026-11-24)
-
-
-### Features
-
-* add opt-in chart install-upgrade lifecycle ([#50](https://github.com/7K-Hiroba/workflows/issues/50)) ([c8392a5](https://github.com/7K-Hiroba/workflows/commit/c8392a5caaa9bb9d29a2525431d2cc6c2ee35b56))
-
 ## [2.0.3](https://github.com/7K-Hiroba/workflows/compare/v2.0.0...v2.0.3) (2026-11-23)
 
 

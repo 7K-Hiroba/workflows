@@ -13,4 +13,6 @@ Declare `releaseComponents` only for package, template, chart, or standalone-smo
 5. Require the stable `library CI / result` and `scaffold CI / result` checks after verifying the exact names on a completed PR run. Keep matrix summary names stable.
 6. Let Renovate propose workflow/action/chart/SDK updates; trusted workflow updates are manually reviewed.
 
+A non-stack-covered chart may independently opt into the strict same-release install→upgrade declaration in `docs/chart-testing.md`. This does not require or permit stack reclassification, runtime-smoke substitution, an extra kind cluster, or an install-only consumer migration. Existing charts remain install-only until they deliberately add reviewed previous/current packages and targeted assertions.
+
 The scaffold is a contract fixture, not a trusted app. Do not register its CI artifacts as a source. Real deployment and environment verification are separate tasks.

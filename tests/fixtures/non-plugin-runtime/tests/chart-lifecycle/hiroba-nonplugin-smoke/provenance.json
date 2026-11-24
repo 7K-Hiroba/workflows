@@ -1,0 +1,26 @@
+{
+  "generator": {
+    "archiveCanonicalization": "sorted members, normalized tar metadata, zero gzip mtime",
+    "command": "PYTHON=<workflow-python> HELM=<checksum-verified-pinned-helm> ./generate.sh",
+    "helmArchiveSha256": "ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd",
+    "helmVersion": "3.17.3",
+    "sourceFileMtimes": "unix-epoch"
+  },
+  "packages": [
+    {
+      "chartVersion": "0.0.9",
+      "file": "previous.tgz",
+      "phase": "install",
+      "sha256": "sha256:c3612f04ac1d62e1edbc4409ed61603c3b2a540e82d97fce8da7ee853d0a2afe",
+      "source": "tests/chart-lifecycle/hiroba-nonplugin-smoke/previous-chart"
+    },
+    {
+      "chartVersion": "0.1.0",
+      "file": "current.tgz",
+      "phase": "upgrade",
+      "sha256": "sha256:e132b21d48d57234f49fff57f4807840d5b564029eaf132cb53385d882984592",
+      "source": "charts/hiroba-nonplugin-smoke"
+    }
+  ],
+  "schema": "inari.chart-lifecycle-fixture-provenance.v1"
+}

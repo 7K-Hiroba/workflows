@@ -3,7 +3,7 @@ ACTIONLINT ?= $(shell go env GOPATH)/bin/actionlint
 SHA ?=
 OUT ?= /tmp/hiroba-scaffold
 
-.PHONY: setup lint unit test-negative test-scaffold test-stack-contract render-scaffold verify-evidence
+.PHONY: setup lint unit test-negative test-scaffold test-stack-contract test-chart-contract render-scaffold verify-evidence
 setup:
 	python3 -m venv .venv
 	.venv/bin/pip install --disable-pip-version-check -r requirements-dev.txt
@@ -30,6 +30,9 @@ test-scaffold:
 
 test-stack-contract:
 	$(PYTHON) -m unittest tests.unit.test_stack_testing tests.unit.test_stack_lifecycle_script tests.unit.test_stack_evidence
+
+test-chart-contract:
+	$(PYTHON) -m unittest tests.unit.test_chart_test_config tests.unit.test_chart_lifecycle_script tests.unit.test_chart_lifecycle_evidence tests.unit.test_chart_lifecycle_fixtures tests.unit.test_chart_release_evidence
 
 render-scaffold:
 	@test -n "$(SHA)" || (echo 'SHA is required' >&2; exit 2)

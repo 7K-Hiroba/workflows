@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +24,38 @@ from lib.names import bounded_resource_name
 
 def digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonicalize_package(source: Path, destination: Path) -> None:
+    """Normalize Helm's non-deterministic tar/gzip metadata without changing chart content."""
+    if source.resolve() == destination.resolve():
+        raise ValueError("canonical package input and output must differ")
+    with tarfile.open(source, "r:gz") as archive:
+        members = archive.getmembers()
+        if any(not (member.isfile() or member.isdir()) for member in members):
+            raise ValueError("chart package contains an unsupported non-regular member")
+        normalized = []
+        for member in sorted(members, key=lambda item: item.name):
+            path = Path(member.name)
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError("chart package contains an unsafe member path")
+            member.mtime = 0
+            member.uid = 0
+            member.gid = 0
+            member.uname = ""
+            member.gname = ""
+            member.pax_headers = {}
+            data = archive.extractfile(member).read() if member.isfile() else None
+            normalized.append((member, data))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("wb") as output:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=output, compresslevel=9, mtime=0) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                for member, data in normalized:
+                    if data is None:
+                        archive.addfile(member)
+                    else:
+                        archive.addfile(member, io.BytesIO(data))
 
 
 def package_metadata(path: Path) -> dict[str, Any]:
@@ -66,7 +101,9 @@ def preflight(root: Path, chart: str, config: dict[str, Any], work: Path) -> dic
     expected = destination / f"{chart_name}-{chart_version}.tgz"
     if not expected.is_file():
         raise ValueError("reproducible current chart package is missing")
-    if expected.read_bytes() != (root / upgrade["currentPackage"]).read_bytes():
+    canonical = work / "canonical-current.tgz"
+    canonicalize_package(expected, canonical)
+    if canonical.read_bytes() != (root / upgrade["currentPackage"]).read_bytes():
         raise ValueError("current package is not the reproducible package of reviewed chart source")
     return {"chartName": chart_name, "previous": previous, "current": current}
 
@@ -169,6 +206,9 @@ def finalize(path: Path, args: argparse.Namespace) -> None:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
+    canonical = commands.add_parser("canonicalize-package")
+    canonical.add_argument("--input", type=Path, required=True)
+    canonical.add_argument("--output", type=Path, required=True)
     preflight_parser = commands.add_parser("preflight")
     preflight_parser.add_argument("--root", type=Path, required=True)
     preflight_parser.add_argument("--chart", required=True)
@@ -210,7 +250,9 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = parser().parse_args()
     try:
-        if args.command == "preflight":
+        if args.command == "canonicalize-package":
+            canonicalize_package(args.input, args.output)
+        elif args.command == "preflight":
             config = json.loads(args.config.read_text(encoding="utf-8"))
             packages = preflight(args.root, args.chart, config, args.work)
             print(json.dumps(packages, separators=(",", ":"), sort_keys=True))

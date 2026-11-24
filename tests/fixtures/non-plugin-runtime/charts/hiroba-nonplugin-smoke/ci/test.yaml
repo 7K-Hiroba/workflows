@@ -4,3 +4,8 @@ install:
   timeout: 5m
   values:
     - charts/hiroba-nonplugin-smoke/ci/kind-values.yaml
+upgrade:
+  previousPackage: tests/chart-lifecycle/hiroba-nonplugin-smoke/previous.tgz
+  currentPackage: tests/chart-lifecycle/hiroba-nonplugin-smoke/current.tgz
+  timeout: 5m
+  assertions: tests/chart-lifecycle/hiroba-nonplugin-smoke/assert.sh

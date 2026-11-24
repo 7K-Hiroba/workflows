@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+from lib.chart_lifecycle import canonicalize_package  # noqa: E402
+
 RUNNER = ROOT / "scripts/run-chart-tests.sh"
 REAL_HELM = shutil.which("helm") or "/opt/bin/helm"
 
@@ -48,6 +52,11 @@ class ChartLifecycleScriptTests(unittest.TestCase):
             if path.is_file():
                 os.utime(path, (0, 0))
         subprocess.run([REAL_HELM, "package", str(source), "--destination", str(destination)], check=True, capture_output=True)
+        metadata = yaml.safe_load((source / "Chart.yaml").read_text())
+        raw = destination / f"{metadata['name']}-{metadata['version']}.tgz"
+        canonical = destination / f"{metadata['name']}-{metadata['version']}.canonical.tgz"
+        canonicalize_package(raw, canonical)
+        canonical.replace(raw)
 
     def make_chart(self) -> None:
         self.write("charts/example/Chart.yaml", "apiVersion: v2\nname: example\ndescription: lifecycle fixture\nversion: 0.1.0\n")

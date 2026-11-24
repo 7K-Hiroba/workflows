@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.metadata import SHA_RE, discover  # noqa: E402
 from lib.release_contract import release_tag  # noqa: E402
+from lib.chart_testing import lifecycle_lane, load as load_chart_test  # noqa: E402
 
 
 def tag_for(component: dict) -> str:
@@ -136,6 +137,16 @@ def main() -> int:
         required.append("runtime-smoke")
     if plan.get("hasStackTest") and publish_components:
         required.append("stack-lifecycle")
+    chart_lifecycle_lanes = []
+    for component in publish_components:
+        if component["kind"] != "chart":
+            continue
+        declaration = load_chart_test(root, component["path"])
+        if "upgrade" in declaration:
+            lane = lifecycle_lane(component["path"])
+            chart_lifecycle_lanes.append(lane)
+            if lane not in required:
+                required.append(lane)
     output = {
         **plan,
         "sourceSha": args.source_sha.lower(),
@@ -153,6 +164,7 @@ def main() -> int:
         "hasTemplates": "template" in kinds,
         "hasSmoke": "smoke" in kinds,
         "hasStackTest": bool(plan.get("hasStackTest")),
+        "hasChartLifecycle": bool(chart_lifecycle_lanes),
         "hasObservability": has_observability,
         "requiredLanes": required,
     }

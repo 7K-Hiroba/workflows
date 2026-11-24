@@ -48,9 +48,12 @@ jobs:
       - run: .hiroba/workflows/scripts/install-ci-tools.sh crane
       - id: evidence-plan
         run: |
-          python3 .hiroba/workflows/scripts/chart-release-evidence.py --root "consumer/${{ inputs.root }}" --standalone "${{ inputs.standalone }}" --required-lanes "${{ inputs.required-lanes }}" > evidence-plan.json
+          python3 .hiroba/workflows/scripts/chart-release-evidence.py --root "consumer/${{ inputs.root }}" --chart "${{ inputs.chart }}" --standalone "${{ inputs.standalone }}" --required-lanes "${{ inputs.required-lanes }}" > evidence-plan.json
           {
             echo "has-stack=$(jq -r .hasStackTest evidence-plan.json)"
+            echo "has-chart-lifecycle=$(jq -r .hasChartLifecycle evidence-plan.json)"
+            echo "chart-lifecycle-lane=$(jq -r .chartLifecycleLane evidence-plan.json)"
+            echo "chart-lifecycle-artifact=$(jq -r .chartLifecycleArtifact evidence-plan.json)"
             echo "required-lanes=$(jq -r .requiredLanes evidence-plan.json)"
           } >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -59,10 +62,14 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: inputs.standalone && steps.evidence-plan.outputs.has-stack == 'true'
         with: {name: stack-lifecycle-evidence, path: stack-lifecycle-evidence}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: inputs.standalone && steps.evidence-plan.outputs.has-chart-lifecycle == 'true'
+        with: {name: "${{ steps.evidence-plan.outputs.chart-lifecycle-artifact }}", path: chart-lifecycle-evidence}
       - name: Add exact-source chart and stack test results
         env:
           REQUIRED_LANES: "${{ steps.evidence-plan.outputs.required-lanes }}"
           STANDALONE: "${{ inputs.standalone }}"
+          CHART_LIFECYCLE_LANE: "${{ steps.evidence-plan.outputs.chart-lifecycle-lane }}"
         run: |
           mkdir -p evidence
           jq -n --arg sourceSha "${{ inputs.source-sha }}" '{schema:"inari.lane-result.v1",lane:"chart",status:"passed",sourceSha:$sourceSha}' > evidence/chart.json
@@ -73,6 +80,15 @@ jobs:
               cp "$source" evidence/stack-lifecycle.json
             else
               [[ -f evidence/stack-lifecycle.json ]] || { echo "missing aggregated release stack evidence: evidence/stack-lifecycle.json" >&2; exit 2; }
+            fi
+          fi
+          if [[ -n "$CHART_LIFECYCLE_LANE" ]]; then
+            if [[ "$STANDALONE" == true ]]; then
+              source="chart-lifecycle-evidence/${CHART_LIFECYCLE_LANE}.json"
+              [[ -f "$source" ]] || { echo "missing standalone chart lifecycle evidence: $source" >&2; exit 2; }
+              cp "$source" "evidence/${CHART_LIFECYCLE_LANE}.json"
+            else
+              [[ -f "evidence/${CHART_LIFECYCLE_LANE}.json" ]] || { echo "missing aggregated chart lifecycle evidence: ${CHART_LIFECYCLE_LANE}" >&2; exit 2; }
             fi
           fi
       - name: Log in to GHCR

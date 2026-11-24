@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -87,17 +87,83 @@ def validate_stack_lane(lane: dict[str, Any]) -> None:
         raise ValueError("stack-lifecycle total duration is invalid")
 
 
+def validate_chart_lifecycle_lane(lane: dict[str, Any]) -> None:
+    """Reject chart upgrade evidence that omits any security-relevant invariant."""
+    name = str(lane.get("lane", ""))
+    if not re.fullmatch(r"chart-lifecycle-[a-z0-9][a-z0-9-]*", name):
+        raise ValueError("invalid chart lifecycle lane name")
+    if lane.get("chartName") != name.removeprefix("chart-lifecycle-"):
+        raise ValueError("chart lifecycle chartName does not match its lane")
+    raw_chart_path = str(lane.get("chartPath", ""))
+    chart_path = PurePosixPath(raw_chart_path)
+    if not raw_chart_path or chart_path.is_absolute() or ".." in chart_path.parts:
+        raise ValueError("chart lifecycle chartPath must be consumer-relative")
+    if not str(lane.get("clusterName", "")):
+        raise ValueError("chart lifecycle cluster identity is required")
+    if lane.get("clusterCreateCount") != 1 or lane.get("clusterDeleteCount") != 1:
+        raise ValueError("chart lifecycle must create and delete exactly one cluster")
+    if lane.get("freshState") is not True:
+        raise ValueError("chart lifecycle cluster must be fresh")
+    if lane.get("cleanedUp") is not True:
+        raise ValueError("chart lifecycle cluster must be cleaned up")
+    if lane.get("functionalE2E") is not False or lane.get("deployedReadiness") != "not-tested":
+        raise ValueError("chart lifecycle cannot claim functional E2E or deployed readiness")
+    if lane.get("fixtureOnly") is not False:
+        raise ValueError("chart lifecycle fixtureOnly must be false")
+    if lane.get("evidenceScope") != "application":
+        raise ValueError("chart lifecycle evidenceScope must be application")
+    if lane.get("appEvidenceEligible") is not True:
+        raise ValueError("chart lifecycle must be application evidence eligible")
+    if not SHA_RE.fullmatch(str(lane.get("workflowSha", ""))):
+        raise ValueError("chart lifecycle workflowSha is missing or invalid")
+    if "prHeadSha" in lane and not SHA_RE.fullmatch(str(lane["prHeadSha"])):
+        raise ValueError("chart lifecycle prHeadSha is invalid")
+    if not str(lane.get("runId", "")) or not str(lane.get("runAttempt", "")):
+        raise ValueError("chart lifecycle run identity is required")
+    parse_time(str(lane.get("startedAt", "")))
+    parse_time(str(lane.get("finishedAt", "")))
+    if not isinstance(lane.get("totalDurationSeconds"), int) or lane["totalDurationSeconds"] < 0:
+        raise ValueError("chart lifecycle total duration is invalid")
+    phases = lane.get("phases")
+    if not isinstance(phases, list) or len(phases) != 2 or not all(isinstance(phase, dict) for phase in phases) or [phase.get("phase") for phase in phases] != ["install", "upgrade"]:
+        raise ValueError("chart lifecycle requires ordered install and upgrade phases")
+    for phase, expected_revision in zip(phases, (1, 2)):
+        if phase.get("status") != "passed":
+            raise ValueError("chart lifecycle phase must be passed")
+        if phase.get("converged") is not True:
+            raise ValueError("chart lifecycle phase must be converged")
+        if phase.get("assertions") != "passed":
+            raise ValueError("chart lifecycle targeted assertions must pass")
+        if phase.get("revision") != expected_revision:
+            raise ValueError("chart lifecycle Helm revision is invalid")
+        if phase.get("releaseName") != lane.get("releaseName") or not str(lane.get("releaseName", "")):
+            raise ValueError("chart lifecycle release name is not stable")
+        if phase.get("namespace") != lane.get("namespace") or lane.get("namespace") != "default":
+            raise ValueError("chart lifecycle namespace is not stable")
+        if phase.get("clusterName") != lane.get("clusterName"):
+            raise ValueError("chart lifecycle cluster is not stable")
+        if not str(phase.get("version", "")) or not DIGEST_RE.fullmatch(str(phase.get("packageDigest", ""))):
+            raise ValueError("chart lifecycle phase version/package digest is invalid")
+        if not isinstance(phase.get("durationSeconds"), int) or phase["durationSeconds"] < 0:
+            raise ValueError("chart lifecycle phase duration is invalid")
+    if phases[0]["version"] == phases[1]["version"]:
+        raise ValueError("chart lifecycle package versions must be distinct")
+    if phases[0]["packageDigest"] == phases[1]["packageDigest"]:
+        raise ValueError("chart lifecycle package content digests must be distinct")
+
+
 def validate_stack_lane_binding(lanes: list[dict[str, Any]], workflow_sha: str, run_id: str, run_attempt: str) -> None:
-    """Bind lifecycle evidence to the workflow run that is signing it."""
-    stack = next((lane for lane in lanes if lane.get("lane") == "stack-lifecycle"), None)
-    if stack is None:
-        return
-    if str(stack.get("workflowSha", "")).lower() != workflow_sha.lower():
-        raise ValueError("stack-lifecycle workflowSha does not match evidence producer")
-    if str(stack.get("runId", "")) != str(run_id):
-        raise ValueError("stack-lifecycle runId does not match evidence producer")
-    if str(stack.get("runAttempt", "")) != str(run_attempt):
-        raise ValueError("stack-lifecycle runAttempt does not match evidence producer")
+    """Bind stack and chart lifecycle evidence to the workflow run that signs it."""
+    for lane in lanes:
+        name = str(lane.get("lane", ""))
+        if name != "stack-lifecycle" and not name.startswith("chart-lifecycle-"):
+            continue
+        if str(lane.get("workflowSha", "")).lower() != workflow_sha.lower():
+            raise ValueError(f"{name} workflowSha does not match evidence producer")
+        if str(lane.get("runId", "")) != str(run_id):
+            raise ValueError(f"{name} runId does not match evidence producer")
+        if str(lane.get("runAttempt", "")) != str(run_attempt):
+            raise ValueError(f"{name} runAttempt does not match evidence producer")
 
 
 def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str) -> list[dict[str, Any]]:
@@ -136,6 +202,8 @@ def collect_lanes(evidence_dir: Path, required_lanes: set[str], source_sha: str)
             raise ValueError(f"{name} evidence sourceSha does not match artifact source")
         if name == "stack-lifecycle":
             validate_stack_lane(lane)
+        elif name.startswith("chart-lifecycle-"):
+            validate_chart_lifecycle_lane(lane)
         lane["required"] = name in required_lanes
         lanes[name] = lane
     missing = sorted(required_lanes - set(lanes))
@@ -311,6 +379,8 @@ def verify(
             raise ValueError(f"{name} lane sourceSha mismatch")
         if name == "stack-lifecycle":
             validate_stack_lane(lane)
+        elif name.startswith("chart-lifecycle-"):
+            validate_chart_lifecycle_lane(lane)
     validate_stack_lane_binding(lanes, workflow_sha, str(producer["runId"]), str(producer["runAttempt"]))
     policy = runtime_evidence_policy(lanes)
     for field, expected in policy.items():

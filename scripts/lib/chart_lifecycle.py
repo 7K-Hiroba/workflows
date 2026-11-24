@@ -94,6 +94,7 @@ def initial_state(packages: dict[str, Any], args: argparse.Namespace) -> dict[st
             "revision": 0,
             "releaseName": release,
             "namespace": "default",
+            "clusterName": args.cluster,
             "durationSeconds": 0,
         })
     state = {

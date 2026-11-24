@@ -188,15 +188,16 @@ fi
             args += ["--repair", "true"]
         return subprocess.run(args, env=self.env, text=True, capture_output=True, check=False)
 
-    def run_evidence_step(self, standalone: bool) -> subprocess.CompletedProcess[str]:
+    def run_evidence_step(self, standalone: bool, chart_lifecycle: bool = False) -> subprocess.CompletedProcess[str]:
         workflow = yaml.safe_load((ROOT / ".github/workflows/release-chart.yml").read_text())
         step = next(step for step in workflow["jobs"]["publish"]["steps"] if step.get("name") == "Add exact-source chart and stack test results")
         self.evidence_step = step
         script = step["run"].replace("${{ inputs.source-sha }}", "a" * 40)
         env = {
             **os.environ,
-            "REQUIRED_LANES": "chart stack-lifecycle",
+            "REQUIRED_LANES": "chart chart-lifecycle-example" if chart_lifecycle else "chart stack-lifecycle",
             "STANDALONE": str(standalone).lower(),
+            "CHART_LIFECYCLE_LANE": "chart-lifecycle-example" if chart_lifecycle else "",
         }
         return subprocess.run(["bash", "-c", script], cwd=self.root, env=env, text=True, capture_output=True, check=False)
 
@@ -226,6 +227,33 @@ fi
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("stack-lifecycle", result.stdout + result.stderr)
                 self.assertFalse((self.root / "evidence/artifact-chart-example.json").exists())
+
+    def test_nonstandalone_chart_publish_uses_aggregated_chart_lifecycle_artifact(self) -> None:
+        evidence = self.root / "evidence"
+        evidence.mkdir()
+        expected = '{"lane":"chart-lifecycle-example","source":"actual-artifact"}\n'
+        (evidence / "chart-lifecycle-example.json").write_text(expected)
+        result = self.run_evidence_step(False, chart_lifecycle=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((evidence / "chart-lifecycle-example.json").read_text(), expected)
+
+    def test_standalone_chart_publish_copies_chart_lifecycle_artifact(self) -> None:
+        artifact = self.root / "chart-lifecycle-evidence"
+        artifact.mkdir(parents=True)
+        expected = '{"lane":"chart-lifecycle-example","source":"standalone-artifact"}\n'
+        (artifact / "chart-lifecycle-example.json").write_text(expected)
+        result = self.run_evidence_step(True, chart_lifecycle=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.root / "evidence/chart-lifecycle-example.json"
+        self.assertTrue(output.exists())
+        self.assertEqual(output.read_text(), expected)
+
+    def test_chart_publish_rejects_missing_chart_lifecycle_artifact(self) -> None:
+        for standalone in (False, True):
+            with self.subTest(standalone=standalone):
+                result = self.run_evidence_step(standalone, chart_lifecycle=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("chart-lifecycle", result.stdout + result.stderr)
 
     def test_pushes_chart_and_records_digest(self) -> None:
         result = self.run_chart()

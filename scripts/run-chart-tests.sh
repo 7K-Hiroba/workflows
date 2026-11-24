@@ -26,7 +26,6 @@ CLUSTER_CREATE_COUNT=0
 CLUSTER_DELETE_COUNT=0
 CLEANED_UP=true
 LIFECYCLE=false
-CURRENT_PHASE=setup
 RELEASE_NAME=""
 CHART_NAME=""
 STARTED=$(date +%s)
@@ -163,7 +162,6 @@ verify_release() {
 
 run_lifecycle_phase() {
   local phase=$1 label=$2 revision=$3 timeout=$4 package version package_digest
-  CURRENT_PHASE=$phase
   PHASE_STARTED[$phase]=$(date +%s)
   package=$(jq -r --arg slot "$label" '.[$slot].path' "$PACKAGES")
   version=$(jq -r --arg slot "$label" '.[$slot].version' "$PACKAGES")
@@ -198,7 +196,6 @@ if [[ "$LIFECYCLE" == true ]]; then
   run_lifecycle_phase install previous 1 "$install_timeout"
   run_lifecycle_phase upgrade current 2 "$upgrade_timeout"
   lifecycle_py verify-unchanged --packages "$PACKAGES"
-  CURRENT_PHASE=complete
 else
   timeout=$(jq -r .install.timeout "$WORK/chart-test.json")
   ct install --config "$ROOT/ci/ct.yaml" --charts "$ROOT/$CHART" --helm-extra-args "--timeout $timeout"

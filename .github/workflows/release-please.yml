@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           [[ "$ROOT" == . ]] || { echo "release-please requires repository root" >&2; exit 2; }
           python3 .hiroba/workflows/scripts/sync-release-please-config.py --root consumer
-          if git -C consumer diff --quiet -- release-please-config.json .release-please-manifest.json; then
+          if git -C consumer diff --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -52,7 +52,7 @@ jobs:
           git -C consumer checkout -b "$branch"
           git -C consumer config user.name "hiroba-release[bot]"
           git -C consumer config user.email "hiroba-release[bot]@users.noreply.github.com"
-          git -C consumer add release-please-config.json .release-please-manifest.json
+          git -C consumer add -u
           git -C consumer commit -m "chore: sync release-please components"
           git -C consumer push origin "HEAD:refs/heads/$branch"
           existing=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number')

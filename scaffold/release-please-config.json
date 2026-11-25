@@ -30,7 +30,13 @@
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
-        "../extension.yaml"
+        "../extension.yaml",
+        "extension.go",
+        {
+          "type": "yaml",
+          "path": "/.hiroba.yaml",
+          "jsonpath": "$.components.extension.version"
+        }
       ]
     },
     "packages/observability-pack": {
@@ -55,7 +61,15 @@
       "release-type": "node",
       "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "src/index.tsx",
+        {
+          "type": "yaml",
+          "path": "/.hiroba.yaml",
+          "jsonpath": "$.components.ui.version"
+        }
+      ]
     },
     "charts/workflows-scaffold": {
       "release-type": "simple",

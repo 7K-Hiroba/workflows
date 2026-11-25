@@ -9,7 +9,7 @@ import (
 
 const (
 	Name    = "workflows-scaffold"
-	Version = "0.1.0"
+	Version = "0.1.0" // x-release-please-version
 )
 
 // New returns the extension with its single read-only action.

@@ -8,12 +8,49 @@ from pathlib import Path
 
 import yaml
 
-from tests.unit.test_validate_repository import make_valid_repo, use_fixture_only_smoke
+from tests.unit.test_validate_repository import make_valid_repo, use_fixture_only_smoke, write
 
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 if not PYTHON.exists():
     PYTHON = Path("python3")
+
+BACKEND_VERSION = "extension/internal/extplugin/version.go"
+UI_VERSION = "ui/src/index.tsx"
+BACKEND_YAML_EXTRA = {"type": "yaml", "path": "/.hiroba.yaml", "jsonpath": "$.components.extension.version"}
+UI_YAML_EXTRA = {"type": "yaml", "path": "/.hiroba.yaml", "jsonpath": "$.components.ui.version"}
+
+
+def run_script(root: Path, name: str, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(PYTHON), str(ROOT / "scripts" / name), "--root", str(root), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def write_marked_versions(root: Path, backend: str = "0.1.0", ui: str = "0.1.0") -> None:
+    write(root, BACKEND_VERSION, f'package extplugin\n\nconst Version = "{backend}" // x-release-please-version\n')
+    write(root, UI_VERSION, f"export default createExtension({{\n  manifest: {{\n    version: '{ui}', // x-release-please-version\n  }},\n}});\n")
+
+
+def set_component_versions(root: Path, backend: str | None = None, ui: str | None = None) -> None:
+    path = root / ".hiroba.yaml"
+    config = yaml.safe_load(path.read_text())
+    if backend is not None:
+        config["components"]["extension"]["version"] = backend
+    if ui is not None:
+        config["components"]["ui"]["version"] = ui
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+
+
+def tree_bytes(root: Path) -> dict[str, bytes]:
+    return {str(path.relative_to(root)): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+def changed_paths(before: dict[str, bytes], after: dict[str, bytes]) -> set[str]:
+    return {path for path in before.keys() | after.keys() if before.get(path) != after.get(path)}
 
 
 class ReleaseMetadataTests(unittest.TestCase):
@@ -26,12 +63,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.temp.cleanup()
 
     def run_script(self, name: str, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [str(PYTHON), str(ROOT / "scripts" / name), "--root", str(self.root), *args],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        return run_script(self.root, name, *args)
 
     def test_discovers_all_components_and_target_scoped_smoke(self) -> None:
         result = self.run_script("discover-components.py", "--all")
@@ -246,6 +278,199 @@ class ReleaseMetadataTests(unittest.TestCase):
         drift = self.run_script("sync-release-please-config.py", "--check")
         self.assertNotEqual(drift.returncode, 0)
         self.assertEqual((self.root / "release-please-config.json").read_text(), "{}\n")
+
+
+class MarkedReleaseVersionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        make_valid_repo(self.root)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def sync(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return run_script(self.root, "sync-release-please-config.py", *args)
+
+    def test_current_versions_are_noop_and_extras_are_additive_and_idempotent(self) -> None:
+        write_marked_versions(self.root)
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = json.loads((self.root / "release-please-config.json").read_text())
+        extension = config["packages"]["extension"]
+        ui = config["packages"]["ui"]
+        self.assertEqual(extension["release-type"], "go")
+        self.assertEqual(ui["release-type"], "node")
+        self.assertEqual(extension["extra-files"], ["../extension.yaml", "internal/extplugin/version.go", BACKEND_YAML_EXTRA])
+        self.assertEqual(ui["extra-files"], ["src/index.tsx", UI_YAML_EXTRA])
+        self.assertNotIn("plugins", config)
+        for package in config["packages"].values():
+            self.assertNotIn("release-as", package)
+
+        before = tree_bytes(self.root)
+        repeated = self.sync()
+        self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+        self.assertEqual(tree_bytes(self.root), before)
+        checked = self.sync("--check")
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertEqual(tree_bytes(self.root), before)
+
+    def test_next_versions_update_backend_and_ui_independently(self) -> None:
+        write_marked_versions(self.root)
+        self.assertEqual(self.sync().returncode, 0)
+
+        set_component_versions(self.root, backend="0.1.2")
+        backend_only = self.sync()
+        self.assertEqual(backend_only.returncode, 0, backend_only.stdout + backend_only.stderr)
+        self.assertIn('const Version = "0.1.2"', (self.root / BACKEND_VERSION).read_text())
+        self.assertIn("version: '0.1.0'", (self.root / UI_VERSION).read_text())
+        manifest = json.loads((self.root / ".release-please-manifest.json").read_text())
+        self.assertEqual(manifest["extension"], "0.1.2")
+        self.assertEqual(manifest["ui"], "0.1.0")
+
+        set_component_versions(self.root, ui="0.4.0")
+        yaml_before = yaml.safe_load((self.root / ".hiroba.yaml").read_text())
+        before = tree_bytes(self.root)
+        ui_only = self.sync()
+        self.assertEqual(ui_only.returncode, 0, ui_only.stdout + ui_only.stderr)
+        self.assertIn('const Version = "0.1.2"', (self.root / BACKEND_VERSION).read_text())
+        self.assertIn("version: '0.4.0'", (self.root / UI_VERSION).read_text())
+        manifest = json.loads((self.root / ".release-please-manifest.json").read_text())
+        self.assertEqual(manifest["extension"], "0.1.2")
+        self.assertEqual(manifest["ui"], "0.4.0")
+        self.assertNotEqual(manifest["extension"], manifest["ui"])
+        self.assertEqual(changed_paths(before, tree_bytes(self.root)), {UI_VERSION, ".release-please-manifest.json"})
+        self.assertEqual(yaml.safe_load((self.root / ".hiroba.yaml").read_text()), yaml_before)
+        self.assertEqual(self.sync("--check").returncode, 0)
+
+    def test_version_updates_preserve_source_formatting_and_final_newline_state(self) -> None:
+        write(
+            self.root,
+            BACKEND_VERSION,
+            'package extplugin\n\nconst (\n\tName = "example"\n\tVersion = "0.1.0" // x-release-please-version\n)',
+        )
+        write(
+            self.root,
+            UI_VERSION,
+            'export default createExtension({\n  manifest: {\n    // retain this comment\n    version: "0.1.0", // x-release-please-version\n  },\n});',
+        )
+        set_component_versions(self.root, backend="0.2.0", ui="0.3.0")
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            (self.root / BACKEND_VERSION).read_bytes(),
+            b'package extplugin\n\nconst (\n\tName = "example"\n\tVersion = "0.2.0" // x-release-please-version\n)',
+        )
+        self.assertEqual(
+            (self.root / UI_VERSION).read_bytes(),
+            b'export default createExtension({\n  manifest: {\n    // retain this comment\n    version: "0.3.0", // x-release-please-version\n  },\n});',
+        )
+
+    def test_manual_source_drift_fails_check_and_repairs_only_that_file(self) -> None:
+        write_marked_versions(self.root)
+        self.assertEqual(self.sync().returncode, 0)
+        path = self.root / BACKEND_VERSION
+        path.write_text(path.read_text().replace('Version = "0.1.0"', 'Version = "9.9.9"'))
+        before = tree_bytes(self.root)
+        drift = self.sync("--check")
+        self.assertNotEqual(drift.returncode, 0)
+        self.assertIn(BACKEND_VERSION, drift.stdout + drift.stderr)
+        self.assertEqual(tree_bytes(self.root), before)
+
+        repaired = self.sync()
+        self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+        self.assertEqual(changed_paths(before, tree_bytes(self.root)), {BACKEND_VERSION})
+        self.assertEqual(self.sync("--check").returncode, 0)
+
+        manifest_path = self.root / ".release-please-manifest.json"
+        manifest_path.write_text("{}\n")
+        before = tree_bytes(self.root)
+        manifest_drift = self.sync("--check")
+        self.assertNotEqual(manifest_drift.returncode, 0)
+        self.assertEqual(tree_bytes(self.root), before)
+
+    def test_legacy_unmarked_sources_remain_unmanaged(self) -> None:
+        write(self.root, BACKEND_VERSION, 'package extplugin\n\nconst Version = "9.9.9"\n')
+        write(self.root, UI_VERSION, "export default {manifest: {version: '8.8.8'}};\n")
+        before_backend = (self.root / BACKEND_VERSION).read_bytes()
+        before_ui = (self.root / UI_VERSION).read_bytes()
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = json.loads((self.root / "release-please-config.json").read_text())
+        self.assertEqual(config["packages"]["extension"]["extra-files"], ["../extension.yaml", BACKEND_YAML_EXTRA])
+        self.assertEqual(config["packages"]["ui"]["extra-files"], [UI_YAML_EXTRA])
+        self.assertEqual((self.root / BACKEND_VERSION).read_bytes(), before_backend)
+        self.assertEqual((self.root / UI_VERSION).read_bytes(), before_ui)
+
+    def test_malformed_marked_declarations_fail_without_any_writes(self) -> None:
+        cases = {
+            "missing_value": (BACKEND_VERSION, b'package extplugin\n\nconst Version = "" // x-release-please-version\n'),
+            "wrong_declaration": (BACKEND_VERSION, b'package extplugin\n\nconst Other = "0.1.0" // x-release-please-version\n'),
+            "ambiguous_declarations": (
+                BACKEND_VERSION,
+                b'package extplugin\n\nconst Version = "0.1.0" // x-release-please-version\nconst Version = "0.2.0" // x-release-please-version\n',
+            ),
+            "invalid_semver": (UI_VERSION, b"export default {manifest: {version: 'latest', // x-release-please-version\n}};\n"),
+            "invalid_utf8": (BACKEND_VERSION, b'package extplugin\n\nconst Version = "0.1.0" // x-release-please-version\n\xff'),
+        }
+        for name, (relative, content) in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                make_valid_repo(root)
+                write_marked_versions(root)
+                path = root / relative
+                path.write_bytes(content)
+                before = tree_bytes(root)
+                result = run_script(root, "sync-release-please-config.py")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(tree_bytes(root), before)
+
+    def test_missing_or_invalid_canonical_versions_fail_without_writes(self) -> None:
+        for kind in ("extension", "ui"):
+            for invalid in (None, "not-semver"):
+                with self.subTest(kind=kind, invalid=invalid), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    make_valid_repo(root)
+                    write_marked_versions(root)
+                    path = root / ".hiroba.yaml"
+                    config = yaml.safe_load(path.read_text())
+                    if invalid is None:
+                        del config["components"][kind]["version"]
+                    else:
+                        config["components"][kind]["version"] = invalid
+                    path.write_text(yaml.safe_dump(config, sort_keys=False))
+                    before = tree_bytes(root)
+                    result = run_script(root, "sync-release-please-config.py")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(tree_bytes(root), before)
+
+    def test_previously_managed_file_cannot_disappear_or_lose_its_marker(self) -> None:
+        for mutation in ("delete", "unmark"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                make_valid_repo(root)
+                write_marked_versions(root)
+                self.assertEqual(run_script(root, "sync-release-please-config.py").returncode, 0)
+                path = root / BACKEND_VERSION
+                if mutation == "delete":
+                    path.unlink()
+                else:
+                    path.write_text(path.read_text().replace(" // x-release-please-version", ""))
+                before = tree_bytes(root)
+                result = run_script(root, "sync-release-please-config.py")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(tree_bytes(root), before)
+
+    def test_malformed_ui_prevents_partial_backend_and_manifest_writes(self) -> None:
+        write_marked_versions(self.root)
+        self.assertEqual(self.sync().returncode, 0)
+        set_component_versions(self.root, backend="0.1.2")
+        path = self.root / UI_VERSION
+        path.write_text(path.read_text().replace(" // x-release-please-version", ""))
+        before = tree_bytes(self.root)
+        result = self.sync()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(tree_bytes(self.root), before)
 
 
 if __name__ == "__main__":

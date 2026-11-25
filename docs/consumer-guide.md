@@ -13,6 +13,14 @@ Declare `releaseComponents` only for package, template, chart, or standalone-smo
 5. Require the stable `library CI / result` and `scaffold CI / result` checks after verifying the exact names on a completed PR run. Keep matrix summary names stable.
 6. Let Renovate propose workflow/action/chart/SDK updates; trusted workflow updates are manually reviewed.
 
+## Backend and UI release versions
+
+`components.extension.version` and `components.ui.version` in `.hiroba.yaml` are the canonical current-version inputs. The release-please manifest is generated from them, and backend and UI versions remain independent: a backend release must not select the UI version, and a UI release must not select the backend version. Never add a shared version, `release-as`, or linked-versions override to force them to match.
+
+Opt runtime source declarations into synchronization by putting `x-release-please-version` on the exact version line, for example `Version = "0.1.0" // x-release-please-version` in Go or `version: '0.1.0', // x-release-please-version` in TS/TSX. The generator discovers marked Go, TypeScript, and TSX files below the configured component roots; legacy unmarked files remain unmanaged. It preserves all source formatting outside the version token and preflights every declaration before writing. Missing, malformed, ambiguous, or previously managed declarations that disappear fail closed without partial writes.
+
+Run `scripts/sync-release-please-config.py --root <consumer>` after changing canonical metadata instead of hand-editing generated declarations. CI runs the same generator with `--check`, which reports drift without writing. The generated `extra-files` let release-please update marked source files and the exact `.hiroba.yaml` component nodes on Release PRs while retaining the existing native extension, package, lockfile, chart, and changelog updates. Release-please alone selects next versions. Its targeted YAML updater may normalize `.hiroba.yaml` presentation; unrelated YAML content must remain semantically unchanged.
+
 A non-stack-covered chart may independently opt into the strict same-release install→upgrade declaration in `docs/chart-testing.md`. This does not require or permit stack reclassification, runtime-smoke substitution, an extra kind cluster, or an install-only consumer migration. Existing charts remain install-only until they deliberately add reviewed previous/current packages and targeted assertions.
 
 The scaffold is a contract fixture, not a trusted app. Do not register its CI artifacts as a source. Real deployment and environment verification are separate tasks.

@@ -722,6 +722,22 @@ class WorkflowContractTests(unittest.TestCase):
         consumer_groups = [yaml.safe_load(path.read_text())["concurrency"]["group"] for path in paths[:3]]
         self.assertEqual(len(set(consumer_groups)), 1)
 
+    def test_release_sync_stages_every_tracked_generated_output(self) -> None:
+        path = WORKFLOWS / "release-please.yml"
+        reusable = yaml.safe_load(path.read_text())
+        sync = next(step for step in reusable["jobs"]["propose"]["steps"] if step.get("id") == "sync")
+        script = sync["run"]
+        self.assertIn("if git -C consumer diff --quiet; then", script)
+        self.assertIn("git -C consumer add -u", script)
+        self.assertNotIn("diff --quiet -- release-please-config.json", script)
+        self.assertNotIn("git -C consumer add release-please-config.json", script)
+        self.assertNotIn("git -C consumer add -A", script)
+        self.assertNotIn("git -C consumer add .", script)
+        self.assertEqual(reusable["jobs"]["propose"]["permissions"], {"contents": "write", "pull-requests": "write"})
+        text = path.read_text()
+        self.assertNotIn("pull_request_target", text)
+        self.assertNotIn("secrets: inherit", text)
+
     def test_library_release_please_uses_static_manifest_mode(self) -> None:
         library = yaml.safe_load((WORKFLOWS / "library-release-please.yml").read_text())
         self.assertIs(library["jobs"]["propose"]["with"]["library-mode"], True)

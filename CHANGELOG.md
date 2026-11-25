@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/7K-Hiroba/workflows/compare/v2.1.0...v2.1.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* synchronize extension UI release versions ([#56](https://github.com/7K-Hiroba/workflows/issues/56)) ([190f0f0](https://github.com/7K-Hiroba/workflows/commit/190f0f00c9536b0715054e4c75a6ccdfa4f783f9))
+
 ## [2.1.0](https://github.com/7K-Hiroba/workflows/compare/v2.0.3...v2.1.0) (2026-11-24)
 
 

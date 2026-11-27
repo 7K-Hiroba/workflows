@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/7K-Hiroba/workflows/compare/v2.1.1...v2.1.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* correct release-please identity generation for independent component/tag identities ([#58](https://github.com/7K-Hiroba/workflows/issues/58)) ([ad52e23](https://github.com/7K-Hiroba/workflows/commit/ad52e23f805712c001e3631feb4d0906f3719f1c))
+
 ## [2.1.1](https://github.com/7K-Hiroba/workflows/compare/v2.1.0...v2.1.1) (2026-11-25)
 
 

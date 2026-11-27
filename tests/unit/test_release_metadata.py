@@ -422,7 +422,7 @@ class MarkedReleaseVersionTests(unittest.TestCase):
         self.assertEqual((self.root / UI_VERSION).read_bytes(), before_ui)
 
     def test_invalid_root_extension_markers_fail_without_any_writes(self) -> None:
-        for case in ("missing-file", "missing-marker", "duplicate-marker", "malformed-marker"):
+        for case in ("missing-file", "missing-marker", "duplicate-marker", "malformed-marker", "invalid-utf8"):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 make_valid_repo(root)
@@ -434,6 +434,8 @@ class MarkedReleaseVersionTests(unittest.TestCase):
                     path.write_text(path.read_text().replace(" # x-release-please-version", ""))
                 elif case == "duplicate-marker":
                     path.write_text(path.read_text() + "version: 0.2.0 # x-release-please-version\n")
+                elif case == "invalid-utf8":
+                    path.write_bytes(path.read_bytes() + b"\xff")
                 else:
                     path.write_text(path.read_text().replace("version: 0.1.0", "version: latest"))
                 before = tree_bytes(root)
@@ -441,6 +443,8 @@ class MarkedReleaseVersionTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("extension.yaml", result.stdout + result.stderr)
                 self.assertIn("x-release-please-version", result.stdout + result.stderr)
+                if case == "invalid-utf8":
+                    self.assertIn("valid UTF-8", result.stdout + result.stderr)
                 self.assertEqual(tree_bytes(root), before)
 
     def test_malformed_marked_declarations_fail_without_any_writes(self) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 if not PYTHON.exists():
     PYTHON = Path("python3")
+sys.path.insert(0, str(ROOT / "scripts"))
+from lib.metadata import validate_release_identities  # noqa: E402
 
 
 class LegacyReleaseIdentityTests(unittest.TestCase):
@@ -90,6 +93,45 @@ class LegacyReleaseIdentityTests(unittest.TestCase):
                 package = self.config()["packages"][f"packages/{name}"]
                 self.assertEqual(package.get("component"), name)
                 self.assertIs(package["include-v-in-tag"], False)
+                for ref in (
+                    f"refs/tags/{name}-v0.1.0",
+                    f"refs/heads/release-please--branches--main--components--{name}",
+                ):
+                    checked = subprocess.run(["git", "check-ref-format", ref], check=False, capture_output=True)
+                    self.assertEqual(checked.returncode, 0, ref)
+
+    def test_direct_collision_matrix_is_kind_and_version_independent(self) -> None:
+        def component(kind: str, name: str, version: str, release_component: str | None = None) -> dict:
+            value = {
+                "kind": kind,
+                "name": name,
+                "path": kind if kind in {"extension", "ui"} else f"{kind}s/{name}",
+                "version": version,
+            }
+            if kind == "smoke":
+                value["fixtureOnly"] = True
+            if release_component:
+                value["releaseComponent"] = release_component
+            return value
+
+        cases = []
+        for left, right in (("chart", "package"), ("chart", "template"), ("package", "template")):
+            cases.append((f"{left}-{right}", component(left, "shared", "0.1.0"), component(right, "shared", "0.2.0")))
+        cases.extend([
+            ("legacy-fixed-extension", component("extension", "extension", "0.1.0"), component("package", "extension", "0.2.0")),
+            ("legacy-fixed-ui", component("ui", "ui", "0.1.0"), component("package", "ui", "0.2.0")),
+            ("explicit-fixed-extension", component("extension", "extension", "0.1.0"), component("package", "app", "0.2.0", "extension")),
+            ("explicit-fixed-ui", component("ui", "ui", "0.1.0"), component("chart", "app", "0.2.0", "ui")),
+            ("standalone-explicit", component("smoke", "shared", "0.1.0"), component("package", "app", "0.2.0", "shared")),
+            ("explicit-explicit", component("package", "app", "0.1.0", "shared"), component("template", "service", "0.2.0", "shared")),
+        ])
+        for name, left, right in cases:
+            for versions in ("same", "different"):
+                with self.subTest(name=name, versions=versions):
+                    if versions == "same":
+                        right["version"] = left["version"]
+                    with self.assertRaisesRegex(ValueError, "duplicate release components"):
+                        validate_release_identities([left, right])
 
     def test_invalid_legacy_names_fail_without_writes(self) -> None:
         for name in ("bad..name", "bad--components--name", "-bad", "bad@name", "bad name", "bad.", "bad.lock"):

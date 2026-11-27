@@ -125,11 +125,16 @@ class LegacyReleaseIdentityTests(unittest.TestCase):
             ("standalone-explicit", component("smoke", "shared", "0.1.0"), component("package", "app", "0.2.0", "shared")),
             ("explicit-explicit", component("package", "app", "0.1.0", "shared"), component("template", "service", "0.2.0", "shared")),
         ])
-        for name, left, right in cases:
+        for name, left_template, right_template in cases:
             for versions in ("same", "different"):
                 with self.subTest(name=name, versions=versions):
+                    left = dict(left_template)
+                    right = dict(right_template)
                     if versions == "same":
                         right["version"] = left["version"]
+                        self.assertEqual(left["version"], right["version"])
+                    else:
+                        self.assertNotEqual(left["version"], right["version"])
                     with self.assertRaisesRegex(ValueError, "duplicate release components"):
                         validate_release_identities([left, right])
 
@@ -172,33 +177,73 @@ class LegacyReleaseIdentityTests(unittest.TestCase):
                 self.assertEqual(config["packages"]["charts/workflows-scaffold"].get("component"), "chart-workflows-scaffold")
                 self.assertEqual(config["packages"]["packages/workflows-scaffold"].get("component"), "package-workflows-scaffold")
 
-    def test_fixed_explicit_and_standalone_smoke_collisions_fail_without_writes(self) -> None:
+    def test_sync_collision_matrix_is_version_independent_and_writes_nothing(self) -> None:
+        chart = "charts/workflows-scaffold/Chart.yaml"
+        app = "packages/app/package.yaml"
+        template = "templates/service/template.yaml"
+        suite = "tests/smoke/suite.yaml"
         cases = (
-            ("fixed-explicit", {"packages/app": "extension"}, False),
-            ("fixed-explicit-different-version", {"packages/app": "extension"}, True),
-            ("explicit-explicit", {"packages/app": "package-shared", "packages/observability-pack": "package-shared"}, False),
-            ("explicit-explicit-different-version", {"packages/app": "package-shared", "packages/observability-pack": "package-shared"}, True),
+            ("chart-package", "chart-package", chart, "packages/workflows-scaffold/package.yaml"),
+            ("chart-template", "chart-template", chart, template),
+            ("package-template", "package-template", "packages/service/package.yaml", template),
+            ("legacy-fixed-extension", "legacy-extension", ".hiroba.yaml", "packages/extension/package.yaml"),
+            ("legacy-fixed-ui", "legacy-ui", ".hiroba.yaml", "packages/ui/package.yaml"),
+            ("explicit-fixed-extension", "explicit-extension", ".hiroba.yaml", app),
+            ("explicit-fixed-ui", "explicit-ui", ".hiroba.yaml", app),
+            ("standalone-explicit", "standalone-explicit", suite, app),
+            ("explicit-explicit", "explicit-explicit", app, "packages/observability-pack/package.yaml"),
+            ("standalone-smoke", "standalone-smoke", suite, "packages/workflows-scaffold-smoke/package.yaml"),
         )
-        for name, mappings, different_versions in cases:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
-                self.root = Path(tmp)
-                make_valid_repo(self.root)
-                if different_versions:
-                    package = self.root / "packages/app/package.yaml"
-                    package.write_text(package.read_text().replace("version: 0.1.0", "version: 0.2.0"))
-                self.release_components(mappings)
-                self.assert_sync_fails_without_writes()
+        for name, setup, left_path, right_path in cases:
+            for different_versions in (False, True):
+                with self.subTest(name=name, different_versions=different_versions), tempfile.TemporaryDirectory() as tmp:
+                    self.root = Path(tmp)
+                    make_valid_repo(self.root)
+                    if setup == "chart-package":
+                        self.rename_package("workflows-scaffold")
+                    elif setup == "chart-template":
+                        path = self.root / chart
+                        path.write_text(path.read_text().replace("name: workflows-scaffold", "name: service"))
+                    elif setup == "package-template":
+                        self.rename_package("service")
+                    elif setup == "legacy-extension":
+                        self.rename_package("extension")
+                    elif setup == "legacy-ui":
+                        self.rename_package("ui")
+                    elif setup == "explicit-extension":
+                        self.release_components({"packages/app": "extension"})
+                    elif setup == "explicit-ui":
+                        self.release_components({"packages/app": "ui"})
+                    elif setup == "standalone-explicit":
+                        use_fixture_only_smoke(self.root)
+                        self.release_components({"tests/smoke": "shared", "packages/app": "shared"})
+                    elif setup == "explicit-explicit":
+                        self.release_components({"packages/app": "shared", "packages/observability-pack": "shared"})
+                    else:
+                        use_fixture_only_smoke(self.root)
+                        self.rename_package("workflows-scaffold-smoke")
+                    if different_versions:
+                        path = self.root / right_path
+                        original = path.read_text()
+                        updated = original.replace("version: 0.1.0", "version: 0.2.0", 1)
+                        self.assertNotEqual(original, updated)
+                        path.write_text(updated)
 
-        for different_versions in (False, True):
-            with self.subTest(kind="standalone-smoke", different_versions=different_versions), tempfile.TemporaryDirectory() as tmp:
-                self.root = Path(tmp)
-                make_valid_repo(self.root)
-                use_fixture_only_smoke(self.root)
-                self.rename_package("workflows-scaffold-smoke")
-                if different_versions:
-                    package = self.root / "packages/workflows-scaffold-smoke/package.yaml"
-                    package.write_text(package.read_text().replace("version: 0.1.0", "version: 0.2.0"))
-                self.assert_sync_fails_without_writes()
+                    def version(relative: str) -> str:
+                        data = yaml.safe_load((self.root / relative).read_text())
+                        if relative == ".hiroba.yaml":
+                            kind = "ui" if "ui" in name else "extension"
+                            return str(data["components"][kind]["version"])
+                        if relative == suite:
+                            return str(data["target"]["version"])
+                        return str(data["version"])
+
+                    if different_versions:
+                        self.assertNotEqual(version(left_path), version(right_path))
+                    else:
+                        self.assertEqual(version(left_path), version(right_path))
+                    result = self.assert_sync_fails_without_writes()
+                    self.assertIn("duplicate release components", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

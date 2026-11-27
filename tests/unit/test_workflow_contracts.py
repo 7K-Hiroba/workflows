@@ -860,6 +860,33 @@ exit 2
                     else:
                         self.assertNotEqual(result.returncode, 0)
 
+    def test_trusted_publishing_documents_exact_r_guarded_signing_dispatch(self) -> None:
+        documentation = (ROOT / "docs/trusted-publishing.md").read_text()
+        heading = "## Guarded protected library signing dispatch"
+        self.assertIn(heading, documentation)
+        section = documentation.split(heading, 1)[1]
+        match = re.search(r"```sh\n(.*?)```", section, re.DOTALL)
+        self.assertIsNotNone(match)
+        script = match.group(1)
+        self.assertIn('R="$(gh api "repos/$REPO/git/ref/heads/main" --jq \'.object.sha\')"', script)
+        self.assertIn('[[ "$R" =~ ^[0-9a-f]{40}$ ]]', script)
+        self.assertIn("contents/.release-please-manifest.json?ref=$R", script)
+        dispatch = "gh workflow run library-release.yml"
+        self.assertEqual(script.count(dispatch), 1)
+        before_dispatch = script.split(dispatch, 1)[0]
+        guard = '[[ "$remote_main" == "$R" ]]'
+        self.assertIn(guard, before_dispatch)
+        immediately_before_dispatch = before_dispatch.rsplit(guard, 1)[1]
+        self.assertNotIn("gh api", immediately_before_dispatch)
+        dispatch_command = script.split(dispatch, 1)[1]
+        self.assertIn('-f expected_source_sha="$R"', dispatch_command)
+        self.assertIn("-f update_major=false", dispatch_command)
+        with tempfile.TemporaryDirectory() as tmp:
+            procedure = Path(tmp) / "signing-dispatch.sh"
+            procedure.write_text(script)
+            checked = subprocess.run(["bash", "-n", str(procedure)], text=True, capture_output=True, check=False)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
     def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
         extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         uploads = [step for step in extension["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@")]

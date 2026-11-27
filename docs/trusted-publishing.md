@@ -29,4 +29,26 @@ gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f s
 gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=repair-chart -f fixture=scaffold -f chart=workflows-scaffold -f version=0.1.0
 ```
 
-This list only prepares the required dispatches in order; it does not authorize them or permit running them without waiting. Do not fan out release graphs inside one run or share evidence/channel artifacts across fixture roots. A later protected library signing dispatch separately requires the release-please-selected version, `expected_source_sha` equal to that same final R, and `update_major=false`; the workflow verifies run SHA, checkout HEAD, and remote main before signing and again immediately before tag creation.
+This list only prepares the required dispatches in order; it does not authorize them or permit running them without waiting. Do not fan out release graphs inside one run or share evidence/channel artifacts across fixture roots.
+
+## Guarded protected library signing dispatch
+
+After the release-please PR merges and the separate protected-release approval, resolve the release-please-selected version and exact final main commit `R` remotely. This is an operator procedure, not authorization to dispatch now. The workflow continues to use the existing release App and `release` environment:
+
+```sh
+set -euo pipefail
+REPO=7K-Hiroba/workflows
+R="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+[[ "$R" =~ ^[0-9a-f]{40}$ ]] || { echo "remote main did not resolve to an exact SHA" >&2; exit 1; }
+VERSION="$(
+  gh api "repos/$REPO/contents/.release-please-manifest.json?ref=$R" --jq '.content' |
+    base64 --decode | jq -r '.["."]'
+)"
+[[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "invalid release-please version" >&2; exit 1; }
+remote_main="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+[[ "$remote_main" == "$R" ]] || { echo "remote main moved before signing dispatch" >&2; exit 1; }
+gh workflow run library-release.yml --repo "$REPO" --ref main \
+  -f version="$VERSION" -f expected_source_sha="$R" -f update_major=false
+```
+
+The remote-main comparison is deliberately immediately before dispatch. The workflow still verifies `github.sha`, checkout HEAD, and remote main against `expected_source_sha` before signing and again immediately before tag creation, so a later race also fails closed. `update_major=false` prevents the documentation-only major alias from moving.

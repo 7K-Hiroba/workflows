@@ -37,7 +37,7 @@ def component_config(component: dict[str, Any], version_files: list[str] | None 
         "bump-patch-for-minor-pre-major": True,
     }
     extra_files = {
-        "extension": ["../extension.yaml"],
+        "extension": [{"type": "generic", "path": "/extension.yaml"}],
         "chart": ["Chart.yaml"],
         "package": ["package.yaml"],
         "template": ["template.yaml"],

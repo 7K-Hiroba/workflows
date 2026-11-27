@@ -30,7 +30,10 @@
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
-        "../extension.yaml",
+        {
+          "type": "generic",
+          "path": "/extension.yaml"
+        },
         "extension.go",
         {
           "type": "yaml",

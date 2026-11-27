@@ -17,6 +17,7 @@ if not PYTHON.exists():
 
 BACKEND_VERSION = "extension/internal/extplugin/version.go"
 UI_VERSION = "ui/src/index.tsx"
+BACKEND_ROOT_EXTRA = {"type": "generic", "path": "/extension.yaml"}
 BACKEND_YAML_EXTRA = {"type": "yaml", "path": "/.hiroba.yaml", "jsonpath": "$.components.extension.version"}
 UI_YAML_EXTRA = {"type": "yaml", "path": "/.hiroba.yaml", "jsonpath": "$.components.ui.version"}
 
@@ -301,7 +302,7 @@ class MarkedReleaseVersionTests(unittest.TestCase):
         ui = config["packages"]["ui"]
         self.assertEqual(extension["release-type"], "go")
         self.assertEqual(ui["release-type"], "node")
-        self.assertEqual(extension["extra-files"], ["../extension.yaml", "internal/extplugin/version.go", BACKEND_YAML_EXTRA])
+        self.assertEqual(extension["extra-files"], [BACKEND_ROOT_EXTRA, "internal/extplugin/version.go", BACKEND_YAML_EXTRA])
         self.assertEqual(ui["extra-files"], ["src/index.tsx", UI_YAML_EXTRA])
         self.assertNotIn("plugins", config)
         for package in config["packages"].values():
@@ -397,7 +398,7 @@ class MarkedReleaseVersionTests(unittest.TestCase):
         result = self.sync()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         config = json.loads((self.root / "release-please-config.json").read_text())
-        self.assertEqual(config["packages"]["extension"]["extra-files"], ["../extension.yaml", BACKEND_YAML_EXTRA])
+        self.assertEqual(config["packages"]["extension"]["extra-files"], [BACKEND_ROOT_EXTRA, BACKEND_YAML_EXTRA])
         self.assertEqual(config["packages"]["ui"]["extra-files"], [UI_YAML_EXTRA])
         self.assertEqual((self.root / BACKEND_VERSION).read_bytes(), before_backend)
         self.assertEqual((self.root / UI_VERSION).read_bytes(), before_ui)

@@ -752,6 +752,8 @@ class WorkflowContractTests(unittest.TestCase):
         text = (WORKFLOWS / "library-release.yml").read_text()
         workflow = yaml.safe_load(text)
         release = workflow["jobs"]["release"]
+        dispatch = workflow.get("on", workflow.get(True, {}))["workflow_dispatch"]["inputs"]
+        self.assertIs(dispatch.get("expected_source_sha", {}).get("required"), True)
         self.assertEqual(release["environment"], "release")
         self.assertEqual(release["permissions"], {"contents": "write", "id-token": "write", "actions": "read"})
         app = next(step for step in release["steps"] if str(step.get("uses", "")).startswith("actions/create-github-app-token@"))
@@ -761,12 +763,30 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(checkout["with"]["token"], "${{ steps.app.outputs.token }}")
         checks = next(step for step in release["steps"] if step.get("name") == "Verify approved main and required checks")
         self.assertEqual(checks["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
+        self.assertEqual(checks["env"].get("EXPECTED_SOURCE_SHA"), "${{ inputs.expected_source_sha }}")
+        for fragment in (
+            '[[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]',
+            '[[ "$GITHUB_SHA" == "$EXPECTED_SOURCE_SHA" ]]',
+            '[[ "$sha" == "$EXPECTED_SOURCE_SHA" ]]',
+            "git -C consumer ls-remote origin refs/heads/main",
+            '[[ "$remote" == "$EXPECTED_SOURCE_SHA" ]]',
+        ):
+            self.assertIn(fragment, checks["run"])
         for fragment in ("check-required-checks.py", "library-ci-result", "scaffold-ci-result", ".release-please-manifest.json", "CHANGELOG.md", "SOURCE_SHA"):
             self.assertIn(fragment, checks["run"])
         self.assertIn('echo "SOURCE_SHA=$sha" >> "$GITHUB_ENV"', checks["run"])
         self.assertNotIn('echo "source-sha=$sha"', checks["run"])
         signed = next(step for step in release["steps"] if step.get("name") == "Create and verify signed version tag")
         self.assertEqual(signed["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
+        self.assertEqual(signed["env"].get("EXPECTED_SOURCE_SHA"), "${{ inputs.expected_source_sha }}")
+        for fragment in (
+            '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]',
+            '[[ "$(git -C consumer rev-parse HEAD)" == "$EXPECTED_SOURCE_SHA" ]]',
+            "git -C consumer ls-remote origin refs/heads/main",
+            '[[ "$remote" == "$EXPECTED_SOURCE_SHA" ]]',
+        ):
+            self.assertIn(fragment, signed["run"])
+        self.assertLess(signed["run"].rindex('[[ "$remote" == "$EXPECTED_SOURCE_SHA" ]]'), signed["run"].index('git -C consumer tag -s -a "$tag"'))
         self.assertIn("gh release create", signed["run"])
         self.assertIn("(\n  cd consumer\n  gh release create", signed["run"])
         self.assertIn('git -C consumer config user.name "hiroba-release[bot]"', signed["run"])
@@ -795,6 +815,50 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn(".*", actual)
             for different_ref in ("88f60a279b6676689e75388a080130d1902674f9", "refs/heads/main-next", "refs/heads/feature", "refs/tags/main"):
                 self.assertIsNone(re.fullmatch(actual, identity.replace("refs/heads/main", different_ref)))
+
+    def test_library_release_exact_r_guards_fail_before_tag(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "library-release.yml").read_text())
+        signed = next(step for step in workflow["jobs"]["release"]["steps"] if step.get("name") == "Create and verify signed version tag")
+        guard = signed["run"].split('tag="v$VERSION"', 1)[0]
+        self.assertNotIn("git -C consumer tag", guard)
+        expected = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "consumer").mkdir()
+            binary = root / "bin"
+            binary.mkdir()
+            git = binary / "git"
+            git.write_text("""#!/usr/bin/env bash
+if [[ "$*" == *"rev-parse HEAD"* ]]; then printf '%s\\n' "$HEAD_SHA"; exit 0; fi
+if [[ "$*" == *"ls-remote origin refs/heads/main"* ]]; then printf '%s\\trefs/heads/main\\n' "$REMOTE_SHA"; exit 0; fi
+exit 2
+""")
+            git.chmod(0o755)
+            for case, head, remote in (
+                ("match", expected, expected),
+                ("head-mismatch", "b" * 40, expected),
+                ("remote-mismatch", expected, "c" * 40),
+            ):
+                with self.subTest(case=case):
+                    result = subprocess.run(
+                        ["bash", "-c", guard],
+                        cwd=root,
+                        env={
+                            **os.environ,
+                            "PATH": f"{binary}:{os.environ['PATH']}",
+                            "SOURCE_SHA": expected,
+                            "EXPECTED_SOURCE_SHA": expected,
+                            "HEAD_SHA": head,
+                            "REMOTE_SHA": remote,
+                        },
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    if case == "match":
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
 
     def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
         extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const {Errors, GitHub, Manifest, VERSION} = require('release-please');
 const {BranchName} = require('release-please/build/src/util/branch-name');
+const {BaseStrategy} = require('release-please/build/src/strategies/base');
 
 if (VERSION !== '17.6.0') {
   throw new Error(`release-please version mismatch: ${VERSION}`);
@@ -31,6 +32,12 @@ async function manifestContract(scenario) {
   const root = path.resolve(scenario.root);
   const lookups = [];
   const history = [];
+  const candidateCommits = {};
+  const buildReleasePullRequest = BaseStrategy.prototype.buildReleasePullRequest;
+  BaseStrategy.prototype.buildReleasePullRequest = async function (commits, ...args) {
+    candidateCommits[this.path] = commits.map(commit => commit.sha);
+    return buildReleasePullRequest.call(this, commits, ...args);
+  };
   const logger = {
     debug(message) {
       const match = /^looking for tagName: (.+)$/.exec(String(message));
@@ -102,6 +109,7 @@ async function manifestContract(scenario) {
     version: VERSION,
     lookups,
     history,
+    candidateCommits,
     pullRequests: pullRequests.map(pullRequest => ({
       title: pullRequest.title.toString(),
       body: pullRequest.body.toString(),

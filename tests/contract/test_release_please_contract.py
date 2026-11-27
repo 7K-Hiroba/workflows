@@ -153,7 +153,7 @@ class ReleasePleaseContractTests(unittest.TestCase):
                 files.append(f"{package}/CHANGELOG.md")
         return [
             {"sha": NEWER, "message": "fix: newer-release-change", "files": files},
-            {"sha": BOUNDARY, "message": "chore: boundary-release-change", "files": files},
+            {"sha": BOUNDARY, "message": "fix: boundary-release-change", "files": files},
             {"sha": OLDER, "message": "fix: older-release-change", "files": files},
         ]
 
@@ -196,6 +196,9 @@ class ReleasePleaseContractTests(unittest.TestCase):
     def validate_history(self, payload: dict, expected: set[str]) -> None:
         self.validate_tags(payload, expected)
         self.assertEqual(payload["history"], [NEWER, BOUNDARY])
+        self.assertEqual(len(payload["candidateCommits"]), len(expected))
+        for path, candidates in payload["candidateCommits"].items():
+            self.assertEqual(candidates, [NEWER], path)
         body = payload["pullRequests"][0]["body"]
         self.assertIn("newer-release-change", body)
         self.assertNotIn("boundary-release-change", body)

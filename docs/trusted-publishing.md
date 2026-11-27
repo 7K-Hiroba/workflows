@@ -17,14 +17,38 @@ No GHCR operation is performed during repository setup. The protected publish re
 
 ## Full-matrix rehearsal
 
-Run exactly one fixture release graph per `workflow_dispatch`; artifact uploads and `artifact-*`/`channel-reconciliation` downloads are scoped to that run. Select the fixture through the validated `fixture` choice. Coordinate all five fixtures at the same reviewed merged main SHA, waiting for each result before proceeding:
+Run exactly one release graph per `workflow_dispatch`; artifact uploads and `artifact-*`/`channel-reconciliation` downloads are scoped to that run. Select the fixture through the validated `fixture` choice. Qualification requires **five full fixture graphs plus one standalone chart graph**, all sequential at the same reviewed merged main SHA. Wait for terminal success and inspect its exact source, signatures, provenance, signed test evidence, indexes/channels, and cleanup before preparing the next dispatch:
 
 ```sh
 SHA=<reviewed-merged-main-sha>
-for FIXTURE in scaffold chartless-observability nonplugin-helm chartless-manifests artifact-manifests; do
-  gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main \
-    -f source_sha="$SHA" -f mode=full -f fixture="$FIXTURE"
-done
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=scaffold
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=chartless-observability
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=nonplugin-helm
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=chartless-manifests
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=artifact-manifests
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=repair-chart -f fixture=scaffold -f chart=workflows-scaffold -f version=0.1.0
 ```
 
-This list only prepares the required dispatches; it does not authorize them. Do not fan out release graphs inside one run or share evidence/channel artifacts across fixture roots.
+This list only prepares the required dispatches in order; it does not authorize them or permit running them without waiting. Do not fan out release graphs inside one run or share evidence/channel artifacts across fixture roots.
+
+## Guarded protected library signing dispatch
+
+After the release-please PR merges and the separate protected-release approval, resolve the release-please-selected version and exact final main commit `R` remotely. This is an operator procedure, not authorization to dispatch now. The workflow continues to use the existing release App and `release` environment:
+
+```sh
+set -euo pipefail
+REPO=7K-Hiroba/workflows
+R="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+[[ "$R" =~ ^[0-9a-f]{40}$ ]] || { echo "remote main did not resolve to an exact SHA" >&2; exit 1; }
+VERSION="$(
+  gh api "repos/$REPO/contents/.release-please-manifest.json?ref=$R" --jq '.content' |
+    base64 --decode | jq -r '.["."]'
+)"
+[[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "invalid release-please version" >&2; exit 1; }
+remote_main="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+[[ "$remote_main" == "$R" ]] || { echo "remote main moved before signing dispatch" >&2; exit 1; }
+gh workflow run library-release.yml --repo "$REPO" --ref main \
+  -f version="$VERSION" -f expected_source_sha="$R" -f update_major=false
+```
+
+The remote-main comparison is deliberately immediately before dispatch. The workflow still verifies `github.sha`, checkout HEAD, and remote main against `expected_source_sha` before signing and again immediately before tag creation, so a later race also fails closed. `update_major=false` prevents the documentation-only major alias from moving.

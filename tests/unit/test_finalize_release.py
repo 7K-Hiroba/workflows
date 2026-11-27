@@ -113,12 +113,14 @@ class FinalizeReleaseTests(unittest.TestCase):
             result = self.run_finalize()
             self.assertNotEqual(result.returncode, 0, field)
             self.assertFalse(self.log.exists())
-        data = json.loads(json.dumps(baseline))
-        data["testEvidence"]["releaseTag"] = "app-v9.9.9"
-        path.write_text(json.dumps(data))
-        result = self.run_finalize()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(self.log.exists())
+        for release_tag in ("app-v9.9.9", "app-vv0.1.0"):
+            with self.subTest(release_tag=release_tag):
+                data = json.loads(json.dumps(baseline))
+                data["testEvidence"]["releaseTag"] = release_tag
+                path.write_text(json.dumps(data))
+                result = self.run_finalize()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.log.exists())
 
     def test_existing_tag_at_other_source_fails(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "tag", "app-v0.1.0", "HEAD"], check=True)

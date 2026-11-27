@@ -88,6 +88,16 @@ class SignAndVerifyTests(unittest.TestCase):
         result = subprocess.run(["bash", str(ROOT / "scripts/verify-release.sh")], env=verify_env, text=True, capture_output=True, check=False)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_double_v_predicate_blocks_verification_receipt(self) -> None:
+        self.assertEqual(subprocess.run(["bash", str(ROOT / "scripts/sign-and-attest.sh")], env=self.env, text=True, capture_output=True, check=False).returncode, 0)
+        predicate = json.loads((self.root / "built.json").read_text())
+        predicate["releaseTag"] = "app-vv0.1.0"
+        self.predicate_doc.write_text(json.dumps(predicate))
+        verify_env = {**self.env, "EXPECTED_PUBLISHER": "https://github.com/7K-Hiroba/workflows/.github/workflows/release-oci.yml@"}
+        result = subprocess.run(["bash", str(ROOT / "scripts/verify-release.sh")], env=verify_env, text=True, capture_output=True, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / "receipt.json").exists())
+
     def test_verify_concatenated_cosign_stream_checks_every_member(self) -> None:
         self.assertEqual(subprocess.run(["bash", str(ROOT / "scripts/sign-and-attest.sh")], env=self.env, text=True, capture_output=True, check=False).returncode, 0)
         first = json.loads((self.root / "built.json").read_text())

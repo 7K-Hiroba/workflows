@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       version: {required: true, type: string, description: SemVer such as 1.0.0}
+      expected_source_sha: {required: true, type: string, description: Full reviewed main commit SHA}
       update_major: {type: boolean, default: false}
 permissions: {contents: read}
 concurrency: {group: "hiroba-library-release-${{ github.repository }}", cancel-in-progress: false}
@@ -23,12 +24,17 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with: {go-version: "1.27.0", cache: false}
       - name: Verify approved main and required checks
-        env: {GH_TOKEN: "${{ steps.app.outputs.token }}", VERSION: "${{ inputs.version }}"}
+        env: {GH_TOKEN: "${{ steps.app.outputs.token }}", VERSION: "${{ inputs.version }}", EXPECTED_SOURCE_SHA: "${{ inputs.expected_source_sha }}"}
         run: |
           set -euo pipefail
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 2
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          [[ "$GITHUB_SHA" == "$EXPECTED_SOURCE_SHA" ]] || { echo "workflow run SHA is not the approved R" >&2; exit 1; }
           [[ "$(git -C consumer branch --show-current)" == main ]] || exit 2
           sha=$(git -C consumer rev-parse HEAD)
+          [[ "$sha" == "$EXPECTED_SOURCE_SHA" ]] || { echo "checked-out main is not the approved R" >&2; exit 1; }
+          remote=$(git -C consumer ls-remote origin refs/heads/main | awk 'NR == 1 {print $1}')
+          [[ "$remote" == "$EXPECTED_SOURCE_SHA" ]] || { echo "remote main is not the approved R" >&2; exit 1; }
           if git -C consumer rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then echo "tag already exists" >&2; exit 2; fi
           gh api "repos/7K-Hiroba/workflows/commits/$sha/check-runs" --paginate \
             --jq '.check_runs[] | {name,status,conclusion}' > candidate-checks.ndjson
@@ -40,9 +46,13 @@ jobs:
       - name: Install pinned gitsign
         run: go install github.com/sigstore/gitsign@v0.18.0
       - name: Create and verify signed version tag
-        env: {VERSION: "${{ inputs.version }}", GH_TOKEN: "${{ steps.app.outputs.token }}"}
+        env: {VERSION: "${{ inputs.version }}", EXPECTED_SOURCE_SHA: "${{ inputs.expected_source_sha }}", GH_TOKEN: "${{ steps.app.outputs.token }}"}
         run: |
           set -euo pipefail
+          [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || { echo "validated source is not the approved R" >&2; exit 1; }
+          [[ "$(git -C consumer rev-parse HEAD)" == "$EXPECTED_SOURCE_SHA" ]] || { echo "checkout moved before signing" >&2; exit 1; }
+          remote=$(git -C consumer ls-remote origin refs/heads/main | awk 'NR == 1 {print $1}')
+          [[ "$remote" == "$EXPECTED_SOURCE_SHA" ]] || { echo "remote main moved before signing" >&2; exit 1; }
           tag="v$VERSION"
           git -C consumer config user.name "hiroba-release[bot]"
           git -C consumer config user.email "hiroba-release[bot]@users.noreply.github.com"

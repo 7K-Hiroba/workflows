@@ -13,7 +13,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "hiroba-nonplugin-package",
+      "include-v-in-tag": false
     },
     "charts/hiroba-nonplugin-smoke": {
       "release-type": "simple",
@@ -22,7 +24,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "Chart.yaml"
-      ]
+      ],
+      "component": "hiroba-nonplugin-smoke",
+      "include-v-in-tag": false
     }
   }
 }

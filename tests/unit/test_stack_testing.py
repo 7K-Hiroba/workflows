@@ -112,6 +112,13 @@ class StackTestingContractTests(unittest.TestCase):
         self.assertEqual(plan["covers"], [])
 
     def test_discovery_marks_covered_components_without_publishing_suite(self) -> None:
+        config_path = self.root / ".hiroba.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["releaseComponents"] = {
+            "charts/example": "chart-example",
+            "packages/example": "package-example",
+        }
+        config_path.write_text(yaml.safe_dump(config, sort_keys=False))
         result = subprocess.run([str(PYTHON), str(DISCOVERY_SCRIPT), "--root", str(self.root), "--all"], text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         plan = json.loads(result.stdout)

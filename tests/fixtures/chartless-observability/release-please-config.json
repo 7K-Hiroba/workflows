@@ -13,7 +13,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "hiroba-chartless-obs",
+      "include-v-in-tag": false
     },
     "packages/observability-pack": {
       "release-type": "simple",
@@ -22,7 +24,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "observability-pack",
+      "include-v-in-tag": false
     }
   }
 }

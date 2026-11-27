@@ -14,6 +14,48 @@ from lib.stack_testing import load_stack_plan, validate_app_config
 
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
+LEGACY_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")
+BRANCH_DELIMITER = "--components--"
+
+
+def release_identity(component: dict[str, Any]) -> str:
+    """Return the visible release-please identity for an independent component."""
+    kind = component["kind"]
+    if kind in {"extension", "ui"}:
+        return kind
+    return component.get("releaseComponent", component["name"])
+
+
+def validate_release_identities(components: list[dict[str, Any]]) -> None:
+    """Fail before generation when identities are unsafe or globally ambiguous."""
+    by_identity: dict[str, list[str]] = {}
+    for component in components:
+        kind = component["kind"]
+        if kind == "smoke" and not component.get("fixtureOnly"):
+            continue
+        identity = release_identity(component)
+        location = f"{kind}:{component['path']}"
+        if BRANCH_DELIMITER in identity:
+            raise ValueError(f"release component {identity!r} for {location} contains reserved delimiter {BRANCH_DELIMITER!r}")
+        if not component.get("releaseComponent") and kind not in {"extension", "ui"}:
+            valid = (
+                bool(LEGACY_COMPONENT_RE.fullmatch(identity))
+                and ".." not in identity
+                and not identity.endswith(".")
+                and not identity.endswith(".lock")
+            )
+            if not valid:
+                raise ValueError(f"invalid legacy release component {identity!r} for {location}")
+        by_identity.setdefault(identity, []).append(location)
+    duplicates = {
+        identity: sorted(locations)
+        for identity, locations in by_identity.items()
+        if len(locations) > 1
+    }
+    if duplicates:
+        details = "; ".join(f"{identity}: {', '.join(locations)}" for identity, locations in sorted(duplicates.items()))
+        raise ValueError(f"duplicate release components independent of kind/version: {details}")
+
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -131,6 +173,8 @@ def discover(root: Path) -> dict[str, Any]:
         target = by_path.get(component.get("targetComponent", ""))
         if target is not None and target.get("releaseComponent"):
             component["releaseComponent"] = target["releaseComponent"]
+
+    validate_release_identities(components)
 
     covered = set(stack_test["covers"])
     for component in components:

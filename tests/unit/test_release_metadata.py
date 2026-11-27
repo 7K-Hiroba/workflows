@@ -17,6 +17,7 @@ if not PYTHON.exists():
 
 BACKEND_VERSION = "extension/internal/extplugin/version.go"
 UI_VERSION = "ui/src/index.tsx"
+BACKEND_ROOT_EXTRA = {"type": "generic", "path": "/extension.yaml"}
 BACKEND_YAML_EXTRA = {"type": "yaml", "path": "/.hiroba.yaml", "jsonpath": "$.components.extension.version"}
 UI_YAML_EXTRA = {"type": "yaml", "path": "/.hiroba.yaml", "jsonpath": "$.components.ui.version"}
 
@@ -268,6 +269,20 @@ class ReleaseMetadataTests(unittest.TestCase):
         config = json.loads((self.root / "release-please-config.json").read_text())
         expected = {"extension", "ui", "charts/workflows-scaffold", "packages/admission-example", "packages/app", "packages/observability-pack", "templates/service"}
         self.assertEqual(set(config["packages"]), expected)
+        expected_components = {
+            "extension": "extension",
+            "ui": "ui",
+            "charts/workflows-scaffold": "workflows-scaffold",
+            "packages/admission-example": "admission-example",
+            "packages/app": "app",
+            "packages/observability-pack": "observability-pack",
+            "templates/service": "service",
+        }
+        self.assertIs(config["include-v-in-tag"], True)
+        self.assertEqual(config["tag-separator"], "-v")
+        for path, package in config["packages"].items():
+            self.assertEqual(package.get("component"), expected_components[path])
+            self.assertIs(package["include-v-in-tag"], False)
         self.assertEqual(config["packages"]["extension"]["release-type"], "go")
         self.assertEqual(config["packages"]["ui"]["release-type"], "node")
         self.assertIn("Chart.yaml", config["packages"]["charts/workflows-scaffold"]["extra-files"])
@@ -301,7 +316,11 @@ class MarkedReleaseVersionTests(unittest.TestCase):
         ui = config["packages"]["ui"]
         self.assertEqual(extension["release-type"], "go")
         self.assertEqual(ui["release-type"], "node")
-        self.assertEqual(extension["extra-files"], ["../extension.yaml", "internal/extplugin/version.go", BACKEND_YAML_EXTRA])
+        self.assertEqual(extension.get("component"), "extension")
+        self.assertEqual(ui.get("component"), "ui")
+        self.assertIs(extension["include-v-in-tag"], False)
+        self.assertIs(ui["include-v-in-tag"], False)
+        self.assertEqual(extension["extra-files"], [BACKEND_ROOT_EXTRA, "internal/extplugin/version.go", BACKEND_YAML_EXTRA])
         self.assertEqual(ui["extra-files"], ["src/index.tsx", UI_YAML_EXTRA])
         self.assertNotIn("plugins", config)
         for package in config["packages"].values():
@@ -397,10 +416,36 @@ class MarkedReleaseVersionTests(unittest.TestCase):
         result = self.sync()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         config = json.loads((self.root / "release-please-config.json").read_text())
-        self.assertEqual(config["packages"]["extension"]["extra-files"], ["../extension.yaml", BACKEND_YAML_EXTRA])
+        self.assertEqual(config["packages"]["extension"]["extra-files"], [BACKEND_ROOT_EXTRA, BACKEND_YAML_EXTRA])
         self.assertEqual(config["packages"]["ui"]["extra-files"], [UI_YAML_EXTRA])
         self.assertEqual((self.root / BACKEND_VERSION).read_bytes(), before_backend)
         self.assertEqual((self.root / UI_VERSION).read_bytes(), before_ui)
+
+    def test_invalid_root_extension_markers_fail_without_any_writes(self) -> None:
+        for case in ("missing-file", "missing-marker", "duplicate-marker", "malformed-marker", "invalid-utf8"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                make_valid_repo(root)
+                write_marked_versions(root)
+                path = root / "extension.yaml"
+                if case == "missing-file":
+                    path.unlink()
+                elif case == "missing-marker":
+                    path.write_text(path.read_text().replace(" # x-release-please-version", ""))
+                elif case == "duplicate-marker":
+                    path.write_text(path.read_text() + "version: 0.2.0 # x-release-please-version\n")
+                elif case == "invalid-utf8":
+                    path.write_bytes(path.read_bytes() + b"\xff")
+                else:
+                    path.write_text(path.read_text().replace("version: 0.1.0", "version: latest"))
+                before = tree_bytes(root)
+                result = run_script(root, "sync-release-please-config.py")
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("extension.yaml", result.stdout + result.stderr)
+                self.assertIn("x-release-please-version", result.stdout + result.stderr)
+                if case == "invalid-utf8":
+                    self.assertIn("valid UTF-8", result.stdout + result.stderr)
+                self.assertEqual(tree_bytes(root), before)
 
     def test_malformed_marked_declarations_fail_without_any_writes(self) -> None:
         cases = {

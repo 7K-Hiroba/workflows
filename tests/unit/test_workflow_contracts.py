@@ -752,6 +752,8 @@ class WorkflowContractTests(unittest.TestCase):
         text = (WORKFLOWS / "library-release.yml").read_text()
         workflow = yaml.safe_load(text)
         release = workflow["jobs"]["release"]
+        dispatch = workflow.get("on", workflow.get(True, {}))["workflow_dispatch"]["inputs"]
+        self.assertIs(dispatch.get("expected_source_sha", {}).get("required"), True)
         self.assertEqual(release["environment"], "release")
         self.assertEqual(release["permissions"], {"contents": "write", "id-token": "write", "actions": "read"})
         app = next(step for step in release["steps"] if str(step.get("uses", "")).startswith("actions/create-github-app-token@"))
@@ -761,12 +763,30 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(checkout["with"]["token"], "${{ steps.app.outputs.token }}")
         checks = next(step for step in release["steps"] if step.get("name") == "Verify approved main and required checks")
         self.assertEqual(checks["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
+        self.assertEqual(checks["env"].get("EXPECTED_SOURCE_SHA"), "${{ inputs.expected_source_sha }}")
+        for fragment in (
+            '[[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]',
+            '[[ "$GITHUB_SHA" == "$EXPECTED_SOURCE_SHA" ]]',
+            '[[ "$sha" == "$EXPECTED_SOURCE_SHA" ]]',
+            "git -C consumer ls-remote origin refs/heads/main",
+            '[[ "$remote" == "$EXPECTED_SOURCE_SHA" ]]',
+        ):
+            self.assertIn(fragment, checks["run"])
         for fragment in ("check-required-checks.py", "library-ci-result", "scaffold-ci-result", ".release-please-manifest.json", "CHANGELOG.md", "SOURCE_SHA"):
             self.assertIn(fragment, checks["run"])
         self.assertIn('echo "SOURCE_SHA=$sha" >> "$GITHUB_ENV"', checks["run"])
         self.assertNotIn('echo "source-sha=$sha"', checks["run"])
         signed = next(step for step in release["steps"] if step.get("name") == "Create and verify signed version tag")
         self.assertEqual(signed["env"]["GH_TOKEN"], "${{ steps.app.outputs.token }}")
+        self.assertEqual(signed["env"].get("EXPECTED_SOURCE_SHA"), "${{ inputs.expected_source_sha }}")
+        for fragment in (
+            '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]',
+            '[[ "$(git -C consumer rev-parse HEAD)" == "$EXPECTED_SOURCE_SHA" ]]',
+            "git -C consumer ls-remote origin refs/heads/main",
+            '[[ "$remote" == "$EXPECTED_SOURCE_SHA" ]]',
+        ):
+            self.assertIn(fragment, signed["run"])
+        self.assertLess(signed["run"].rindex('[[ "$remote" == "$EXPECTED_SOURCE_SHA" ]]'), signed["run"].index('git -C consumer tag -s -a "$tag"'))
         self.assertIn("gh release create", signed["run"])
         self.assertIn("(\n  cd consumer\n  gh release create", signed["run"])
         self.assertIn('git -C consumer config user.name "hiroba-release[bot]"', signed["run"])
@@ -796,6 +816,77 @@ class WorkflowContractTests(unittest.TestCase):
             for different_ref in ("88f60a279b6676689e75388a080130d1902674f9", "refs/heads/main-next", "refs/heads/feature", "refs/tags/main"):
                 self.assertIsNone(re.fullmatch(actual, identity.replace("refs/heads/main", different_ref)))
 
+    def test_library_release_exact_r_guards_fail_before_tag(self) -> None:
+        workflow = yaml.safe_load((WORKFLOWS / "library-release.yml").read_text())
+        signed = next(step for step in workflow["jobs"]["release"]["steps"] if step.get("name") == "Create and verify signed version tag")
+        guard = signed["run"].split('tag="v$VERSION"', 1)[0]
+        self.assertNotIn("git -C consumer tag", guard)
+        expected = "a" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "consumer").mkdir()
+            binary = root / "bin"
+            binary.mkdir()
+            git = binary / "git"
+            git.write_text("""#!/usr/bin/env bash
+if [[ "$*" == *"rev-parse HEAD"* ]]; then printf '%s\\n' "$HEAD_SHA"; exit 0; fi
+if [[ "$*" == *"ls-remote origin refs/heads/main"* ]]; then printf '%s\\trefs/heads/main\\n' "$REMOTE_SHA"; exit 0; fi
+exit 2
+""")
+            git.chmod(0o755)
+            for case, head, remote in (
+                ("match", expected, expected),
+                ("head-mismatch", "b" * 40, expected),
+                ("remote-mismatch", expected, "c" * 40),
+            ):
+                with self.subTest(case=case):
+                    result = subprocess.run(
+                        ["bash", "-c", guard],
+                        cwd=root,
+                        env={
+                            **os.environ,
+                            "PATH": f"{binary}:{os.environ['PATH']}",
+                            "SOURCE_SHA": expected,
+                            "EXPECTED_SOURCE_SHA": expected,
+                            "HEAD_SHA": head,
+                            "REMOTE_SHA": remote,
+                        },
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    if case == "match":
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+
+    def test_trusted_publishing_documents_exact_r_guarded_signing_dispatch(self) -> None:
+        documentation = (ROOT / "docs/trusted-publishing.md").read_text()
+        heading = "## Guarded protected library signing dispatch"
+        self.assertIn(heading, documentation)
+        section = documentation.split(heading, 1)[1]
+        match = re.search(r"```sh\n(.*?)```", section, re.DOTALL)
+        self.assertIsNotNone(match)
+        script = match.group(1)
+        self.assertIn('R="$(gh api "repos/$REPO/git/ref/heads/main" --jq \'.object.sha\')"', script)
+        self.assertIn('[[ "$R" =~ ^[0-9a-f]{40}$ ]]', script)
+        self.assertIn("contents/.release-please-manifest.json?ref=$R", script)
+        dispatch = "gh workflow run library-release.yml"
+        self.assertEqual(script.count(dispatch), 1)
+        before_dispatch = script.split(dispatch, 1)[0]
+        guard = '[[ "$remote_main" == "$R" ]]'
+        self.assertIn(guard, before_dispatch)
+        immediately_before_dispatch = before_dispatch.rsplit(guard, 1)[1]
+        self.assertNotIn("gh api", immediately_before_dispatch)
+        dispatch_command = script.split(dispatch, 1)[1]
+        self.assertIn('-f expected_source_sha="$R"', dispatch_command)
+        self.assertIn("-f update_major=false", dispatch_command)
+        with tempfile.TemporaryDirectory() as tmp:
+            procedure = Path(tmp) / "signing-dispatch.sh"
+            procedure.write_text(script)
+            checked = subprocess.run(["bash", "-n", str(procedure)], text=True, capture_output=True, check=False)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
     def test_extension_ui_evidence_uses_the_finalizer_artifact_contract(self) -> None:
         extension = yaml.safe_load((WORKFLOWS / "release-extension.yml").read_text())
         uploads = [step for step in extension["jobs"]["ui"]["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@")]
@@ -805,6 +896,38 @@ class WorkflowContractTests(unittest.TestCase):
         downloads = [step for step in release["jobs"]["finalize"]["steps"] if str(step.get("uses", "")).startswith("actions/download-artifact@")]
         patterns = [step["with"]["pattern"] for step in downloads]
         self.assertTrue(any(fnmatch.fnmatch("artifact-extension-ui", pattern) for pattern in patterns))
+
+    def test_release_please_contract_job_is_locked_and_non_publishing(self) -> None:
+        data = yaml.safe_load((WORKFLOWS / "library-ci.yml").read_text())
+        job = data["jobs"].get("release-please-contract")
+        self.assertIsInstance(job, dict)
+        self.assertNotIn("permissions", job)
+        self.assertIn("release-please-contract", data["jobs"]["result"]["needs"])
+        self.assertNotIn("secrets", job)
+        text = yaml.safe_dump(job)
+        for forbidden in ("pull_request_target", "create-github-app-token", "release-please-action", "upload-artifact", "packages: write", "id-token: write"):
+            self.assertNotIn(forbidden, text)
+        steps = job["steps"]
+        checkout = next(step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@"))
+        self.assertEqual(checkout["uses"], "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+        self.assertEqual(checkout["with"]["ref"], "${{ job.workflow_sha }}")
+        node = next(step for step in steps if str(step.get("uses", "")).startswith("actions/setup-node@"))
+        self.assertEqual(node["uses"], "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1")
+        self.assertEqual(node["with"]["node-version"], "24.11.1")
+        commands = [step.get("run", "") for step in steps]
+        self.assertTrue(any("npm ci" in command and "--ignore-scripts" in command and "--no-audit" in command and "--no-fund" in command for command in commands))
+        contract_command = next(command for command in commands if "make -C .hiroba/workflows test-release-please" in command)
+        self.assertIn("PYTHON=python3", contract_command)
+        package = json.loads((ROOT / "tests/release-please-contract/package.json").read_text())
+        self.assertEqual(package["dependencies"]["release-please"], "17.6.0")
+        lock = json.loads((ROOT / "tests/release-please-contract/package-lock.json").read_text())
+        locked = lock["packages"]["node_modules/release-please"]
+        self.assertEqual(locked["version"], "17.6.0")
+        self.assertEqual(locked["resolved"], "https://registry.npmjs.org/release-please/-/release-please-17.6.0.tgz")
+        self.assertEqual(locked["integrity"], "sha512-ItzkkEBeEbKsCrx7N1QlADrCahoONA4WPlsOinSnXTkqUBIWlHC6+S28VJ9PaHy7ZPSJwSQsRuDjI0/HL5G6hw==")
+        for locked_package in lock["packages"].values():
+            self.assertNotIn("git+", str(locked_package.get("resolved", "")))
+        self.assertIn("test-release-please", (ROOT / "Makefile").read_text())
 
     def test_render_job_installs_actionlint_for_rendered_callers(self) -> None:
         data = yaml.safe_load((WORKFLOWS / "library-ci.yml").read_text())

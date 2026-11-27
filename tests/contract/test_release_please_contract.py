@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from tests.unit.test_release_metadata import write_marked_versions
+from tests.unit.test_release_metadata import tree_bytes, write_marked_versions
 from tests.unit.test_validate_repository import make_valid_repo
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,13 +43,17 @@ def save_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
-def sync(root: Path) -> None:
-    result = subprocess.run(
+def run_sync(root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [str(PYTHON), str(ROOT / "scripts/sync-release-please-config.py"), "--root", str(root)],
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def sync(root: Path) -> None:
+    result = run_sync(root)
     if result.returncode:
         raise AssertionError(result.stdout + result.stderr)
 
@@ -94,9 +98,7 @@ def make_argocd(root: Path) -> None:
     template["name"] = "argocd-application"
     save_yaml(root / "templates/argocd-application/template.yaml", template)
     extension = root / "extension.yaml"
-    extension.write_text(extension.read_text().replace(
-        "version: 0.1.0", "version: 0.1.1 # x-release-please-version", 1
-    ))
+    extension.write_text(extension.read_text().replace("version: 0.1.0", "version: 0.1.1", 1))
     ui_package = root / "ui/package.json"
     ui_package.write_text(json.dumps({"name": "argocd-ui", "version": "0.3.0"}))
     write_marked_versions(root, backend="0.1.1", ui="0.3.0")
@@ -327,21 +329,29 @@ class ReleasePleaseContractTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.validate_history(payload, ARGOCD_TAGS)
 
-    def test_missing_marker_and_crlf_do_not_pass_byte_validation(self) -> None:
-        for case in ("missing-marker", "crlf"):
-            with self.subTest(case=case):
-                root = self.base / case
-                make_argocd(root)
-                path = root / "extension.yaml"
-                if case == "missing-marker":
-                    path.write_text(path.read_text().replace(" # x-release-please-version", ""))
-                else:
-                    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
-                _, payload = self.run_contract(root)
-                with self.assertRaises(AssertionError):
-                    self.validate_extension_change(payload)
-                if case == "crlf":
-                    self.assertNotIn("\r\n", payload["changes"]["extension.yaml"]["content"])
+    def test_missing_root_marker_fails_production_sync_without_writes(self) -> None:
+        root = self.base / "missing-marker"
+        make_argocd(root)
+        path = root / "extension.yaml"
+        path.write_text(path.read_text().replace(" # x-release-please-version", ""))
+        before = tree_bytes(root)
+        result = run_sync(root)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("x-release-please-version", result.stdout + result.stderr)
+        self.assertEqual(tree_bytes(root), before)
+
+    def test_crlf_generic_update_is_explicitly_normalized(self) -> None:
+        root = self.base / "crlf"
+        make_argocd(root)
+        path = root / "extension.yaml"
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        result, payload = self.run_contract(root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        change = payload["changes"]["extension.yaml"]
+        self.assertIn("x-release-please-version", change["originalContent"])
+        self.assertIn("x-release-please-version", change["content"])
+        self.assertNotEqual(change["originalContent"], change["content"])
+        self.assertNotIn("\r\n", change["content"])
 
     def test_branch_name_round_trip_and_delimiter_characterization(self) -> None:
         valid = ["extension", "ui", "Legacy_Name", "legacy.name", "_legacy", "legacy.locks"]

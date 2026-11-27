@@ -25,6 +25,9 @@ GO_DECLARATION = re.compile(
 TS_DECLARATION = re.compile(
     rf"(?P<prefix>\s*version\s*:\s*(?P<quote>['\"]))(?P<version>{SEMVER})(?P<suffix>(?P=quote)\s*,?\s*//\s*{MARKER}\s*)"
 )
+ROOT_VERSION_DECLARATION = re.compile(
+    rf"\s*version\s*:\s*{SEMVER}\s+#\s*{MARKER}\s*"
+)
 
 
 def component_config(component: dict[str, Any], version_files: list[str] | None = None) -> dict[str, Any]:
@@ -67,6 +70,27 @@ def previous_version_files(root: Path, component: dict[str, Any]) -> set[str]:
         return set()
     built_in = {"../extension.yaml"} if component["kind"] == "extension" else set()
     return {item for item in extra_files if isinstance(item, str) and item not in built_in}
+
+
+def validate_root_extension_version(root: Path) -> None:
+    path = root / "extension.yaml"
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise ValueError(f"{path}: root file is missing; expected exactly one {MARKER} declaration") from exc
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path}: root {MARKER} source must be valid UTF-8") from exc
+    declarations = 0
+    for line in content.splitlines():
+        if MARKER not in line:
+            continue
+        if ROOT_VERSION_DECLARATION.fullmatch(line) is None:
+            raise ValueError(f"{path}: malformed or ambiguous {MARKER} declaration")
+        declarations += 1
+    if declarations != 1:
+        raise ValueError(f"{path}: expected exactly one {MARKER} declaration, found {declarations}")
 
 
 def render_marked_source(path: Path, data: bytes, version: str) -> str:
@@ -123,6 +147,8 @@ def generate(root: Path) -> tuple[str, str, list[tuple[Path, str]]]:
         component for component in plan["components"]
         if component["kind"] != "smoke" or component.get("fixtureOnly") is True
     ]
+    if any(component["kind"] == "extension" for component in components):
+        validate_root_extension_version(root)
     version_sources = {
         component["path"]: discover_version_sources(root, component)
         for component in components

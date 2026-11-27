@@ -57,7 +57,7 @@ compatibility:
 kind: Extension
 metadata: {name: workflows-scaffold}
 spec:
-  version: 0.1.0
+  version: 0.1.0 # x-release-please-version
   kinds: [backend, ui]
   backend:
     image: ghcr.io/7k-hiroba/workflows-scaffold/extension

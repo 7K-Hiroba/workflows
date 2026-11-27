@@ -56,6 +56,10 @@ def make_matrix_repo(root: Path, kind: str, mask: int) -> dict:
                 "contracts": {"backend": ["inari.plugin.v1"], "ui": {"sdk": ">=0.1.8 <2.0.0", "hostApi": "inari.ui.v1"}},
             },
         }, sort_keys=False))
+        extension_path = root / "extension.yaml"
+        extension_path.write_text(extension_path.read_text().replace(
+            "  version: 0.1.0\n", "  version: 0.1.0 # x-release-please-version\n",
+        ))
     if kind in {"app", "catalog"}:
         release_components[f"packages/{name}"] = f"package-{name}"
         write(root / f"packages/{name}/package.yaml", "version: 0.1.0\nchannel: incubating\ntype: platform-app\ndescription: matrix package\ncategory: test\n")

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.metadata import discover, write_if_changed  # noqa: E402
+from lib.metadata import discover, release_identity, write_if_changed  # noqa: E402
 
 CONFIG_SCHEMA = "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
 MARKER = "x-release-please-version"
@@ -51,10 +51,7 @@ def component_config(component: dict[str, Any], version_files: list[str] | None 
         ]
     if extra_files:
         config["extra-files"] = extra_files
-    identity = {"extension": "extension", "ui": "ui"}.get(
-        kind, component.get("releaseComponent", component["name"])
-    )
-    config["component"] = identity
+    config["component"] = release_identity(component)
     config["include-v-in-tag"] = False
     return config
 

@@ -13,7 +13,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "runtime-fixture",
+      "include-v-in-tag": false
     }
   }
 }

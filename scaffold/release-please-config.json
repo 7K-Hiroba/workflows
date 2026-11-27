@@ -13,7 +13,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "admission-example",
+      "include-v-in-tag": false
     },
     "packages/app": {
       "release-type": "simple",
@@ -22,7 +24,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "app",
+      "include-v-in-tag": false
     },
     "extension": {
       "release-type": "go",
@@ -40,7 +44,9 @@
           "path": "/.hiroba.yaml",
           "jsonpath": "$.components.extension.version"
         }
-      ]
+      ],
+      "component": "extension",
+      "include-v-in-tag": false
     },
     "packages/observability-pack": {
       "release-type": "simple",
@@ -49,7 +55,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "observability-pack",
+      "include-v-in-tag": false
     },
     "templates/service": {
       "release-type": "simple",
@@ -58,7 +66,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "template.yaml"
-      ]
+      ],
+      "component": "service",
+      "include-v-in-tag": false
     },
     "ui": {
       "release-type": "node",
@@ -72,7 +82,9 @@
           "path": "/.hiroba.yaml",
           "jsonpath": "$.components.ui.version"
         }
-      ]
+      ],
+      "component": "ui",
+      "include-v-in-tag": false
     },
     "charts/workflows-scaffold": {
       "release-type": "simple",
@@ -81,7 +93,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "Chart.yaml"
-      ]
+      ],
+      "component": "workflows-scaffold",
+      "include-v-in-tag": false
     }
   }
 }

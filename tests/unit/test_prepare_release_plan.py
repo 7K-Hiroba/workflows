@@ -186,7 +186,8 @@ class PrepareReleasePlanTests(unittest.TestCase):
         release_please = json.loads((self.root / "release-please-config.json").read_text())
         for path, release_component in config["releaseComponents"].items():
             self.assertEqual(release_please["packages"][path]["component"], release_component)
-        self.assertNotIn("component", release_please["packages"]["packages/admission-example"])
+        self.assertEqual(release_please["packages"]["packages/admission-example"].get("component"), "admission-example")
+        self.assertIs(release_please["packages"]["packages/admission-example"]["include-v-in-tag"], False)
 
     def enable_standalone_smoke(self) -> None:
         use_fixture_only_smoke(self.root)

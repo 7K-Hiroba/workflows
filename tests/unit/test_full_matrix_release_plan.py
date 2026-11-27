@@ -123,10 +123,13 @@ class FullMatrixReleasePlanTests(unittest.TestCase):
                         self.assertEqual(synchronized.returncode, 0, synchronized.stdout + synchronized.stderr)
                         release_please = json.loads((root / "release-please-config.json").read_text())
                         for path, identity in selected["releaseComponents"].items():
-                            self.assertEqual(release_please["packages"][path]["component"], identity)
+                            self.assertEqual(release_please["packages"][path].get("component"), identity)
+                            self.assertIs(release_please["packages"][path]["include-v-in-tag"], False)
                         for kind_name in ("extension", "ui"):
                             if kind_name in release_please["packages"]:
-                                self.assertNotIn("component", release_please["packages"][kind_name])
+                                self.assertEqual(release_please["packages"][kind_name].get("component"), kind_name)
+                                self.assertIs(release_please["packages"][kind_name]["include-v-in-tag"], False)
+                        self.assertIs(release_please["include-v-in-tag"], True)
                         checked += 1
         self.assertEqual(checked, 128)
 

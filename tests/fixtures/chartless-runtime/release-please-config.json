@@ -13,7 +13,9 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "template.yaml"
-      ]
+      ],
+      "component": "hiroba-chartless-smoke",
+      "include-v-in-tag": false
     },
     "tests/smoke": {
       "release-type": "simple",
@@ -23,7 +25,8 @@
       "extra-files": [
         "suite.yaml"
       ],
-      "component": "hiroba-chartless-smoke-smoke"
+      "component": "hiroba-chartless-smoke-smoke",
+      "include-v-in-tag": false
     }
   }
 }

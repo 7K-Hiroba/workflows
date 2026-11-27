@@ -269,6 +269,20 @@ class ReleaseMetadataTests(unittest.TestCase):
         config = json.loads((self.root / "release-please-config.json").read_text())
         expected = {"extension", "ui", "charts/workflows-scaffold", "packages/admission-example", "packages/app", "packages/observability-pack", "templates/service"}
         self.assertEqual(set(config["packages"]), expected)
+        expected_components = {
+            "extension": "extension",
+            "ui": "ui",
+            "charts/workflows-scaffold": "workflows-scaffold",
+            "packages/admission-example": "admission-example",
+            "packages/app": "app",
+            "packages/observability-pack": "observability-pack",
+            "templates/service": "service",
+        }
+        self.assertIs(config["include-v-in-tag"], True)
+        self.assertEqual(config["tag-separator"], "-v")
+        for path, package in config["packages"].items():
+            self.assertEqual(package.get("component"), expected_components[path])
+            self.assertIs(package["include-v-in-tag"], False)
         self.assertEqual(config["packages"]["extension"]["release-type"], "go")
         self.assertEqual(config["packages"]["ui"]["release-type"], "node")
         self.assertIn("Chart.yaml", config["packages"]["charts/workflows-scaffold"]["extra-files"])
@@ -302,6 +316,10 @@ class MarkedReleaseVersionTests(unittest.TestCase):
         ui = config["packages"]["ui"]
         self.assertEqual(extension["release-type"], "go")
         self.assertEqual(ui["release-type"], "node")
+        self.assertEqual(extension.get("component"), "extension")
+        self.assertEqual(ui.get("component"), "ui")
+        self.assertIs(extension["include-v-in-tag"], False)
+        self.assertIs(ui["include-v-in-tag"], False)
         self.assertEqual(extension["extra-files"], [BACKEND_ROOT_EXTRA, "internal/extplugin/version.go", BACKEND_YAML_EXTRA])
         self.assertEqual(ui["extra-files"], ["src/index.tsx", UI_YAML_EXTRA])
         self.assertNotIn("plugins", config)

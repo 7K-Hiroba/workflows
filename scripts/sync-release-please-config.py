@@ -51,8 +51,11 @@ def component_config(component: dict[str, Any], version_files: list[str] | None 
         ]
     if extra_files:
         config["extra-files"] = extra_files
-    if kind == "smoke" or component.get("releaseComponent"):
-        config["component"] = component.get("releaseComponent", component["name"])
+    identity = {"extension": "extension", "ui": "ui"}.get(
+        kind, component.get("releaseComponent", component["name"])
+    )
+    config["component"] = identity
+    config["include-v-in-tag"] = False
     return config
 
 

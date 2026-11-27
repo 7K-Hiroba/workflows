@@ -40,6 +40,19 @@ class ReleaseContractTests(unittest.TestCase):
                 }
                 self.assertEqual(validate_artifact(artifact, component, "app", "ghcr.io/7k-hiroba", SOURCE, "normal"), expected)
 
+    def test_kind_qualified_argocd_and_monitoring_release_identities(self) -> None:
+        cases = (
+            ({"kind": "chart", "name": "argocd", "version": "0.1.0", "releaseComponent": "chart-argocd"}, "chart-argocd-v0.1.0"),
+            ({"kind": "package", "name": "argocd", "version": "1.3.0", "releaseComponent": "package-argocd"}, "package-argocd-v1.3.0"),
+            ({"kind": "template", "name": "argocd-application", "version": "0.1.0", "releaseComponent": "template-argocd-application"}, "template-argocd-application-v0.1.0"),
+            ({"kind": "chart", "name": "monitoring", "version": "0.1.0", "releaseComponent": "chart-monitoring"}, "chart-monitoring-v0.1.0"),
+            ({"kind": "package", "name": "monitoring-stack", "version": "0.2.0", "releaseComponent": "package-monitoring-stack"}, "package-monitoring-stack-v0.2.0"),
+            ({"kind": "package", "name": "observability-pack", "version": "0.3.0", "releaseComponent": "package-observability-pack"}, "package-observability-pack-v0.3.0"),
+        )
+        for component, expected_tag in cases:
+            with self.subTest(component=component["releaseComponent"]):
+                self.assertEqual(contract(component, "app", "ghcr.io/7k-hiroba", SOURCE, "normal")["releaseTag"], expected_tag)
+
     def test_template_artifact_key_uses_canonical_plural(self) -> None:
         component = {"kind": "template", "name": "service", "version": "1.2.3"}
         self.assertEqual(artifact_key(component), "templates-service")

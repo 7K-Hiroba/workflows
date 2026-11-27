@@ -17,14 +17,16 @@ No GHCR operation is performed during repository setup. The protected publish re
 
 ## Full-matrix rehearsal
 
-Run exactly one fixture release graph per `workflow_dispatch`; artifact uploads and `artifact-*`/`channel-reconciliation` downloads are scoped to that run. Select the fixture through the validated `fixture` choice. Coordinate all five fixtures at the same reviewed merged main SHA, waiting for each result before proceeding:
+Run exactly one release graph per `workflow_dispatch`; artifact uploads and `artifact-*`/`channel-reconciliation` downloads are scoped to that run. Select the fixture through the validated `fixture` choice. Qualification requires **five full fixture graphs plus one standalone chart graph**, all sequential at the same reviewed merged main SHA. Wait for terminal success and inspect its exact source, signatures, provenance, signed test evidence, indexes/channels, and cleanup before preparing the next dispatch:
 
 ```sh
 SHA=<reviewed-merged-main-sha>
-for FIXTURE in scaffold chartless-observability nonplugin-helm chartless-manifests artifact-manifests; do
-  gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main \
-    -f source_sha="$SHA" -f mode=full -f fixture="$FIXTURE"
-done
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=scaffold
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=chartless-observability
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=nonplugin-helm
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=chartless-manifests
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=full -f fixture=artifact-manifests
+gh workflow run publish-rehearsal.yml --repo 7K-Hiroba/workflows --ref main -f source_sha="$SHA" -f mode=repair-chart -f fixture=scaffold -f chart=workflows-scaffold -f version=0.1.0
 ```
 
-This list only prepares the required dispatches; it does not authorize them. Do not fan out release graphs inside one run or share evidence/channel artifacts across fixture roots.
+This list only prepares the required dispatches in order; it does not authorize them or permit running them without waiting. Do not fan out release graphs inside one run or share evidence/channel artifacts across fixture roots. A later protected library signing dispatch separately requires the release-please-selected version, `expected_source_sha` equal to that same final R, and `update_major=false`; the workflow verifies run SHA, checkout HEAD, and remote main before signing and again immediately before tag creation.

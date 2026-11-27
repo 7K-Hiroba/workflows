@@ -3,7 +3,7 @@ ACTIONLINT ?= $(shell go env GOPATH)/bin/actionlint
 SHA ?=
 OUT ?= /tmp/hiroba-scaffold
 
-.PHONY: setup lint unit test-negative test-scaffold test-stack-contract test-chart-contract render-scaffold verify-evidence
+.PHONY: setup lint unit test-negative test-release-please test-scaffold test-stack-contract test-chart-contract render-scaffold verify-evidence
 setup:
 	python3 -m venv .venv
 	.venv/bin/pip install --disable-pip-version-check -r requirements-dev.txt
@@ -18,6 +18,9 @@ lint:
 
 unit:
 	$(PYTHON) -m unittest discover -s tests/unit -p 'test_*.py'
+
+test-release-please:
+	$(PYTHON) -m unittest discover -s tests/contract -p 'test_*.py'
 
 test-negative:
 	$(PYTHON) -m unittest discover -s tests/integration -p 'test_*.py'

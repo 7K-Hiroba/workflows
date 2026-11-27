@@ -1,0 +1,9 @@
+{
+  "name": "hiroba-release-please-contract",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Credentialless release-please 17.6.0 producer contract harness",
+  "dependencies": {
+    "release-please": "17.6.0"
+  }
+}

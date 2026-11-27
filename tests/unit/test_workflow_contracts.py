@@ -806,6 +806,37 @@ class WorkflowContractTests(unittest.TestCase):
         patterns = [step["with"]["pattern"] for step in downloads]
         self.assertTrue(any(fnmatch.fnmatch("artifact-extension-ui", pattern) for pattern in patterns))
 
+    def test_release_please_contract_job_is_locked_and_non_publishing(self) -> None:
+        data = yaml.safe_load((WORKFLOWS / "library-ci.yml").read_text())
+        job = data["jobs"].get("release-please-contract")
+        self.assertIsInstance(job, dict)
+        self.assertNotIn("permissions", job)
+        self.assertIn("release-please-contract", data["jobs"]["result"]["needs"])
+        self.assertNotIn("secrets", job)
+        text = yaml.safe_dump(job)
+        for forbidden in ("pull_request_target", "create-github-app-token", "release-please-action", "upload-artifact", "packages: write", "id-token: write"):
+            self.assertNotIn(forbidden, text)
+        steps = job["steps"]
+        checkout = next(step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@"))
+        self.assertEqual(checkout["uses"], "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+        self.assertEqual(checkout["with"]["ref"], "${{ job.workflow_sha }}")
+        node = next(step for step in steps if str(step.get("uses", "")).startswith("actions/setup-node@"))
+        self.assertEqual(node["uses"], "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1")
+        self.assertEqual(node["with"]["node-version"], "24.11.1")
+        commands = [step.get("run", "") for step in steps]
+        self.assertTrue(any("npm ci" in command and "--ignore-scripts" in command and "--no-audit" in command and "--no-fund" in command for command in commands))
+        self.assertTrue(any("make -C .hiroba/workflows test-release-please" in command for command in commands))
+        package = json.loads((ROOT / "tests/release-please-contract/package.json").read_text())
+        self.assertEqual(package["dependencies"]["release-please"], "17.6.0")
+        lock = json.loads((ROOT / "tests/release-please-contract/package-lock.json").read_text())
+        locked = lock["packages"]["node_modules/release-please"]
+        self.assertEqual(locked["version"], "17.6.0")
+        self.assertEqual(locked["resolved"], "https://registry.npmjs.org/release-please/-/release-please-17.6.0.tgz")
+        self.assertEqual(locked["integrity"], "sha512-ItzkkEBeEbKsCrx7N1QlADrCahoONA4WPlsOinSnXTkqUBIWlHC6+S28VJ9PaHy7ZPSJwSQsRuDjI0/HL5G6hw==")
+        for locked_package in lock["packages"].values():
+            self.assertNotIn("git+", str(locked_package.get("resolved", "")))
+        self.assertIn("test-release-please", (ROOT / "Makefile").read_text())
+
     def test_render_job_installs_actionlint_for_rendered_callers(self) -> None:
         data = yaml.safe_load((WORKFLOWS / "library-ci.yml").read_text())
         steps = data["jobs"]["render"]["steps"]

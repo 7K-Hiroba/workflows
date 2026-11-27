@@ -59,7 +59,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: {node-version: "24.11.1"}
       - run: npm ci --prefix .hiroba/workflows/tests/release-please-contract --ignore-scripts --no-audit --no-fund
-      - run: make -C .hiroba/workflows test-release-please
+      - run: make -C .hiroba/workflows test-release-please PYTHON=python3
   result:
     name: library-ci-result
     if: always()

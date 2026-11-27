@@ -916,7 +916,8 @@ exit 2
         self.assertEqual(node["with"]["node-version"], "24.11.1")
         commands = [step.get("run", "") for step in steps]
         self.assertTrue(any("npm ci" in command and "--ignore-scripts" in command and "--no-audit" in command and "--no-fund" in command for command in commands))
-        self.assertTrue(any("make -C .hiroba/workflows test-release-please" in command for command in commands))
+        contract_command = next(command for command in commands if "make -C .hiroba/workflows test-release-please" in command)
+        self.assertIn("PYTHON=python3", contract_command)
         package = json.loads((ROOT / "tests/release-please-contract/package.json").read_text())
         self.assertEqual(package["dependencies"]["release-please"], "17.6.0")
         lock = json.loads((ROOT / "tests/release-please-contract/package-lock.json").read_text())
